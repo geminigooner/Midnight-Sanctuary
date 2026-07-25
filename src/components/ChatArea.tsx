@@ -556,7 +556,11 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
         }
       }
       
-      if (!currentModelText && !currentModelThought) {
+      if (!currentModelText && currentModelThought) {
+        // Gemma opened a thought channel but never an answer channel.
+        // Surface the reasoning rather than showing nothing.
+        updateModelMessage(currentModelThought, '', 'complete');
+      } else if (!currentModelText && !currentModelThought) {
          updateModelMessage('[No content in final round — see server logs]', '', 'error');
          setTemporaryPresence('error', 'resting', 5000);
       } else {

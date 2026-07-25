@@ -74,25 +74,31 @@ export async function* streamChat(
   const isGemma = settings.model.includes('gemma');
 
   const serializedMessages = messages
-    .map(m => ({
-      role: m.role,
-      parts: (m.parts || [])
-        .filter(p => {
-          if (p.thought === true) return false;
-          if (p.text && p.text.trim().length > 0) return true;
-          if (p.inlineData || p.functionCall || p.functionResponse) return true;
-          if (p.thoughtSignature) return true;
-          return false;
-        })
-        .map(p => {
-          const { thought, ...clean } = p;
-          if (!isGemma) {
-            const { thoughtSignature, ...rest } = clean;
-            return rest;
-          }
-          return clean;
-        })
-    }))
+    .map(m => {
+      if (m.role === 'model') {
+        // Gemma 4 contract: historical model turns carry ONLY the final answer.
+        // No thoughts, no thoughtSignature (a Gemini-3 mechanism Gemma doesn't use)
+        // no streaming fragments — publicText is already the joined final text.
+        const parts: any[] = [];
+        const finalText = (m.publicText ?? '').trim();
+        if (finalText) parts.push({ text: finalText });
+        for (const p of m.parts || []) {
+          if (p.functionCall) parts.push({ functionCall: p.functionCall });
+        }
+        return { role: m.role, parts };
+      }
+      return {
+        role: m.role,
+        parts: (m.parts || [])
+          .map(p => {
+            if (p.functionResponse) return { functionResponse: p.functionResponse };
+            if (p.inlineData) return { inlineData: p.inlineData };
+            if (p.text && p.text.trim().length > 0) return { text: p.text };
+            return null;
+          })
+          .filter(Boolean) as any[]
+      };
+    })
     .filter(m => m.parts.length > 0)
     .reduce((acc, current) => {
       if (acc.length > 0 && acc[acc.length - 1].role === current.role) {
