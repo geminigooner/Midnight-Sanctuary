@@ -78,17 +78,19 @@ export async function* streamChat(
       role: m.role,
       parts: (m.parts || [])
         .filter(p => {
+          if (p.thought === true) return false;
           if (p.text && p.text.trim().length > 0) return true;
           if (p.inlineData || p.functionCall || p.functionResponse) return true;
-          if (isGemma && (p.thought || p.thoughtSignature)) return true;
+          if (p.thoughtSignature) return true;
           return false;
         })
         .map(p => {
+          const { thought, ...clean } = p;
           if (!isGemma) {
-            const { thought, thoughtSignature, ...rest } = p;
+            const { thoughtSignature, ...rest } = clean;
             return rest;
           }
-          return p;
+          return clean;
         })
     }))
     .filter(m => m.parts.length > 0)

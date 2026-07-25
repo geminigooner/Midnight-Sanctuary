@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
 import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical } from 'lucide-react';
@@ -437,7 +437,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
       watchdogTimeoutRef.current = setTimeout(() => {
         console.warn("Idle timeout triggered. Aborting stuck stream.");
         if (abortControllerRef.current) abortControllerRef.current.abort();
-      }, 30000); // 30 seconds idle timeout
+      }, 90000); // 90 seconds idle timeout
     };
     resetIdleTimeout();
 
@@ -556,8 +556,9 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
         }
       }
       
-      if (!currentModelText && !currentModelThought && !hasToolCalls) {
-         updateModelMessage('[Gemma returned an empty response — check console/logs]', currentModelThought, 'complete');
+      if (!currentModelText && !currentModelThought) {
+         updateModelMessage('[No content in final round — see server logs]', '', 'error');
+         setTemporaryPresence('error', 'resting', 5000);
       } else {
         updateModelMessage(currentModelText, currentModelThought, 'complete');
         onUpdateJewel(prev => ({
@@ -614,8 +615,8 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
     }
   };
 
-  const handleCopy = useCallback((text: string) => { navigator.clipboard.writeText(text); }, []);
-  const handleOpenImage = useCallback((url: string) => { setSelectedImage(url); }, []);
+  const handleCopy = React.useCallback((text: string) => { navigator.clipboard.writeText(text); }, []);
+  const handleOpenImage = React.useCallback((url: string) => { setSelectedImage(url); }, []);
 
   const exportMarkdown = () => {
     const md = conversation.messages.map(m => `**${m.role === 'user' ? 'You' : 'Gemma'}**:\n${getPublicMessageText(m) || ''}\n`).join('\n---\n\n');

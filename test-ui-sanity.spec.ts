@@ -5,7 +5,8 @@ test('basic message flow', async ({ page }) => {
   // Click new conversation if empty state
   const isTextareaVisible = await page.locator('textarea').isVisible();
   if (!isTextareaVisible) {
-     await page.getByRole('button', { name: /New Sanctuary/i }).click(); 
+     const newBtn = page.getByText('New Sanctuary');
+     await newBtn.click();
      await page.waitForTimeout(1000);
   }
 
@@ -25,5 +26,5 @@ test('basic message flow', async ({ page }) => {
   await page.keyboard.press('Enter');
   
   await expect(page.locator('.prose-invert').last()).toContainText('Hello user!');
-  await expect(page.getByText('test sanity')).toBeVisible();
+  await expect(page.locator('text="test sanity"').first()).toBeVisible();
 });

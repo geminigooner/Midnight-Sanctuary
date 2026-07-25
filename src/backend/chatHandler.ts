@@ -104,6 +104,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             };
           }
 
+          console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
           const responseStream = await ai.models.generateContentStream({
             model: model,
             contents: currentMessages,
@@ -139,13 +140,9 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
                   }
                   
-                  functionResponses.push({
-                    functionResponse: {
-                      id: call.id || call.name,
-                      name: call.name,
-                      response: { result: "ok" }
-                    }
-                  });
+                  const fr: any = { name: call.name, response: { result: "ok" } };
+                  if (call.id) fr.id = call.id; // only echo an id the model actually sent
+                  functionResponses.push({ functionResponse: fr });
                 }
               }
             }
@@ -172,11 +169,16 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
         safeClose();
       } catch (err: any) {
         console.error('API Error:', err);
+        console.error('API Error detail:', JSON.stringify({
+          status: err?.status, code: err?.code, name: err?.name,
+          message: err?.message, response: err?.response?.data ?? err?.error
+        }, null, 2));
         try {
           if (err?.status === 429 || (err.message && err.message.includes('429'))) {
             send(`data: ${JSON.stringify({ type: 'rate_limit', message: 'Gemma needs a little breather — try again in a bit' })}\n\n`);
           } else {
-            send(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);
+            const detail = err?.error?.message || err?.message || 'Unknown API Error';
+            send(`data: ${JSON.stringify({ error: `[${err?.status ?? '?'}] ${detail}` })}\n\n`);
           }
         } catch (sendErr) {
           console.error('Error sending error chunk:', sendErr);

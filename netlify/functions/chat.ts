@@ -12,7 +12,7 @@ export default async (req: Request) => {
 
   try {
     const reqBody = await req.json();
-    const stream = createChatStream(reqBody, apiKey);
+    const stream = createChatStream(reqBody, apiKey, req.signal);
 
     return new Response(stream, {
       headers: {
