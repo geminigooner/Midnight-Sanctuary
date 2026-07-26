@@ -48,3 +48,8 @@ body::before {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-mauve);
 }
+.prose pre, .prose code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}

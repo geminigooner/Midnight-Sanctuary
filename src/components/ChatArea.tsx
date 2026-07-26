@@ -151,7 +151,7 @@ const MessageBubble = React.memo(function MessageBubble({
             )}
             
             {(publicText || (!isWaitingForToken && !thoughtText)) && (
-              <div>
+              <div className="min-w-0 break-words">
                 <Markdown>{publicText}</Markdown>
               </div>
             )}

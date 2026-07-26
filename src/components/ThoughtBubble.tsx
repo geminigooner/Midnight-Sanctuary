@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, ChevronDown, ChevronUp } from 'lucide-react';
-import Markdown from 'react-markdown';
 
 interface ThoughtBubbleProps {
   text: string;
@@ -66,7 +65,7 @@ export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
               onScroll={handleScroll}
               className="mt-2 w-full max-h-[320px] overflow-y-auto p-4 rounded-2xl bg-plum/10 backdrop-blur-md border border-copper/10 text-xs font-mono text-mauve/90 whitespace-pre-wrap leading-relaxed shadow-inner break-words [overflow-wrap:anywhere]"
             >
-              <Markdown>{text}</Markdown>
+              {text}
             </div>
                   </div>
       )}
