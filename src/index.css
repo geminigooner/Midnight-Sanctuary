@@ -53,3 +53,21 @@ body::before {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+
+@keyframes msg-fade-down {
+  from { opacity: 0; transform: translateY(-10px); }
+}
+@keyframes msg-fade-in-right {
+  from { opacity: 0; transform: translateX(14px); }
+}
+@keyframes msg-fade-in-left {
+  from { opacity: 0; transform: translateX(-14px); }
+}
+
+.msg-enter-down  { animation: msg-fade-down 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.msg-enter-user  { animation: msg-fade-in-right 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.msg-enter-model { animation: msg-fade-in-left 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-enter-down, .msg-enter-user, .msg-enter-model { animation: none; }
+}

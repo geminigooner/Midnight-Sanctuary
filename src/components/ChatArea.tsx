@@ -113,12 +113,8 @@ const MessageBubble = React.memo(function MessageBubble({
   const bubbleMotion = getMotion('standard', reducedMotion);
 
   return (
-    <motion.div 
-      animate={{ 
-        scale: settled && !reducedMotion ? [1, 1.01, 1] : 1,
-      }}
-      transition={bubbleMotion}
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'} group w-full`}
+    <div 
+      className={`flex ${isUser ? 'justify-end msg-enter-user' : 'justify-start msg-enter-model'} group w-full`}
     >
       <div 
         {...bindLongPress}
@@ -183,7 +179,7 @@ const MessageBubble = React.memo(function MessageBubble({
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }, (prev, next) => prev.msg === next.msg && prev.isLast === next.isLast && prev.isGenerating === next.isGenerating);
 
