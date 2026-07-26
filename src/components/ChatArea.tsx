@@ -442,25 +442,27 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
     resetIdleTimeout();
 
     const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
-      const displayParts: any[] = [];
+      const partsToSave: any[] = [];
       if (thought) {
-        displayParts.push({
+        partsToSave.push({
           thought: true,
           text: thought,
         });
       }
       if (text) {
-        displayParts.push({
+        partsToSave.push({
           text,
         });
       }
+      const functionCalls = currentModelApiParts.filter(p => p.functionCall);
+      partsToSave.push(...functionCalls);
+
+      if (partsToSave.length === 0) {
+        partsToSave.push({ text: '' });
+      }
+
       onUpdateMessage(requestConversationId, modelMsgId, {
-        parts:
-          currentModelApiParts.length > 0
-            ? currentModelApiParts
-            : displayParts.length > 0
-              ? displayParts
-              : [{ text: '' }],
+        parts: partsToSave,
         publicText: text,
         thoughtText: thought,
         thoughtStatus: status,
@@ -677,9 +679,14 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
             <span className="font-medium text-champagne truncate">
               {availableModels?.find(m => m.name === settings.model)?.displayName || settings.model?.split('/').pop() || 'Unknown Model'}
             </span>
-            <span className="text-xs text-mauve/70 tracking-wider truncate">
-              Temperature {settings.temperature.toFixed(1)}
-            </span>
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="text-mauve/70 tracking-wider">
+                Temperature {settings.temperature.toFixed(1)}
+              </span>
+              <span className="text-copper">
+                msgs {conversation.messages.length} / vis {visibleMessages.length}
+              </span>
+            </div>
           </div>
         </div>
         
@@ -917,10 +924,10 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
           <div className="flex justify-center mt-2">
             <button 
               onClick={() => setShowDebugModel(!showDebugModel)}
-              className="text-[10px] text-mauve/20 hover:text-mauve/50 transition-colors px-2 py-1 rounded"
+              className="text-xs text-copper border border-copper/40 rounded-lg px-3 py-1.5 transition-colors hover:bg-copper/10"
               title="Toggle Debug Info"
             >
-              {showDebugModel ? settings.model : '·'}
+              DEBUG
             </button>
           </div>
           

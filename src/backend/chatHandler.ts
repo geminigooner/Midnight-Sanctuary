@@ -94,7 +94,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             temperature: temperature ?? 2.0,
             topP: topP ?? 0.95,
             maxOutputTokens: maxOutputTokens ?? 4096,
-            tools: gemmaTools,
+            // tools: gemmaTools, // TEMPORARILY DISABLED for debugging
           };
 
           if (model.includes('gemma-4')) {

@@ -73,7 +73,14 @@ export function useAppStore() {
 
   // Save on change
   useEffect(() => {
-    localStorage.setItem('midnight_sanctuary_conversations', JSON.stringify(conversations));
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem('midnight_sanctuary_conversations', JSON.stringify(conversations));
+      } catch (e) {
+        console.error('Persist failed (quota?):', e);
+      }
+    }, 500);
+    return () => clearTimeout(t);
   }, [conversations]);
   useEffect(() => {
     localStorage.setItem('midnight_sanctuary_settings', JSON.stringify(settings));
