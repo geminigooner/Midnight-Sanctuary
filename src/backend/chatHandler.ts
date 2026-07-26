@@ -94,7 +94,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             temperature: temperature ?? 2.0,
             topP: topP ?? 0.95,
             maxOutputTokens: maxOutputTokens ?? 4096,
-            // tools: gemmaTools, // TEMPORARILY DISABLED for debugging
+            tools: gemmaTools,
           };
 
           if (model.includes('gemma-4')) {
@@ -105,14 +105,32 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           }
 
           console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
-          const responseStream = await ai.models.generateContentStream({
-            model: model,
-            contents: currentMessages,
-            config: {
-               ...config,
-               abortSignal
+          
+          let responseStream: any;
+          let retries = 0;
+          const backoffTimes = [1000, 2500, 5000];
+          
+          while (true) {
+            try {
+              responseStream = await ai.models.generateContentStream({
+                model: model,
+                contents: currentMessages,
+                config: {
+                   ...config,
+                   abortSignal
+                }
+              });
+              break;
+            } catch (err: any) {
+              if ((err?.status === 500 || err?.status === 503) && retries < backoffTimes.length) {
+                console.error(`API Error ${err?.status}. Retrying in ${backoffTimes[retries]}ms... (Attempt ${retries + 1}/3)`);
+                await new Promise(resolve => setTimeout(resolve, backoffTimes[retries]));
+                retries++;
+              } else {
+                throw err;
+              }
             }
-          });
+          }
 
           let modelParts: any[] = [];
           let functionResponses: any[] = [];
