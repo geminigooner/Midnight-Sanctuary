@@ -114,14 +114,12 @@ const MessageBubble = React.memo(function MessageBubble({
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 10, scale: 0.98 }}
       animate={{ 
-        opacity: 1, 
-        y: 0, 
         scale: settled && !reducedMotion ? [1, 1.01, 1] : 1,
       }}
       transition={bubbleMotion}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} group w-full`}
+      style={{ outline: '2px solid red' }}
     >
       <div 
         {...bindLongPress}
@@ -822,23 +820,21 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
           </div>
         )}
         
-        <AnimatePresence initial={false}>
-          {visibleMessages.map((msg, i) => (
-            <MessageBubble 
-              key={msg.id}
-              msg={msg}
-              isLast={i === visibleMessages.length - 1}
-              isGenerating={isGenerating}
-              onCopy={handleCopy}
-              onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
-              onFavorite={(content) => {
-                onAddMemory(content, 'user_favorited');
-                onAddEventLog('User favorited a message.');
-              }}
-              onImageClick={(url) => setSelectedImage(url)}
-            />
-          ))}
-        </AnimatePresence>
+        {visibleMessages.map((msg, i) => (
+          <MessageBubble 
+            key={msg.id}
+            msg={msg}
+            isLast={i === visibleMessages.length - 1}
+            isGenerating={isGenerating}
+            onCopy={handleCopy}
+            onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
+            onFavorite={(content) => {
+              onAddMemory(content, 'user_favorited');
+              onAddEventLog('User favorited a message.');
+            }}
+            onImageClick={(url) => setSelectedImage(url)}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
 
