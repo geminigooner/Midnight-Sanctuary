@@ -215,6 +215,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
   const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const bottomRef = useRef<HTMLDivElement>(null);
   const conversationRef = useRef(conversation);
   useEffect(() => {
     conversationRef.current = conversation;
@@ -274,9 +275,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
   }, [input, isGenerating, presence]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [conversation?.messages, isGenerating]);
 
   if (!conversation) {
@@ -816,7 +815,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-6 custom-scrollbar z-10 scroll-smooth w-full min-w-0 max-w-full">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full">
         {visibleMessages.length === 0 && (
           <div className="h-full flex items-center justify-center opacity-50">
             <p className="text-mauve tracking-widest uppercase text-sm">The sanctuary is quiet.</p>
@@ -840,6 +839,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
             />
           ))}
         </AnimatePresence>
+        <div ref={bottomRef} />
       </div>
 
       {/* Composer */}
