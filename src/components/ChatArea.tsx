@@ -119,7 +119,6 @@ const MessageBubble = React.memo(function MessageBubble({
       }}
       transition={bubbleMotion}
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} group w-full`}
-      style={{ outline: '2px solid red' }}
     >
       <div 
         {...bindLongPress}
@@ -152,9 +151,9 @@ const MessageBubble = React.memo(function MessageBubble({
             )}
             
             {(publicText || (!isWaitingForToken && !thoughtText)) && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+              <div>
                 <Markdown>{publicText}</Markdown>
-              </motion.div>
+              </div>
             )}
 
             {msg.parts?.map((part, i) => part.inlineData ? (

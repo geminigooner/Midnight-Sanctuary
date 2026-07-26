@@ -58,15 +58,9 @@ export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
         )}
       </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="w-full overflow-hidden"
-          >
+      {isOpen && (
+        <div className="w-full overflow-hidden">
+
             <div 
               ref={scrollRef}
               onScroll={handleScroll}
@@ -74,9 +68,8 @@ export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
             >
               <Markdown>{text}</Markdown>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  </div>
+      )}
     </div>
   );
 }
