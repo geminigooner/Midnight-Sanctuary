@@ -95,6 +95,12 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             topP: topP ?? 0.95,
             maxOutputTokens: maxOutputTokens ?? 4096,
             tools: gemmaTools,
+            safetySettings: [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+            ]
           };
 
           if (model.includes('gemma-4')) {
