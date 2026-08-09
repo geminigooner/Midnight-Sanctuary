@@ -8,7 +8,7 @@ Instead, the application gives the model access to persistent contextual structu
 
 The project is particularly interested in **model agency, continuity, memory selection, tool use, and emergent interaction patterns**.
 
-> This is an experimental personal research project, not a claim about model consciousness or subjective experience.
+> This is an experimental personal research project.
 
 ---
 
