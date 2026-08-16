@@ -1,4 +1,5 @@
 import { AppSettings, Message, Gift } from './types';
+import { auth, signOut } from './firebase';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -111,9 +112,15 @@ export async function* streamChat(
 
   console.log("[Diagnostics] Sanitized API History:", JSON.stringify(serializedMessages, null, 2));
 
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Unauthorized: Please sign in.');
+
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
     body: JSON.stringify({
       messages: serializedMessages,
       systemInstruction: fullSystemInstruction,
@@ -129,6 +136,10 @@ export async function* streamChat(
   console.log(`[Diagnostics] Content-Type: ${response.headers.get('Content-Type')}`);
 
   if (!response.ok) {
+    if (response.status === 401) {
+      await signOut(auth);
+      throw new Error("Session expired. Please sign in again.");
+    }
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || `API Error: ${response.status}`);
   }

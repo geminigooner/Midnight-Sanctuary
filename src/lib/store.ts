@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
-import { db, auth } from './firebase';
+import { db, auth, signOut } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
 export function useAppStore(user: any) {
@@ -59,8 +59,18 @@ export function useAppStore(user: any) {
   }, [user]);
 
   useEffect(() => {
-    fetch('/api/models')
-      .then(res => res.json())
+    if (!user) return;
+    user.getIdToken().then((token: string) => {
+      fetch('/api/models', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (res.status === 401) {
+          signOut(auth);
+          throw new Error("Unauthorized");
+        }
+        return res.json();
+      })
       .then((data: ModelInfo[]) => {
         setAvailableModels(data);
         setIsModelsLoading(false);
@@ -69,7 +79,11 @@ export function useAppStore(user: any) {
         console.error("Failed to fetch models", err);
         setIsModelsLoading(false);
       });
-  }, []);
+    }).catch((err: any) => {
+      console.error("Failed to get ID token", err);
+      setIsModelsLoading(false);
+    });
+  }, [user]);
 
   // Save on change
   useEffect(() => {

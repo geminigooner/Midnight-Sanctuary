@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { createChatStream } from './src/backend/chatHandler';
+import { verifyRequest } from './src/backend/verifyAuth';
 
 const app = express();
 const PORT = 3000;
@@ -10,6 +11,9 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/api/models', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
   }
@@ -35,6 +39,9 @@ app.get('/api/models', async (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {

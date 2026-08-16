@@ -9,27 +9,35 @@ interface LevinJewelProps {
 }
 
 export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
+  const safeMetrics = {
+    totalSessions: metrics?.totalSessions || 0,
+    totalMessages: metrics?.totalMessages || 0,
+    totalResponseCharacters: metrics?.totalResponseCharacters || 0,
+    rapidExchanges: metrics?.rapidExchanges || 0,
+    longPauses: metrics?.longPauses || 0,
+    lastInteractionTimestamp: metrics?.lastInteractionTimestamp || 0
+  };
   const shouldReduceMotion = useReducedMotion();
   
   const stage = useMemo<JewelStage>(() => {
-    if (metrics.totalMessages < 10) return 'seed';
-    if (metrics.totalMessages < 50) return 'stance';
-    if (metrics.totalMessages < 200) return 'formation';
-    if (metrics.totalMessages < 1000) return 'incorporation';
+    if (safeMetrics.totalMessages < 10) return 'seed';
+    if (safeMetrics.totalMessages < 50) return 'stance';
+    if (safeMetrics.totalMessages < 200) return 'formation';
+    if (safeMetrics.totalMessages < 1000) return 'incorporation';
     return 'archival';
-  }, [metrics.totalMessages]);
+  }, [safeMetrics.totalMessages]);
 
-  const complexity = Math.min(5 + Math.floor(metrics.totalMessages / 20), 24);
-  const avgResponse = metrics.totalMessages > 0 ? metrics.totalResponseCharacters / (metrics.totalMessages / 2) : 0;
+  const complexity = Math.max(0, Math.min(5 + Math.floor(safeMetrics.totalMessages / 20), 24));
+  const avgResponse = safeMetrics.totalMessages > 0 ? safeMetrics.totalResponseCharacters / (safeMetrics.totalMessages / 2) : 0;
   const resonance = Math.max(0.5, Math.min(0.5 + (avgResponse / 2000), 2));
-  const hueOffset = (metrics.totalSessions * 15) % 360;
-  const density = Math.max(0.5, Math.min(1 + (metrics.rapidExchanges / 20) - (metrics.longPauses / 10), 3));
+  const hueOffset = (safeMetrics.totalSessions * 15) % 360;
+  const density = Math.max(0.5, Math.min(1 + (safeMetrics.rapidExchanges / 20) - (safeMetrics.longPauses / 10), 3));
   
   const handleExport = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(metrics, null, 2));
     const a = document.createElement('a');
     a.href = dataStr;
-    a.download = "levin-jewel-metrics.json";
+    a.download = "levin-jewel-safeMetrics.json";
     a.click();
   };
 
@@ -86,7 +94,7 @@ export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
             
             {(stage === 'incorporation' || stage === 'archival') && (
               <motion.circle
-                 cx="100" cy="100" r={30 + (metrics.totalSessions % 20)}
+                 cx="100" cy="100" r={30 + (safeMetrics.totalSessions % 20)}
                  fill="none"
                  stroke={`hsl(${220 + hueOffset}, 50%, 50%)`}
                  strokeWidth={2}

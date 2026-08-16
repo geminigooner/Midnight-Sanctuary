@@ -1,8 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
+import { verifyRequest } from '../../src/backend/verifyAuth';
 
 export default async (req: Request) => {
   if (req.method !== 'GET') {
     return new Response('Method Not Allowed', { status: 405 });
+  }
+
+  if (!(await verifyRequest(req))) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
