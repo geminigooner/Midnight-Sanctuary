@@ -1,0 +1,14 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only allow ahatley094@gmail.com to access the database
+    function isOwner() {
+      return request.auth != null && request.auth.token.email == 'ahatley094@gmail.com';
+    }
+
+    match /{document=**} {
+      allow read, write: if isOwner();
+    }
+  }
+}

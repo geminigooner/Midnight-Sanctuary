@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
+import { db, auth } from './firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
-export function useAppStore() {
+export function useAppStore(user: any) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -11,59 +13,57 @@ export function useAppStore() {
   const [isModelsLoading, setIsModelsLoading] = useState(true);
   const [gifts, setGifts] = useState<Gift[]>([]);
 
-  // Load on mount
+
+  const [dataLoaded, setDataLoaded] = useState(false);
+
   useEffect(() => {
-    let loadedSettings = { ...DEFAULT_SETTINGS };
-    const savedConvos = localStorage.getItem('midnight_sanctuary_conversations');
-    if (savedConvos) {
-      try {
-        const parsed = JSON.parse(savedConvos);
-        // Defensive migration: filter out completely empty model messages
-        const filtered = parsed.map((c: any) => ({
-          ...c,
-          messages: c.messages?.filter((m: any) => 
-            m.role === 'user' || 
-            (m.role === 'model' && (m.thoughtText?.trim() || m.parts?.some((p: any) => p.text || p.thought || p.functionCall)))
-          ) || []
-        }));
-        setConversations(filtered);
-      } catch (e) {}
-    }
-    const savedSettings = localStorage.getItem('midnight_sanctuary_settings');
-    if (savedSettings) {
-      try { 
-        const parsed = JSON.parse(savedSettings);
-        loadedSettings = { ...DEFAULT_SETTINGS, ...parsed };
-      } catch (e) {}
-    }
-    setSettings(loadedSettings);
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
     
-    const savedJewel = localStorage.getItem('midnight_sanctuary_jewel');
-    if (savedJewel) {
-      try { setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...JSON.parse(savedJewel) }); } catch (e) {}
-    }
+    let isInitialLoad = true;
+    
+    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (isInitialLoad) {
+          if (data.conversations) {
+            const parsed = data.conversations;
+            const filtered = parsed.map((c: any) => ({
+              ...c,
+              messages: c.messages?.filter((m: any) => 
+                m.role === 'user' || 
+                (m.role === 'model' && (m.thoughtText?.trim() || m.parts?.some((p: any) => p.text || p.thought || p.functionCall)))
+              ) || []
+            }));
+            setConversations(filtered);
+          }
+          if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+          if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
+          if (data.gifts) setGifts(data.gifts);
+          
+          setDataLoaded(true);
+          isInitialLoad = false;
+        }
+      } else {
+        // Doc doesn't exist, this is first time
+        if (isInitialLoad) {
+          setDataLoaded(true);
+          isInitialLoad = false;
+        }
+      }
+    }, (error) => {
+      console.error("Firestore onSnapshot error:", error);
+    });
 
-    const savedGifts = localStorage.getItem('midnight_sanctuary_gifts');
-    if (savedGifts) {
-      try { setGifts(JSON.parse(savedGifts)); } catch (e) {}
-    }
+    return () => unsubscribe();
+  }, [user]);
 
-    // Fetch models
+  useEffect(() => {
     fetch('/api/models')
       .then(res => res.json())
       .then((data: ModelInfo[]) => {
         setAvailableModels(data);
         setIsModelsLoading(false);
-
-        // If the current model is the default and it's not in the list, try to find the newest Gemma
-        if (!savedSettings) {
-          const gemmaModels = data.filter(m => m.name.toLowerCase().includes('gemma'));
-          if (gemmaModels.length > 0) {
-            // Assuming string sorting might roughly work for versions, or just taking the last one
-            gemmaModels.sort((a, b) => b.name.localeCompare(a.name));
-            setSettings(prev => ({ ...prev, model: gemmaModels[0].name }));
-          }
-        }
       })
       .catch(err => {
         console.error("Failed to fetch models", err);
@@ -73,26 +73,22 @@ export function useAppStore() {
 
   // Save on change
   useEffect(() => {
+    if (!dataLoaded || !user) return;
     const t = setTimeout(() => {
       try {
-        localStorage.setItem('midnight_sanctuary_conversations', JSON.stringify(conversations));
+        const userDocRef = doc(db, 'users', user.uid);
+        setDoc(userDocRef, {
+          conversations,
+          settings,
+          jewelMetrics,
+          gifts
+        }, { merge: true });
       } catch (e) {
-        console.error('Persist failed (quota?):', e);
+        console.error('Persist failed:', e);
       }
-    }, 500);
+    }, 1000);
     return () => clearTimeout(t);
-  }, [conversations]);
-  useEffect(() => {
-    localStorage.setItem('midnight_sanctuary_settings', JSON.stringify(settings));
-  }, [settings]);
-  useEffect(() => {
-    localStorage.setItem('midnight_sanctuary_jewel', JSON.stringify(jewelMetrics));
-  }, [jewelMetrics]);
-
-  useEffect(() => {
-    localStorage.setItem('midnight_sanctuary_gifts', JSON.stringify(gifts));
-  }, [gifts]);
-
+  }, [conversations, settings, jewelMetrics, gifts, dataLoaded, user]);
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
