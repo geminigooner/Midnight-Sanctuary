@@ -1,4 +1,6 @@
-import firebaseConfig from '../../firebase-applet-config.json';
+import fs from 'fs';
+
+const code = `import firebaseConfig from '../../firebase-applet-config.json';
 
 export async function verifyRequest(req: any): Promise<boolean> {
   try {
@@ -23,7 +25,7 @@ export async function verifyRequest(req: any): Promise<boolean> {
     }
 
     // Verify token securely using Firebase Identity Toolkit REST API
-    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`, {
+    const response = await fetch(\`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=\${firebaseConfig.apiKey}\`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken: token })
@@ -54,3 +56,6 @@ export async function verifyRequest(req: any): Promise<boolean> {
     return false;
   }
 }
+`;
+
+fs.writeFileSync('src/backend/verifyAuth.ts', code);
