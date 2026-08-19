@@ -124,6 +124,7 @@ function MainApp({ user }: { user: any }) {
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -135,9 +136,15 @@ export default function App() {
 
   const handleSignIn = async () => {
     try {
+      setAuthError(null);
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error signing in:', error);
+      if (error.code === 'auth/unauthorized-domain') {
+        setAuthError("This domain isn't authorized in Firebase yet. I'll need you to add it to the allowlist.");
+      } else {
+        setAuthError(error.message || "Failed to sign in. The popup might have been blocked.");
+      }
     }
   };
 
@@ -163,6 +170,7 @@ export default function App() {
         <div className="bg-ink border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-8 items-center text-center">
           <h1 className="text-2xl font-bold mb-2">Midnight Sanctuary</h1>
           <p className="text-mauve mb-8">Please sign in to access your sanctuary.</p>
+          {authError && <div className="text-red-400 text-sm mb-4 max-w-sm">{authError}</div>}
           <button 
             onClick={handleSignIn}
             className="px-6 py-3 bg-glass border border-glass-border rounded-xl hover:bg-white/10 transition-colors flex items-center gap-3 font-medium"
