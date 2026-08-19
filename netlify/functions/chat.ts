@@ -10,7 +10,7 @@ export default async (req: Request) => {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY);
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'GEMINI_API_KEY is not configured.' }), { status: 500 });
   }

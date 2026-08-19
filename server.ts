@@ -14,11 +14,11 @@ app.get('/api/models', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!process.env.GEMINI_API_KEY) {
+  if (!(process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY)) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+  const ai = new GoogleGenAI({ apiKey: (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY), httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   try {
     const response = await ai.models.list();
     const models = [];
@@ -42,7 +42,7 @@ app.post('/api/chat', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY);
 
   if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
