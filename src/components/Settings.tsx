@@ -50,6 +50,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
   };
 
   const sortedModels = useMemo(() => {
+    if (!Array.isArray(availableModels)) return [];
     if (!availableModels) return [];
     return [...availableModels].sort((a, b) => {
       const aFav = settings.favoriteModels?.includes(a.name) ? 1 : 0;

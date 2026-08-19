@@ -669,7 +669,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
           <Presence state={presence} />
           <div className="flex flex-col overflow-hidden flex-1 min-w-0">
             <span className="font-medium text-champagne truncate">
-              {availableModels?.find(m => m.name === settings.model)?.displayName || settings.model?.split('/').pop() || 'Unknown Model'}
+              {(Array.isArray(availableModels) ? availableModels : [])?.find(m => m.name === settings.model)?.displayName || settings.model?.split('/').pop() || 'Unknown Model'}
             </span>
             <div className="flex items-center gap-2 text-xs truncate">
               <span className="text-mauve/70 tracking-wider">
