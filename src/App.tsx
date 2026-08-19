@@ -141,7 +141,7 @@ export default function App() {
     } catch (error: any) {
       console.error('Error signing in:', error);
       if (error.code === 'auth/unauthorized-domain') {
-        setAuthError("This domain isn't authorized in Firebase yet. I'll need you to add it to the allowlist.");
+        setAuthError(`Domain error: You need to add exactly this to the Firebase Authorized Domains list: ${window.location.hostname}`);
       } else {
         setAuthError(error.message || "Failed to sign in. The popup might have been blocked.");
       }
