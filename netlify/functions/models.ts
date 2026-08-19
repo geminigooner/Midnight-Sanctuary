@@ -15,7 +15,7 @@ export default async (req: Request) => {
     return new Response(JSON.stringify({ error: 'GEMINI_API_KEY is not configured in the environment.' }), { status: 500 });
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
 
   try {
     const response = await ai.models.list();

@@ -53,7 +53,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
     throw new Error('Model ID is required.');
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   let currentMessages = [...messages];
   const maxRounds = 5;
   let round = 0;

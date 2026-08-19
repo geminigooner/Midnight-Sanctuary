@@ -18,7 +18,7 @@ app.get('/api/models', async (req, res) => {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   try {
     const response = await ai.models.list();
     const models = [];
