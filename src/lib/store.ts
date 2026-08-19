@@ -64,15 +64,25 @@ export function useAppStore(user: any) {
       fetch('/api/models', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
-      .then(res => {
+      .then(async res => {
         if (res.status === 401) {
           signOut(auth);
           throw new Error("Unauthorized");
         }
-        return res.json();
+        const text = await res.text();
+        if (text.includes('<!DOCTYPE html>')) {
+          console.error('Server returned HTML instead of JSON for models');
+          return [];
+        }
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('Failed to parse models JSON');
+          return [];
+        }
       })
       .then((data: ModelInfo[]) => {
-        setAvailableModels(data);
+        setAvailableModels(Array.isArray(data) ? data : []);
         setIsModelsLoading(false);
       })
       .catch(err => {
