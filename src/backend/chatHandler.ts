@@ -55,7 +55,7 @@ const gemmaTools = [
 ];
 
 export function createChatStream(reqBody: any, apiKey: string, abortSignal?: AbortSignal): ReadableStream {
-  const { messages, systemInstruction, temperature, topP, maxOutputTokens, model } = reqBody;
+  const { messages, systemInstruction, temperature, topP, maxOutputTokens, model, forceCloudflare } = reqBody;
 
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.');
@@ -128,6 +128,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let retries = 0;
           const backoffTimes = [1000, 2500, 5000];
           
+          if (forceCloudflare) {
+            throw new Error("Forcing Cloudflare fallback for testing");
+          }
+
           while (true) {
             try {
               responseStream = await ai.models.generateContentStream({

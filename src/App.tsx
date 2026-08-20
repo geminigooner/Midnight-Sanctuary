@@ -62,6 +62,7 @@ function MainApp({ user }: { user: any }) {
         key={currentConversation?.id ?? 'no-conversation'}
         conversation={currentConversation}
         settings={store.settings}
+        onUpdateSettings={store.updateSettings}
         gifts={store.gifts}
         jewelMetrics={store.jewelMetrics}
         onUpdate={store.updateConversation}

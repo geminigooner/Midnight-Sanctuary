@@ -81,6 +81,7 @@ export interface AppSettings {
   maxOutputTokens: number;
   model: string;
   favoriteModels: string[];
+  forceCloudflare?: boolean;
   aboutMe: string;
   conversationPreferences: string;
   memories: Memory[];

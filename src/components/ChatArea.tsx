@@ -261,6 +261,7 @@ interface ChatAreaProps {
   onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
   onRemoveMessage: (conversationId: string, messageId: string) => void;
   onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
+  onUpdateSettings: (settings: AppSettings) => void;
   onToggleSidebar: () => void;
   onOpenSettings: () => void;
   onOpenJewel: () => void;
@@ -273,7 +274,7 @@ interface ChatAreaProps {
   onAddEventLog: (description: string) => void;
 }
 
-export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, onOpenMemories, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
+export function ChatArea({ conversation, settings, onUpdateSettings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, onOpenMemories, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -843,6 +844,15 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
                       <span className="text-mauve/70">Streaming</span>
                       <span className="text-emerald-400 font-mono">Enabled</span>
                     </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-glass-border">
+                      <span className="text-mauve/70">Force Cloudflare</span>
+                      <button 
+                        onClick={() => onUpdateSettings({ ...settings, forceCloudflare: !settings.forceCloudflare })}
+                        className={`w-8 h-4 rounded-full transition-colors relative ${settings.forceCloudflare ? 'bg-copper' : 'bg-glass-border'}`}
+                      >
+                        <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${settings.forceCloudflare ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -926,6 +936,15 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
                     <div className="flex justify-between">
                       <span className="text-mauve/70">Endpoint</span>
                       <span className="text-pearlescent font-mono truncate max-w-[120px]">/api/chat</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-glass-border">
+                      <span className="text-mauve/70">Force Cloudflare</span>
+                      <button 
+                        onClick={() => onUpdateSettings({ ...settings, forceCloudflare: !settings.forceCloudflare })}
+                        className={`w-8 h-4 rounded-full transition-colors relative ${settings.forceCloudflare ? 'bg-copper' : 'bg-glass-border'}`}
+                      >
+                        <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${settings.forceCloudflare ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -181,7 +181,8 @@ export async function* streamChat(
       temperature: settings.temperature,
       topP: settings.topP,
       maxOutputTokens: settings.maxOutputTokens,
-      model: settings.model
+      model: settings.model,
+      forceCloudflare: settings.forceCloudflare
     }),
     signal: abortSignal
   });
