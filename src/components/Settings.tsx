@@ -33,7 +33,8 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
     const memory = {
       id: Math.random().toString(36).substring(2, 9),
       content: newMemory.trim(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      author: 'user' as const
     };
     onSave({ memories: [memory, ...(settings.memories || [])] });
     setNewMemory('');

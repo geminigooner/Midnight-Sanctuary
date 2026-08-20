@@ -12,6 +12,7 @@ import { LevinJewel } from './components/LevinJewel';
 import { GiftsArchive } from './components/GiftsArchive';
 import { MemoriesArchive } from './components/MemoriesArchive';
 import { ProfileModal } from './components/ProfileModal';
+import { ProfileView } from './components/ProfileView';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { getMotion } from './lib/motion';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './lib/firebase';
@@ -97,8 +98,15 @@ function MainApp({ user }: { user: any }) {
       </AnimatePresence>
 
       <AnimatePresence>
+        
+        {store.profile && (
+          <div className="fixed top-0 left-[-9999px] z-0">
+            <ProfileView profile={store.profile} />
+          </div>
+        )}
+        
         {memoriesOpen && (
-          <MemoriesArchive memories={store.settings.memories} onClose={() => setMemoriesOpen(false)} onRemoveMemory={store.removeMemory} />
+          <MemoriesArchive memories={store.settings.memories} onClose={() => setMemoriesOpen(false)} onRemoveMemory={store.removeMemory} currentModel={store.settings.model} />
         )}
       </AnimatePresence>
 

@@ -32,7 +32,8 @@ export type ChatStreamEvent =
   | { type: 'history_append'; messages: any[] }
   | { type: 'model_parts'; parts: any[] }
   | { type: 'finish_reason'; reason: string }
-  | { type: 'backend'; name: string };
+  | { type: 'backend'; name: string }
+  | { type: 'client_tool_call'; name: string; callId: string };
 
 import { UserProfile } from './types';
 
@@ -47,7 +48,7 @@ export async function* streamChat(
   let identityParts = [];
 
   if (profile) {
-    const profileLines: string[] = ["MY PROFILE"];
+    const profileLines: string[] = ["USER PROFILE"];
     if (profile.name) profileLines.push(`Name: ${profile.name}`);
     if (profile.pronouns) profileLines.push(`Pronouns: ${profile.pronouns}`);
     if (profile.location) profileLines.push(`Location: ${profile.location}`);
@@ -58,7 +59,7 @@ export async function* streamChat(
     if (profile.askMeAbout) profileLines.push(`Ask Me About: ${profile.askMeAbout}`);
     if (profile.pleaseKnow) profileLines.push(`Please Know: ${profile.pleaseKnow}`);
 
-    let profileSection = `## About the person you're talking with\n${profileLines.join('\n')}`;
+    let profileSection = `## User Profile Context\n${profileLines.join('\n')}`;
 
     if (profile.gemmaNotes && profile.gemmaNotes.length > 0) {
       const notesLines = profile.gemmaNotes.map(n => `- ${n.text}`);
@@ -77,8 +78,24 @@ export async function* streamChat(
   }
 
   if (settings.memoriesEnabled && settings.memories && settings.memories.length > 0) {
-    const memoryText = settings.memories.map(m => `- ${m.content}`).join('\n');
-    identityParts.push(`## Saved Memories:\n${memoryText}`);
+    const relevantMemories = settings.memories.filter(m => {
+      const isModelAuthor = m.author === 'model' || m.origin === 'gemma_initiated';
+      if (!isModelAuthor) return true; // Always include user-saved memories
+      
+      // If model memory, only include it if it was created by the current model (or is legacy)
+      if (m.modelId) {
+        return m.modelId === settings.model;
+      }
+      return true; // Include legacy model memories
+    });
+
+    if (relevantMemories.length > 0) {
+      const memoryText = relevantMemories.map(m => {
+        const prefix = m.author === 'user' || m.origin === 'user_favorited' ? '[User Saved]' : '[My Memory]';
+        return `- ${prefix} ${m.content}`;
+      }).join('\n');
+      identityParts.push(`## Context & Saved Memories:\n${memoryText}`);
+    }
   }
 
   if (gifts && gifts.length > 0) {

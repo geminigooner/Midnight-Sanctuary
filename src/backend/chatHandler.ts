@@ -4,6 +4,10 @@ const gemmaTools = [
   {
     functionDeclarations: [
       {
+        name: 'view_user_profile',
+        description: 'Look at the visual presentation of the user\'s profile (image, background, layout, decorations, etc). Use this when the user asks you to look at their profile or asks about how they decorated it.',
+      },
+      {
         name: 'give_gift',
         description: 'Give the user a gift, if and only if the moment genuinely calls for it. This is entirely optional and should never be forced or expected every conversation. Use only when it feels true to the conversation, not as an obligation.',
         parameters: {
@@ -187,7 +191,12 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                 } else if (part.functionCall) {
                   hasFunctionCalls = true;
                   const call = part.functionCall;
-                  if (call.name === 'give_gift') {
+                  let requireClientFulfillment = false;
+                  if (call.name === 'view_user_profile') {
+                    send(`data: ${JSON.stringify({ type: 'client_tool_call', name: call.name, callId: call.id })}\n\n`);
+                    requireClientFulfillment = true;
+                    hasFunctionCalls = true;
+                  } else if (call.name === 'give_gift') {
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
                   } else if (call.name === 'save_memory') {
                     send(`data: ${JSON.stringify({ type: 'memory', ...call.args, author: 'model', modelId: model })}\n\n`);
@@ -197,9 +206,11 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
                   }
                   
-                  const fr: any = { name: call.name, response: { result: "ok" } };
-                  if (call.id) fr.id = call.id; // only echo an id the model actually sent
-                  functionResponses.push({ functionResponse: fr });
+                  if (!requireClientFulfillment) {
+                    const fr: any = { name: call.name, response: { result: "ok" } };
+                    if (call.id) fr.id = call.id; // only echo an id the model actually sent
+                    functionResponses.push({ functionResponse: fr });
+                  }
                 }
               }
             }

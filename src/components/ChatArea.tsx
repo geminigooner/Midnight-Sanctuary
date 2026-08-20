@@ -1,3 +1,4 @@
+import html2canvas from "html2canvas";
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
@@ -484,15 +485,15 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSend = async (textToAnalyse: string = input, replaceIndex?: number) => {
-    const requestConversationId = conversation?.id;
+  const handleSend = async (textToAnalyse: string = input, replaceIndex?: number, isResumeToolCall?: boolean) => {
+    const requestConversationId = conversationRef.current?.id;
 
     if (!requestConversationId) {
       console.warn("handleSend blocked: No active conversation.");
       return;
     }
 
-    if (isGenerating || isGeneratingRef.current) {
+    if ((isGenerating || isGeneratingRef.current) && !isResumeToolCall) {
       console.warn("handleSend blocked: Generation already in progress.");
       triggerHaptic('heavy');
       setInput(prev => prev); // trigger re-render
@@ -510,7 +511,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       return;
     }
 
-    if (!textToAnalyse.trim() && attachments.length === 0) {
+    if (!textToAnalyse.trim() && attachments.length === 0 && !isResumeToolCall) {
       return;
     }
 
@@ -534,7 +535,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       };
     });
 
-    let currentMessages = [...(conversation?.messages || [])];
+    let currentMessages = [...(conversationRef.current?.messages || [])];
     
     if (replaceIndex !== undefined && replaceIndex > 0) {
       currentMessages = currentMessages.slice(0, replaceIndex);
@@ -692,6 +693,61 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
           } else if (chunk.type === 'eventLog') {
             hasToolCalls = true;
             onAddEventLog(chunk.description);
+          } else if (chunk.type === 'client_tool_call') {
+            hasToolCalls = true;
+            const element = document.getElementById('capture-profile-view');
+            if (element) {
+               try {
+                 const canvas = await html2canvas(element, { backgroundColor: null });
+                 const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                 const base64Data = dataUrl.split(',')[1];
+                 
+                 // Append the tool response message
+                 const functionResponseMsg = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    role: 'user',
+                    parts: [
+                       {
+                          functionResponse: {
+                             name: chunk.name,
+                             id: chunk.callId,
+                             response: {
+                                result: "The profile image is attached to this message."
+                             }
+                          }
+                       },
+                       {
+                          inlineData: { mimeType: 'image/jpeg', data: base64Data }
+                       }
+                    ],
+                    timestamp: Date.now()
+                 };
+                 onAddMessage(requestConversationId, functionResponseMsg as any);
+                 
+                 // Automatically resume the chat loop
+                 setTimeout(() => handleSend('', undefined, true), 100);
+               } catch (e) {
+                 console.error("Failed to capture profile view", e);
+               }
+            } else {
+               // Profile view not found, send graceful failure
+                 const functionResponseMsg = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    role: 'user',
+                    parts: [{
+                       functionResponse: {
+                          name: chunk.name,
+                          id: chunk.callId,
+                          response: {
+                             result: "The visual profile view cannot be captured right now or the selected model does not support vision."
+                          }
+                       }
+                    }],
+                    timestamp: Date.now()
+                 };
+                 onAddMessage(requestConversationId, functionResponseMsg as any);
+                 setTimeout(() => handleSend('', undefined, true), 100);
+            }
           } else if (chunk.type === 'model_parts') {
             currentModelApiParts = chunk.parts;
             updateModelMessage(
@@ -1074,6 +1130,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
             onFavorite={(content) => {
               onAddEventLog('User favorited a message.');
+              onAddMemory(content, 'user_favorited', 'user', undefined, 'User Saved Memory');
             }}
             onImageClick={(url) => setSelectedImage(url)}
             onDelete={() => onRemoveMessage(conversation.id, msg.id)}

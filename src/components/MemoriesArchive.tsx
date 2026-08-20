@@ -8,10 +8,12 @@ interface MemoriesArchiveProps {
   memories: Memory[];
   onClose: () => void;
   onRemoveMemory?: (id: string) => void;
+  currentModel?: string;
 }
 
-export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesArchiveProps) {
+export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentModel }: MemoriesArchiveProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'model' | 'user'>('model');
   
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -56,15 +58,48 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesA
           </button>
         </div>
 
+        <div className="flex border-b border-glass-border">
+          <button
+            onClick={() => setActiveTab('model')}
+            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-copper border-b-2 border-copper bg-white/5' : 'text-mauve hover:text-pearlescent'}`}
+          >
+            Model Memories
+          </button>
+          <button
+            onClick={() => setActiveTab('user')}
+            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'user' ? 'text-copper border-b-2 border-copper bg-white/5' : 'text-mauve hover:text-pearlescent'}`}
+          >
+            User Saved Memories
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-          {(!memories || memories.length === 0) ? (
-            <div className="h-full flex flex-col items-center justify-center text-mauve opacity-50 space-y-4 min-h-[40vh]">
-              <Bookmark size={48} className="opacity-20" />
-              <p className="tracking-widest uppercase text-sm">No memories recorded yet.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {memories.map(memory => (
+          {(() => {
+            const displayMemories = memories.filter(m => {
+              const isModelAuthor = m.author === 'model' || m.origin === 'gemma_initiated';
+              if (activeTab === 'user') return !isModelAuthor;
+              
+              // If model tab, filter by current active model.
+              // If the memory has no modelId (older memory), let it show up or we can strictly filter.
+              // We'll strictly filter if modelId exists, otherwise show it as legacy.
+              if (m.modelId) {
+                return m.modelId === currentModel;
+              }
+              return true; // Legacy memories without modelId
+            });
+
+            if (displayMemories.length === 0) {
+              return (
+                <div className="h-full flex flex-col items-center justify-center text-mauve opacity-50 space-y-4 min-h-[40vh]">
+                  <Bookmark size={48} className="opacity-20" />
+                  <p className="tracking-widest uppercase text-sm">No memories in this tab.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayMemories.map(memory => (
                 <div key={memory.id} className="bg-glass border border-glass-border rounded-xl p-5 hover:border-copper/40 transition-colors flex flex-col gap-3 group relative">
                   
                   {onRemoveMemory && (
@@ -88,6 +123,11 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesA
                   )}
 
                   <div className="flex-1 text-pearlescent prose prose-invert prose-p:leading-relaxed prose-sm max-w-none pt-2">
+                    {memory.caption && (
+                      <div className="text-xs text-copper/90 font-medium mb-2 opacity-80 uppercase tracking-wide">
+                        {memory.caption}
+                      </div>
+                    )}
                     {memory.content}
                   </div>
                   
@@ -105,7 +145,8 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesA
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
         </div>
       </motion.div>
     </motion.div>
