@@ -2,7 +2,7 @@ import html2canvas from "html2canvas";
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
-import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark, Smile } from 'lucide-react';
+import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark, Smile, Scan } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
 import { Presence, PresenceState } from './Presence';
@@ -347,6 +347,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation, settings, onUpdateSettings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, onOpenMemories, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
+  const [isScanningProfile, setIsScanningProfile] = useState(false);
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -485,7 +486,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSend = async (textToAnalyse: string = input, replaceIndex?: number, isResumeToolCall?: boolean) => {
+  const handleSend = async (textToAnalyse: string = input, replaceIndex?: number, additionalMessages?: Message[]) => {
     const requestConversationId = conversationRef.current?.id;
 
     if (!requestConversationId) {
@@ -493,7 +494,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       return;
     }
 
-    if ((isGenerating || isGeneratingRef.current) && !isResumeToolCall) {
+    if ((isGenerating || isGeneratingRef.current) && (!additionalMessages || additionalMessages.length === 0)) {
       console.warn("handleSend blocked: Generation already in progress.");
       triggerHaptic('heavy');
       setInput(prev => prev); // trigger re-render
@@ -511,7 +512,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       return;
     }
 
-    if (!textToAnalyse.trim() && attachments.length === 0 && !isResumeToolCall) {
+    if (!textToAnalyse.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) {
       return;
     }
 
@@ -548,9 +549,14 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     if (textToAnalyse.trim()) parts.push({ text: textToAnalyse });
     attachments.forEach(a => parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } }));
     
-    const userMsg: Message = { id: uuidv4(), role: 'user', parts, timestamp: now };
-    currentMessages.push(userMsg);
-    onAddMessage(requestConversationId, userMsg);
+    if (!additionalMessages || additionalMessages.length === 0) {
+      const userMsg: Message = { id: uuidv4(), role: 'user', parts, timestamp: now };
+      currentMessages.push(userMsg);
+      onAddMessage(requestConversationId, userMsg);
+    } else {
+      currentMessages.push(...additionalMessages);
+      additionalMessages.forEach(msg => onAddMessage(requestConversationId, msg));
+    }
     if (currentMessages.length === 1) {
       onUpdate(requestConversationId, { title: textToAnalyse.slice(0, 30) });
     }
@@ -626,6 +632,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
 
       let rawTextAccumulator = '';
       let apiThoughtAccumulator = '';
+      let hasClientFulfillmentRef = false;
       let lastUpdateTime = 0;
       let pendingUpdate = false;
 
@@ -695,6 +702,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             onAddEventLog(chunk.description);
           } else if (chunk.type === 'client_tool_call') {
             hasToolCalls = true;
+            hasClientFulfillmentRef = true;
             const element = document.getElementById('capture-profile-view');
             if (element) {
                try {
@@ -722,10 +730,11 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
                     ],
                     timestamp: Date.now()
                  };
-                 onAddMessage(requestConversationId, functionResponseMsg as any);
-                 
-                 // Automatically resume the chat loop
-                 setTimeout(() => handleSend('', undefined, true), 100);
+                 setIsScanningProfile(true);
+                 setTimeout(() => {
+                   setIsScanningProfile(false);
+                   handleSend('', undefined, [functionResponseMsg as any]);
+                 }, 1500);
                } catch (e) {
                  console.error("Failed to capture profile view", e);
                }
@@ -745,8 +754,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
                     }],
                     timestamp: Date.now()
                  };
-                 onAddMessage(requestConversationId, functionResponseMsg as any);
-                 setTimeout(() => handleSend('', undefined, true), 100);
+                 handleSend('', undefined, [functionResponseMsg as any]);
             }
           } else if (chunk.type === 'model_parts') {
             currentModelApiParts = chunk.parts;
@@ -766,12 +774,14 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
               finishReason: currentModelFinishReason,
               backend: currentModelBackend,
             });
-            onAddMessage(requestConversationId, {
-              id: uuidv4(),
-              role: 'user',
-              parts: msgs[1].parts,
-              timestamp: Date.now(),
-            });
+            if (msgs.length > 1 && msgs[1]) {
+              onAddMessage(requestConversationId, {
+                id: uuidv4(),
+                role: 'user',
+                parts: msgs[1].parts,
+                timestamp: Date.now(),
+              });
+            }
             modelMsgId = uuidv4();
             currentModelText = '';
             currentModelThought = '';
@@ -779,15 +789,17 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             rawTextAccumulator = '';
             apiThoughtAccumulator = '';
             isFirstChunk = true;
-            onAddMessage(requestConversationId, {
-              id: modelMsgId,
-              role: 'model',
-              parts: [{ text: '' }],
-              publicText: '',
-              thoughtText: '',
-              thoughtStatus: settings.model.includes('gemma') ? 'thinking' : 'complete',
-              timestamp: Date.now(),
-            });
+            if (!hasClientFulfillmentRef) {
+               onAddMessage(requestConversationId, {
+                 id: modelMsgId,
+                 role: 'model',
+                 parts: [{ text: '' }],
+                 publicText: '',
+                 thoughtText: '',
+                 thoughtStatus: settings.model.includes('gemma') ? 'thinking' : 'complete',
+                 timestamp: Date.now(),
+               });
+            }
           } else if (chunk.type === 'finish_reason') {
             currentModelFinishReason = chunk.reason;
             updateModelMessage(currentModelText, currentModelThought, 'complete');
@@ -929,6 +941,28 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
   return (
     <div className="flex-1 flex flex-col h-full bg-obsidian relative">
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-plum/10 via-obsidian/0 to-obsidian/0"></div>
+      <AnimatePresence>
+        {isScanningProfile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 pointer-events-none z-[100] overflow-hidden"
+          >
+             <div className="absolute inset-0 bg-copper/5 mix-blend-screen" />
+             <motion.div 
+               initial={{ top: '-10%' }}
+               animate={{ top: '110%' }}
+               transition={{ duration: 1.5, ease: "linear" }}
+               className="absolute left-0 right-0 h-1 bg-copper shadow-[0_0_15px_rgba(196,118,83,0.8)]"
+             />
+             <div className="absolute top-4 right-4 bg-ink/90 backdrop-blur-md border border-copper/30 px-3 py-1.5 rounded-full flex items-center gap-2 shadow-xl">
+                <Scan size={14} className="text-copper animate-pulse" />
+                <span className="text-xs text-copper tracking-widest uppercase">Model is inspecting your profile...</span>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-glass-border bg-obsidian/80 backdrop-blur-md relative z-30 shrink-0 min-w-0">

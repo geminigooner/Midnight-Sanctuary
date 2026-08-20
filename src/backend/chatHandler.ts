@@ -161,6 +161,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let modelParts: any[] = [];
           let functionResponses: any[] = [];
           let hasFunctionCalls = false;
+          let hasClientFulfillmentSent = false;
           let hasText = false;
           let blocked = false;
 
@@ -192,9 +193,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                   hasFunctionCalls = true;
                   const call = part.functionCall;
                   let requireClientFulfillment = false;
-                  if (call.name === 'view_user_profile') {
+                  if (call.name === 'view_user_profile' && !hasClientFulfillmentSent) {
                     send(`data: ${JSON.stringify({ type: 'client_tool_call', name: call.name, callId: call.id })}\n\n`);
                     requireClientFulfillment = true;
+                    hasClientFulfillmentSent = true;
                     hasFunctionCalls = true;
                   } else if (call.name === 'give_gift') {
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
