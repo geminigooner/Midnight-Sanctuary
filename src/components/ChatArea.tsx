@@ -159,6 +159,12 @@ const MessageBubble = React.memo(function MessageBubble({
                 [cut off: {msg.finishReason}]
               </div>
             )}
+            
+            {msg.backend === 'cloudflare' && (
+              <div className="text-xs text-mauve/50 mt-2 italic">
+                via Cloudflare
+              </div>
+            )}
 
             {msg.parts?.map((part, i) => part.inlineData ? (
                   <img 
@@ -489,6 +495,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
     let currentModelThought = '';
     let currentModelApiParts: any[] = [];
     let currentModelFinishReason: string | undefined;
+    let currentModelBackend: string | undefined;
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -526,6 +533,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
         thoughtText: thought,
         thoughtStatus: status,
         finishReason: currentModelFinishReason,
+        backend: currentModelBackend,
       });
     };
 
@@ -628,6 +636,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
               publicText: currentModelText,
               thoughtStatus: 'complete',
               finishReason: currentModelFinishReason,
+              backend: currentModelBackend,
             });
             onAddMessage(requestConversationId, {
               id: uuidv4(),
@@ -653,6 +662,9 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
             });
           } else if (chunk.type === 'finish_reason') {
             currentModelFinishReason = chunk.reason;
+            updateModelMessage(currentModelText, currentModelThought, 'complete');
+          } else if (chunk.type === 'backend') {
+            currentModelBackend = chunk.name;
             updateModelMessage(currentModelText, currentModelThought, 'complete');
           }
         }

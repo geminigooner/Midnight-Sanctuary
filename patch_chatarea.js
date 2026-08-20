@@ -1,73 +1,73 @@
 import fs from 'fs';
 let code = fs.readFileSync('src/components/ChatArea.tsx', 'utf8');
 
-// Replace the stream chunk processing:
-const oldLoop = `      for await (const chunk of generator) {
-        resetIdleTimeout();
-        if (typeof chunk === 'string') {
-          // Fallback if somehow a string leaks through
-          if (isFirstChunk) {
-            setPresence('responding');
-            isFirstChunk = false;
-          }
-          currentModelText += chunk;
-          updateModelMessage(currentModelText, currentModelThought, 'complete');
-        } else if (chunk && typeof chunk === 'object') {
-          if (chunk.type === 'thought') {
-            currentModelThought += chunk.text;
-            updateModelMessage(currentModelText, currentModelThought, 'thinking');
-          } else if (chunk.type === 'text') {
-            if (isFirstChunk) {
-              setPresence('responding');
-              isFirstChunk = false;
-            }
-            currentModelText += chunk.text;
+// Add currentModelBackend initialization
+const searchInit = `    let currentModelApiParts: any[] = [];
+    let currentModelFinishReason: string | undefined;
+    let isFirstChunk = true;`;
+const replaceInit = `    let currentModelApiParts: any[] = [];
+    let currentModelFinishReason: string | undefined;
+    let currentModelBackend: string | undefined;
+    let isFirstChunk = true;`;
+code = code.replace(searchInit, replaceInit);
+
+// Add backend to updateModelMessage inside handleSend
+const searchUpdateMessage = `        thoughtStatus: status,
+        finishReason: currentModelFinishReason,
+      });
+    };`;
+const replaceUpdateMessage = `        thoughtStatus: status,
+        finishReason: currentModelFinishReason,
+        backend: currentModelBackend,
+      });
+    };`;
+code = code.replace(searchUpdateMessage, replaceUpdateMessage);
+
+// Also add to the history_append branch
+const searchHistoryUpdate = `              thoughtStatus: 'complete',
+              finishReason: currentModelFinishReason,
+            });`;
+const replaceHistoryUpdate = `              thoughtStatus: 'complete',
+              finishReason: currentModelFinishReason,
+              backend: currentModelBackend,
+            });`;
+code = code.replace(searchHistoryUpdate, replaceHistoryUpdate);
+
+// Add parsing for chunk.type === 'backend'
+const searchChunkParsing = `          } else if (chunk.type === 'finish_reason') {
+            currentModelFinishReason = chunk.reason;
             updateModelMessage(currentModelText, currentModelThought, 'complete');
-          } else if (chunk.type === 'gift') {`;
+          }
+        }
+      }`;
+const replaceChunkParsing = `          } else if (chunk.type === 'finish_reason') {
+            currentModelFinishReason = chunk.reason;
+            updateModelMessage(currentModelText, currentModelThought, 'complete');
+          } else if (chunk.type === 'backend') {
+            currentModelBackend = chunk.name;
+            updateModelMessage(currentModelText, currentModelThought, 'complete');
+          }
+        }
+      }`;
+code = code.replace(searchChunkParsing, replaceChunkParsing);
 
-const newLoop = `      let rawTextAccumulator = '';
-      let apiThoughtAccumulator = '';
+// Add rendering
+const searchRender = `            {msg.finishReason && (
+              <div className="text-xs text-mauve/50 mt-2 italic">
+                [cut off: {msg.finishReason}]
+              </div>
+            )}`;
+const replaceRender = `            {msg.finishReason && (
+              <div className="text-xs text-mauve/50 mt-2 italic">
+                [cut off: {msg.finishReason}]
+              </div>
+            )}
+            
+            {msg.backend === 'cloudflare' && (
+              <div className="text-xs text-mauve/50 mt-2 italic">
+                via Cloudflare
+              </div>
+            )}`;
+code = code.replace(searchRender, replaceRender);
 
-      const updateWithParsedThinking = (textChunk) => {
-         if (textChunk) rawTextAccumulator += textChunk;
-         
-         let parsedThought = apiThoughtAccumulator;
-         let parsedText = rawTextAccumulator;
-         let status = 'complete';
-
-         const thinkStartIndex = rawTextAccumulator.indexOf('<think>');
-         if (thinkStartIndex !== -1) {
-           const thinkEndIndex = rawTextAccumulator.indexOf('</think>', thinkStartIndex);
-           if (thinkEndIndex !== -1) {
-             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\\n' : '') + rawTextAccumulator.substring(thinkStartIndex + 7, thinkEndIndex);
-             parsedText = rawTextAccumulator.substring(0, thinkStartIndex) + rawTextAccumulator.substring(thinkEndIndex + 8);
-             status = 'complete';
-           } else {
-             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\\n' : '') + rawTextAccumulator.substring(thinkStartIndex + 7);
-             parsedText = rawTextAccumulator.substring(0, thinkStartIndex);
-             status = 'thinking';
-           }
-         }
-         
-         currentModelText = parsedText.trimStart();
-         currentModelThought = parsedThought.trimStart();
-         updateModelMessage(currentModelText, currentModelThought, status);
-      };
-
-      for await (const chunk of generator) {
-        resetIdleTimeout();
-        if (typeof chunk === 'string') {
-          if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-          updateWithParsedThinking(chunk);
-        } else if (chunk && typeof chunk === 'object') {
-          if (chunk.type === 'thought') {
-            apiThoughtAccumulator += chunk.text;
-            updateWithParsedThinking('');
-            updateModelMessage(currentModelText, currentModelThought, 'thinking');
-          } else if (chunk.type === 'text') {
-            if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-            updateWithParsedThinking(chunk.text);
-          } else if (chunk.type === 'gift') {`;
-
-code = code.replace(oldLoop, newLoop);
 fs.writeFileSync('src/components/ChatArea.tsx', code);

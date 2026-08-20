@@ -16,6 +16,7 @@ export interface Message {
   thoughtText?: string;
   thoughtStatus?: 'thinking' | 'complete' | 'error';
   finishReason?: string;
+  backend?: string;
 }
 
 export function getPublicMessageText(msg: Message): string {

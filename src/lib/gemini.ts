@@ -31,7 +31,8 @@ export type ChatStreamEvent =
   | { type: 'eventLog'; description: string }
   | { type: 'history_append'; messages: any[] }
   | { type: 'model_parts'; parts: any[] }
-  | { type: 'finish_reason'; reason: string };
+  | { type: 'finish_reason'; reason: string }
+  | { type: 'backend'; name: string };
 
 import { UserProfile } from './types';
 
