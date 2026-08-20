@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, getPublicMessageText, getThoughtMessageText } from '../lib/types';
+import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
-import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical } from 'lucide-react';
+import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
 import { Presence, PresenceState } from './Presence';
@@ -189,7 +189,7 @@ const MessageBubble = React.memo(function MessageBubble({
 }, (prev, next) => prev.msg === next.msg && prev.isLast === next.isLast && prev.isGenerating === next.isGenerating);
 
 
-const compressImage = (file: File): Promise<{ mimeType: string, data: string, previewUrl: string }> => {
+export const compressImage = (file: File): Promise<{ mimeType: string, data: string, previewUrl: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -242,6 +242,7 @@ interface ChatAreaProps {
   conversation: Conversation | undefined;
   settings: AppSettings;
   gifts: GiftType[];
+  profile: UserProfile | null;
   jewelMetrics: JewelMetrics;
   onUpdate: (id: string, updates: Partial<Conversation>) => void;
   onAddMessage: (conversationId: string, message: Message) => void;
@@ -252,13 +253,14 @@ interface ChatAreaProps {
   onOpenSettings: () => void;
   onOpenJewel: () => void;
   onOpenGifts: () => void;
+  onOpenProfile: () => void;
   availableModels: ModelInfo[];
   onAddGift: (gift: any) => void;
   onAddMemory: (content: string, origin?: string) => void;
   onAddEventLog: (description: string) => void;
 }
 
-export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, availableModels, onAddGift, onAddMemory, onAddEventLog }: ChatAreaProps) {
+export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -520,7 +522,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
 
     try {
       let hasToolCalls = false;
-      const generator = streamChat(currentMessages, settings, gifts, abortControllerRef.current.signal);
+      const generator = streamChat(currentMessages, settings, gifts, profile, abortControllerRef.current.signal);
       
       onAddMessage(requestConversationId, { 
         id: modelMsgId, 
@@ -595,6 +597,9 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
             onAddMemory(chunk.content, 'gemma_initiated');
+          } else if (chunk.type === 'user_note') {
+            hasToolCalls = true;
+            onAddGemmaNote(chunk.note);
           } else if (chunk.type === 'eventLog') {
             hasToolCalls = true;
             onAddEventLog(chunk.description);
@@ -826,6 +831,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
           <button onClick={exportMarkdown} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Export"><Download size={18} /></button>
+          <button onClick={onOpenProfile} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Profile"><User size={18} /></button>
           <button onClick={onOpenSettings} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Settings"><SettingsIcon size={18} /></button>
         </div>
 
@@ -854,6 +860,9 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); exportMarkdown(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
                   <Download size={18} /> <span className="flex-1">Export</span>
+                </button>
+                <button onClick={() => { setShowMobileMenu(false); onOpenProfile(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
+                  <User size={18} /> <span className="flex-1">Profile</span>
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); onOpenSettings(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
                   <SettingsIcon size={18} /> <span className="flex-1">Settings</span>

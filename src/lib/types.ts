@@ -119,3 +119,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoriesEnabled: true,
   eventLog: [],
 };
+
+export interface UserProfile {
+  name: string;
+  pronouns?: string;
+  location?: string;
+  occupation?: string;
+  about?: string;
+  favorites?: string;
+  photo?: { mimeType: string; data: string };
+  gemmaNotes?: { text: string; timestamp: number }[];
+}

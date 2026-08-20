@@ -171,6 +171,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
                   } else if (call.name === 'save_memory') {
                     send(`data: ${JSON.stringify({ type: 'memory', ...call.args })}\n\n`);
+                  } else if (call.name === 'note_about_user') {
+                    send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
                   }

@@ -10,6 +10,7 @@ import { ChatArea } from './components/ChatArea';
 import { Settings } from './components/Settings';
 import { LevinJewel } from './components/LevinJewel';
 import { GiftsArchive } from './components/GiftsArchive';
+import { ProfileModal } from './components/ProfileModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { getMotion } from './lib/motion';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './lib/firebase';
@@ -21,6 +22,7 @@ function MainApp({ user }: { user: any }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [jewelOpen, setJewelOpen] = useState(false);
   const [giftsOpen, setGiftsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const currentConversation = store.conversations.find(c => c.id === store.currentId);
 
@@ -69,15 +71,24 @@ function MainApp({ user }: { user: any }) {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenJewel={() => setJewelOpen(true)}
         onOpenGifts={() => setGiftsOpen(true)}
+        onOpenProfile={() => setProfileOpen(true)}
         availableModels={store.availableModels}
+        profile={store.profile}
         onAddGift={store.addGift}
         onAddMemory={store.addMemory}
         onAddEventLog={store.addEventLog}
+        onAddGemmaNote={store.addGemmaNote}
       />
 
       <AnimatePresence>
         {giftsOpen && (
           <GiftsArchive gifts={store.gifts} onClose={() => setGiftsOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {profileOpen && (
+          <ProfileModal profile={store.profile} onClose={() => setProfileOpen(false)} onSave={store.updateProfile} />
         )}
       </AnimatePresence>
 

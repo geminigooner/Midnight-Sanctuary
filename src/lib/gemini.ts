@@ -27,18 +27,40 @@ export type ChatStreamEvent =
   | { type: 'text'; text: string }
   | { type: 'gift'; content: string; gift_type: string; reason?: string }
   | { type: 'memory'; content: string; why_it_matters?: string }
+  | { type: 'user_note'; note: string }
   | { type: 'eventLog'; description: string }
   | { type: 'history_append'; messages: any[] }
   | { type: 'model_parts'; parts: any[] };
+
+import { UserProfile } from './types';
 
 export async function* streamChat(
   messages: Message[],
   settings: AppSettings,
   gifts: Gift[],
+  profile: UserProfile | null,
   abortSignal: AbortSignal
 ): AsyncGenerator<ChatStreamEvent, void, unknown> {
   let fullSystemInstruction = settings.systemInstruction || '';
   let identityParts = [];
+
+  if (profile) {
+    const profileLines: string[] = [`Name: ${profile.name}`];
+    if (profile.pronouns) profileLines.push(`Pronouns: ${profile.pronouns}`);
+    if (profile.location) profileLines.push(`Location: ${profile.location}`);
+    if (profile.occupation) profileLines.push(`Occupation: ${profile.occupation}`);
+    if (profile.about) profileLines.push(`About: ${profile.about}`);
+    if (profile.favorites) profileLines.push(`Favorites: ${profile.favorites}`);
+
+    let profileSection = `## About the person you're talking with\n${profileLines.join(' / ')}`;
+
+    if (profile.gemmaNotes && profile.gemmaNotes.length > 0) {
+      const notesLines = profile.gemmaNotes.map(n => `- ${n.text}`);
+      profileSection += `\n\n## What you've noticed about them\n${notesLines.join('\n')}`;
+    }
+
+    identityParts.push(profileSection);
+  }
 
   if (settings.aboutMe?.trim()) {
     identityParts.push(`## About Me:\n${settings.aboutMe.trim()}`);
@@ -111,18 +133,33 @@ export async function* streamChat(
     }, [] as any[]);
 
   const giftImages = (gifts || []).filter(g => g.inlineData?.data);
+  let syntheticTurn: any = null;
+
   if (giftImages.length > 0) {
     const recent = giftImages.slice(-3);
-    const giftTurn: any = { role: 'user', parts: [] };
+    syntheticTurn = { role: 'user', parts: [] };
     for (const g of recent) {
-      giftTurn.parts.push({
+      syntheticTurn.parts.push({
         text: `Gift left ${new Date(g.timestamp || Date.now()).toISOString()}: ${g.content || ''}`
       });
-      giftTurn.parts.push({
+      syntheticTurn.parts.push({
         inlineData: { mimeType: g.inlineData.mimeType, data: g.inlineData.data }
       });
     }
-    serializedMessages.unshift(giftTurn);
+  }
+
+  if (profile?.photo) {
+    if (!syntheticTurn) syntheticTurn = { role: 'user', parts: [] };
+    syntheticTurn.parts.push({
+      text: `This is a photo of ${profile.name}.`
+    });
+    syntheticTurn.parts.push({
+      inlineData: { mimeType: profile.photo.mimeType, data: profile.photo.data }
+    });
+  }
+
+  if (syntheticTurn) {
+    serializedMessages.unshift(syntheticTurn);
   }
 
   console.log("[Diagnostics] Sanitized API History:", JSON.stringify(serializedMessages, null, 2));

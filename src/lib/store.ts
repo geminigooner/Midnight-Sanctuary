@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message } from './types';
+import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message, UserProfile } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -12,6 +12,7 @@ export function useAppStore(user: any) {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(true);
   const [gifts, setGifts] = useState<Gift[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
 
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -40,6 +41,7 @@ export function useAppStore(user: any) {
           if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
           if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
           if (data.gifts) setGifts(data.gifts);
+          if (data.userProfile) setProfile(data.userProfile);
           
           setDataLoaded(true);
           isInitialLoad = false;
@@ -101,18 +103,20 @@ export function useAppStore(user: any) {
     const t = setTimeout(() => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
-        setDoc(userDocRef, {
+        const payload: any = {
           conversations,
           settings,
           jewelMetrics,
           gifts
-        }, { merge: true });
+        };
+        if (profile) payload.userProfile = profile;
+        setDoc(userDocRef, payload, { merge: true });
       } catch (e) {
         console.error('Persist failed:', e);
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [conversations, settings, jewelMetrics, gifts, dataLoaded, user]);
+  }, [conversations, settings, jewelMetrics, gifts, profile, dataLoaded, user]);
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
@@ -256,5 +260,8 @@ export function useAppStore(user: any) {
     addGift,
     addMemory,
     addEventLog,
+    profile,
+    updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
+    addGemmaNote: (note: string) => setProfile(prev => prev ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] } : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] }),
   };
 }
