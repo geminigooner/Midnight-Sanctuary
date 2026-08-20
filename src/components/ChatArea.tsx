@@ -274,7 +274,7 @@ interface ChatAreaProps {
   onOpenMemories: () => void;
   availableModels: ModelInfo[];
   onAddGift: (gift: any) => void;
-  onAddMemory: (content: string, origin?: string) => void;
+  onAddMemory: (content: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string) => void;
   onAddEventLog: (description: string) => void;
 }
 
@@ -618,7 +618,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             });
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
-            onAddMemory(chunk.content, 'gemma_initiated');
+            onAddMemory(chunk.content, 'gemma_initiated', (chunk as any).author, (chunk as any).modelId, (chunk as any).caption);
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
             onAddGemmaNote(chunk.note);

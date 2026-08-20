@@ -56,6 +56,9 @@ export interface Memory {
   content: string;
   createdAt: number;
   origin?: string;
+  author?: 'user' | 'model';
+  modelId?: string;
+  caption?: string;
 }
 
 export interface RelationalEvent {

@@ -190,7 +190,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                   if (call.name === 'give_gift') {
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
                   } else if (call.name === 'save_memory') {
-                    send(`data: ${JSON.stringify({ type: 'memory', ...call.args })}\n\n`);
+                    send(`data: ${JSON.stringify({ type: 'memory', ...call.args, author: 'model', modelId: model })}\n\n`);
                   } else if (call.name === 'note_about_user') {
                     send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {

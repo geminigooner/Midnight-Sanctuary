@@ -137,13 +137,16 @@ export function useAppStore(user: any) {
     }));
   }, []);
 
-  const addMemory = useCallback((memoryContent: string, origin?: string) => {
+  const addMemory = useCallback((memoryContent: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string) => {
     setSettings(prev => {
       const newMemory = {
         id: uuidv4(),
         content: memoryContent,
         createdAt: Date.now(),
-        origin
+        origin,
+        author,
+        modelId,
+        caption
       };
       return {
         ...prev,

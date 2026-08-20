@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Memory } from '../lib/types';
 import { X, Bookmark, Trash2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
@@ -11,6 +11,19 @@ interface MemoriesArchiveProps {
 }
 
 export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesArchiveProps) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      setConfirmDeleteId(null);
+    };
+    if (confirmDeleteId) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [confirmDeleteId]);
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
 
@@ -53,28 +66,41 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory }: MemoriesA
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {memories.map(memory => (
                 <div key={memory.id} className="bg-glass border border-glass-border rounded-xl p-5 hover:border-copper/40 transition-colors flex flex-col gap-3 group relative">
-                  <div className="flex-1 text-pearlescent prose prose-invert prose-p:leading-relaxed prose-sm max-w-none">
+                  
+                  {onRemoveMemory && (
+                    <div className="absolute top-2 right-2">
+                      {confirmDeleteId === memory.id ? (
+                        <button
+                          onMouseDown={(e) => { e.stopPropagation(); onRemoveMemory(memory.id); setConfirmDeleteId(null); }}
+                          className="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1 bg-red-400/10 rounded"
+                        >
+                          delete?
+                        </button>
+                      ) : (
+                        <button
+                          onMouseDown={(e) => { e.stopPropagation(); setConfirmDeleteId(memory.id); }}
+                          className="p-1 text-mauve hover:text-red-400 transition-colors rounded-full hover:bg-white/5 opacity-0 group-hover:opacity-100"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex-1 text-pearlescent prose prose-invert prose-p:leading-relaxed prose-sm max-w-none pt-2">
                     {memory.content}
                   </div>
                   
                   <div className="flex justify-between items-end mt-2 pt-3 border-t border-glass-border border-dashed">
                     <div className="flex flex-col gap-1">
                       <span className="text-xs text-copper/80 uppercase tracking-widest font-medium">
-                        {memory.origin === 'gemma_initiated' ? 'From Gemma' : 'Recorded'}
+                        {memory.author === 'model' ? (memory.modelId || 'From Model') : (memory.origin === 'gemma_initiated' ? 'From Gemma' : 'Recorded')}
                       </span>
                       <span className="text-[10px] text-mauve italic">
                         {new Date(memory.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                    {onRemoveMemory && (
-                      <button 
-                        onClick={() => onRemoveMemory(memory.id)}
-                        className="text-mauve hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                        title="Remove Memory"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+
                   </div>
                 </div>
               ))}
