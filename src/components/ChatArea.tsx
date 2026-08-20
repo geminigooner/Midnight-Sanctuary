@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
-import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark } from 'lucide-react';
+import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark, Smile } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
 import { Presence, PresenceState } from './Presence';
@@ -53,7 +53,8 @@ const MessageBubble = React.memo(function MessageBubble({
   onResend,
   onFavorite,
   onImageClick,
-  onDelete
+  onDelete,
+  onReact
 }: { 
   msg: Message;
   isLast: boolean;
@@ -63,11 +64,15 @@ const MessageBubble = React.memo(function MessageBubble({
   onFavorite?: (content: string) => void;
   onImageClick?: (url: string) => void;
   onDelete?: () => void;
+  onReact?: (reaction: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [settled, setSettled] = useState(false);
   const [favorited, setFavorited] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  
+  const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
   
   useEffect(() => {
     if (isLast && !isGenerating) {
@@ -115,9 +120,20 @@ const MessageBubble = React.memo(function MessageBubble({
   const reducedMotion = useReducedMotion();
   const bubbleMotion = getMotion('standard', reducedMotion);
 
+  const messageVariants = {
+    hidden: { opacity: 0, y: 15, scale: 0.95 },
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      scale: 1, 
+      transition: { type: 'spring' as const, stiffness: 400, damping: 25, mass: 0.8 } 
+    }
+  };
+
   return (
-    <div 
-      className={`flex ${isUser ? 'justify-end msg-enter-user' : 'justify-start msg-enter-model'} group w-full`}
+    <motion.div 
+      variants={reducedMotion ? {} : messageVariants}
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} group w-full`}
     >
       <div 
         {...bindLongPress}
@@ -188,6 +204,41 @@ const MessageBubble = React.memo(function MessageBubble({
                 <button onClick={() => { onDelete?.(); triggerHaptic('heavy'); }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-red-400 text-mauve transition-colors" title="Delete"><X size={14} /></button>
               </>
             )}
+            <div className="relative">
+              {!isUser && (
+                <button 
+                  onClick={() => setShowReactions(!showReactions)} 
+                  className="p-1.5 bg-glass rounded-lg hover:bg-white/10 text-mauve hover:text-champagne transition-colors" 
+                  title="React"
+                >
+                  <Smile size={14} />
+                </button>
+              )}
+              <AnimatePresence>
+                {showReactions && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                    className="absolute bottom-full left-0 mb-2 flex items-center gap-1 p-2 bg-ink/90 backdrop-blur-xl border border-glass-border rounded-xl shadow-xl z-50"
+                  >
+                    {REACTION_EMOJIS.map(emoji => (
+                      <button 
+                        key={emoji}
+                        onClick={() => {
+                          onReact?.(emoji);
+                          setShowReactions(false);
+                          triggerHaptic('medium');
+                        }}
+                        className="text-xl hover:scale-125 transition-transform p-1"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             <button onClick={() => { 
                 if (!favorited) {
                   onFavorite?.(publicText);
@@ -199,8 +250,24 @@ const MessageBubble = React.memo(function MessageBubble({
             </button>
           </div>
         )}
+        
+        <AnimatePresence>
+          {msg.reaction && (
+            <motion.div 
+              key={msg.reaction}
+              initial={{ opacity: 0, scale: 0, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0 }}
+              whileHover={{ scale: 1.2 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25, mass: 0.8 }}
+              className={`absolute ${isUser ? '-left-3' : '-right-3'} -bottom-3 bg-ink border border-glass-border rounded-full p-1.5 shadow-md text-sm z-10 cursor-pointer`}
+            >
+              {msg.reaction}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }, (prev, next) => prev.msg === next.msg && prev.isLast === next.isLast && prev.isGenerating === next.isGenerating);
 
@@ -986,9 +1053,20 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
           </div>
         )}
         
-        {visibleMessages.map((msg, i) => (
-          <MessageBubble 
-            key={msg.id}
+        <motion.div 
+          className="flex flex-col gap-6 w-full"
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: {},
+            visible: { 
+              transition: { staggerChildren: 0.05 }
+            }
+          }}
+        >
+          {visibleMessages.map((msg, i) => (
+            <MessageBubble 
+              key={msg.id}
             msg={msg}
             isLast={i === visibleMessages.length - 1}
             isGenerating={isGenerating}
@@ -999,9 +1077,11 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             }}
             onImageClick={(url) => setSelectedImage(url)}
             onDelete={() => onRemoveMessage(conversation.id, msg.id)}
-          />
-        ))}
-        <div ref={bottomRef} />
+            onReact={(reaction) => onUpdateMessage(conversation.id, msg.id, { reaction })}
+            />
+          ))}
+          <div ref={bottomRef} />
+        </motion.div>
       </div>
 
       {/* Composer */}
