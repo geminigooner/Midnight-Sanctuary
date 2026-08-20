@@ -52,7 +52,8 @@ const MessageBubble = React.memo(function MessageBubble({
   onCopy, 
   onResend,
   onFavorite,
-  onImageClick
+  onImageClick,
+  onDelete
 }: { 
   msg: Message;
   isLast: boolean;
@@ -61,6 +62,7 @@ const MessageBubble = React.memo(function MessageBubble({
   onResend?: (content: string) => void;
   onFavorite?: (content: string) => void;
   onImageClick?: (url: string) => void;
+  onDelete?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -165,10 +167,13 @@ const MessageBubble = React.memo(function MessageBubble({
         )}
         
         {!editing && (
-          <div className={`mt-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
+          <div className={`mt-2 flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity ${isUser ? 'justify-end' : 'justify-start'}`}>
             <button onClick={() => { onCopy(publicText); triggerHaptic('light'); }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-champagne text-mauve transition-colors" title="Copy"><Copy size={14} /></button>
             {isUser && (
-              <button onClick={() => { setEditing(true); setEditContent(publicText); triggerHaptic('light'); }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-champagne text-mauve transition-colors" title="Edit"><Edit3 size={14} /></button>
+              <>
+                <button onClick={() => { setEditing(true); setEditContent(publicText); triggerHaptic('light'); }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-champagne text-mauve transition-colors" title="Edit"><Edit3 size={14} /></button>
+                <button onClick={() => { onDelete?.(); triggerHaptic('heavy'); }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-red-400 text-mauve transition-colors" title="Delete"><X size={14} /></button>
+              </>
             )}
             <button onClick={() => { 
                 onFavorite?.(publicText);
@@ -267,8 +272,14 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
     }
   }, [input, isGenerating, presence]);
 
+  const scrollTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+    if (scrollTimeoutRef.current) {
+      window.cancelAnimationFrame(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = window.requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: 'end' });
+    });
   }, [conversation?.messages, isGenerating]);
 
   if (!conversation) {
@@ -475,27 +486,58 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
         timestamp: Date.now() 
       });
 
+      let rawTextAccumulator = '';
+      let apiThoughtAccumulator = '';
+      let lastUpdateTime = 0;
+      let pendingUpdate = false;
+
+      const updateWithParsedThinking = (textChunk, force = false) => {
+         if (textChunk) rawTextAccumulator += textChunk;
+         
+         let parsedThought = apiThoughtAccumulator;
+         let parsedText = rawTextAccumulator;
+         let status = 'complete';
+
+         const thinkStartIndex = rawTextAccumulator.indexOf('<think>');
+         if (thinkStartIndex !== -1) {
+           const thinkEndIndex = rawTextAccumulator.indexOf('</think>', thinkStartIndex);
+           if (thinkEndIndex !== -1) {
+             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\n' : '') + rawTextAccumulator.substring(thinkStartIndex + 7, thinkEndIndex);
+             parsedText = rawTextAccumulator.substring(0, thinkStartIndex) + rawTextAccumulator.substring(thinkEndIndex + 8);
+             status = 'complete';
+           } else {
+             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\n' : '') + rawTextAccumulator.substring(thinkStartIndex + 7);
+             parsedText = rawTextAccumulator.substring(0, thinkStartIndex);
+             status = 'thinking';
+           }
+         }
+         
+         currentModelText = parsedText.trimStart();
+         currentModelThought = parsedThought.trimStart();
+         
+         const now = Date.now();
+         if (force || now - lastUpdateTime > 50) {
+           updateModelMessage(currentModelText, currentModelThought, status);
+           lastUpdateTime = now;
+           pendingUpdate = false;
+         } else {
+           pendingUpdate = true;
+         }
+      };
+
       for await (const chunk of generator) {
         resetIdleTimeout();
         if (typeof chunk === 'string') {
-          // Fallback if somehow a string leaks through
-          if (isFirstChunk) {
-            setPresence('responding');
-            isFirstChunk = false;
-          }
-          currentModelText += chunk;
-          updateModelMessage(currentModelText, currentModelThought, 'complete');
+          if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
+          updateWithParsedThinking(chunk);
         } else if (chunk && typeof chunk === 'object') {
           if (chunk.type === 'thought') {
-            currentModelThought += chunk.text;
+            apiThoughtAccumulator += chunk.text;
+            updateWithParsedThinking('', true);
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'text') {
-            if (isFirstChunk) {
-              setPresence('responding');
-              isFirstChunk = false;
-            }
-            currentModelText += chunk.text;
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
+            if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
+            updateWithParsedThinking(chunk.text);
           } else if (chunk.type === 'gift') {
             hasToolCalls = true;
             onAddGift({
@@ -536,6 +578,8 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
             currentModelText = '';
             currentModelThought = '';
             currentModelApiParts = [];
+            rawTextAccumulator = '';
+            apiThoughtAccumulator = '';
             isFirstChunk = true;
             onAddMessage(requestConversationId, {
               id: modelMsgId,
@@ -555,7 +599,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
         // Surface the reasoning rather than showing nothing.
         updateModelMessage(currentModelThought, '', 'complete');
       } else if (!currentModelText && !currentModelThought) {
-         updateModelMessage('[No content in final round — see server logs]', '', 'error');
+         updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error');
          setTemporaryPresence('error', 'resting', 5000);
       } else {
         updateModelMessage(currentModelText, currentModelThought, 'complete');
@@ -828,6 +872,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
               onAddEventLog('User favorited a message.');
             }}
             onImageClick={(url) => setSelectedImage(url)}
+            onDelete={() => onRemoveMessage(conversation.id, msg.id)}
           />
         ))}
         <div ref={bottomRef} />

@@ -108,6 +108,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               thinkingLevel: ThinkingLevel.HIGH,
               includeThoughts: true
             };
+            config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 4096, 16384);
           }
 
           console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
@@ -144,6 +145,17 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let hasText = false;
 
           for await (const chunk of responseStream) {
+            const fr = chunk.candidates?.[0]?.finishReason;
+            if (fr) console.log("FINISH REASON:", fr, JSON.stringify(chunk.candidates?.[0]?.safetyRatings ?? []));
+            if (chunk.candidates && chunk.candidates.length > 0) {
+              if (chunk.candidates[0].finishReason === 'SAFETY') {
+                 send('data: ' + JSON.stringify({ error: 'Safety block triggered: The model refused to generate a response due to safety filters.' }) + '\n\n');
+                 break;
+              } else if (chunk.candidates[0].finishReason === 'OTHER') {
+                 send('data: ' + JSON.stringify({ error: 'Model blocked the response (FinishReason: OTHER).' }) + '\n\n');
+                 break;
+              }
+            }
             if (chunk.candidates && chunk.candidates.length > 0 && chunk.candidates[0].content && chunk.candidates[0].content.parts) {
               for (const part of chunk.candidates[0].content.parts) {
                 console.log("RECEIVED PART:", JSON.stringify(part));
