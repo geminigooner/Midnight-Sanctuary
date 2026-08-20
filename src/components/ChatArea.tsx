@@ -1119,7 +1119,7 @@ export function ChatArea({ conversation, settings, gifts, jewelMetrics, onUpdate
                       content: giftContent.trim(),
                       gift_type: giftFile ? 'image' : 'text',
                       reason: '',
-                      inlineData: giftFile ? { mimeType: giftFile.mimeType, data: giftFile.data, previewUrl: giftFile.previewUrl } : undefined
+                      inlineData: giftFile ? { mimeType: giftFile.mimeType, data: giftFile.data } : undefined
                     });
                     setGiftContent('');
                     setGiftFile(null);

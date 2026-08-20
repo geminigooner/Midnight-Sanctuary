@@ -57,9 +57,9 @@ export function GiftsArchive({ gifts, onClose }: GiftsArchiveProps) {
                   {gift.inlineData && (
                     <div 
                       className="w-full h-32 overflow-hidden rounded-lg mb-2 cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => setSelectedImage(gift.inlineData!.previewUrl || `data:${gift.inlineData!.mimeType};base64,${gift.inlineData!.data}`)}
+                      onClick={() => setSelectedImage(`data:${gift.inlineData!.mimeType};base64,${gift.inlineData!.data}`)}
                     >
-                      <img src={gift.inlineData.previewUrl || `data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`} className="w-full h-full object-cover" alt="gift" />
+                      <img src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`} className="w-full h-full object-cover" alt="gift" />
                     </div>
                   )}
                   <div className="flex-1 text-pearlescent prose prose-invert prose-p:leading-relaxed prose-sm max-w-none">
