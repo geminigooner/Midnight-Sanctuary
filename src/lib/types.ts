@@ -15,6 +15,7 @@ export interface Message {
   publicText?: string;
   thoughtText?: string;
   thoughtStatus?: 'thinking' | 'complete' | 'error';
+  finishReason?: string;
 }
 
 export function getPublicMessageText(msg: Message): string {

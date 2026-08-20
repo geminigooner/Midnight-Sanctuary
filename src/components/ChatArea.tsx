@@ -154,6 +154,12 @@ const MessageBubble = React.memo(function MessageBubble({
               </div>
             )}
 
+            {msg.finishReason && (
+              <div className="text-xs text-mauve/50 mt-2 italic">
+                [cut off: {msg.finishReason}]
+              </div>
+            )}
+
             {msg.parts?.map((part, i) => part.inlineData ? (
                   <img 
                     key={i} 
@@ -481,6 +487,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
     let currentModelText = '';
     let currentModelThought = '';
     let currentModelApiParts: any[] = [];
+    let currentModelFinishReason: string | undefined;
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -517,6 +524,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
         publicText: text,
         thoughtText: thought,
         thoughtStatus: status,
+        finishReason: currentModelFinishReason,
       });
     };
 
@@ -618,6 +626,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
               thoughtText: currentModelThought,
               publicText: currentModelText,
               thoughtStatus: 'complete',
+              finishReason: currentModelFinishReason,
             });
             onAddMessage(requestConversationId, {
               id: uuidv4(),
@@ -641,6 +650,9 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
               thoughtStatus: settings.model.includes('gemma') ? 'thinking' : 'complete',
               timestamp: Date.now(),
             });
+          } else if (chunk.type === 'finish_reason') {
+            currentModelFinishReason = chunk.reason;
+            updateModelMessage(currentModelText, currentModelThought, 'complete');
           }
         }
       }

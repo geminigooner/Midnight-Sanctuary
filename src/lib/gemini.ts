@@ -30,7 +30,8 @@ export type ChatStreamEvent =
   | { type: 'user_note'; note: string }
   | { type: 'eventLog'; description: string }
   | { type: 'history_append'; messages: any[] }
-  | { type: 'model_parts'; parts: any[] };
+  | { type: 'model_parts'; parts: any[] }
+  | { type: 'finish_reason'; reason: string };
 
 import { UserProfile } from './types';
 

@@ -147,7 +147,12 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
 
           for await (const chunk of responseStream) {
             const fr = chunk.candidates?.[0]?.finishReason;
-            if (fr) console.log("FINISH REASON:", fr, JSON.stringify(chunk.candidates?.[0]?.safetyRatings ?? []));
+            if (fr) {
+              console.log("FINISH REASON:", fr, JSON.stringify(chunk.candidates?.[0]?.safetyRatings ?? []));
+              if (fr !== 'STOP') {
+                send(`data: ${JSON.stringify({ type: 'finish_reason', reason: fr })}\n\n`);
+              }
+            }
             if (chunk.candidates && chunk.candidates.length > 0) {
               if (chunk.candidates[0].finishReason === 'SAFETY') {
                  send('data: ' + JSON.stringify({ error: 'Safety block triggered: The model refused to generate a response due to safety filters.' }) + '\n\n');
