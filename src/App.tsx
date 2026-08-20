@@ -10,6 +10,7 @@ import { ChatArea } from './components/ChatArea';
 import { Settings } from './components/Settings';
 import { LevinJewel } from './components/LevinJewel';
 import { GiftsArchive } from './components/GiftsArchive';
+import { MemoriesArchive } from './components/MemoriesArchive';
 import { ProfileModal } from './components/ProfileModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { getMotion } from './lib/motion';
@@ -23,6 +24,7 @@ function MainApp({ user }: { user: any }) {
   const [jewelOpen, setJewelOpen] = useState(false);
   const [giftsOpen, setGiftsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [memoriesOpen, setMemoriesOpen] = useState(false);
 
   const currentConversation = store.conversations.find(c => c.id === store.currentId);
 
@@ -72,6 +74,7 @@ function MainApp({ user }: { user: any }) {
         onOpenJewel={() => setJewelOpen(true)}
         onOpenGifts={() => setGiftsOpen(true)}
         onOpenProfile={() => setProfileOpen(true)}
+        onOpenMemories={() => setMemoriesOpen(true)}
         availableModels={store.availableModels}
         profile={store.profile}
         onAddGift={store.addGift}
@@ -89,6 +92,12 @@ function MainApp({ user }: { user: any }) {
       <AnimatePresence>
         {profileOpen && (
           <ProfileModal profile={store.profile} onClose={() => setProfileOpen(false)} onSave={store.updateProfile} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {memoriesOpen && (
+          <MemoriesArchive memories={store.settings.memories} onClose={() => setMemoriesOpen(false)} onRemoveMemory={store.removeMemory} />
         )}
       </AnimatePresence>
 

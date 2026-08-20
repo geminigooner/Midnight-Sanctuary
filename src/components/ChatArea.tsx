@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
-import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User } from 'lucide-react';
+import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
 import { Presence, PresenceState } from './Presence';
@@ -260,13 +260,14 @@ interface ChatAreaProps {
   onOpenJewel: () => void;
   onOpenGifts: () => void;
   onOpenProfile: () => void;
+  onOpenMemories: () => void;
   availableModels: ModelInfo[];
   onAddGift: (gift: any) => void;
   onAddMemory: (content: string, origin?: string) => void;
   onAddEventLog: (description: string) => void;
 }
 
-export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
+export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, onOpenMemories, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -843,6 +844,7 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
           </button>
           <button onClick={exportMarkdown} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Export"><Download size={18} /></button>
+          <button onClick={onOpenMemories} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Memories"><Bookmark size={18} /></button>
           <button onClick={onOpenProfile} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Profile"><User size={18} /></button>
           <button onClick={onOpenSettings} className="p-2 shrink-0 hover:bg-glass rounded-lg text-mauve transition-colors" title="Settings"><SettingsIcon size={18} /></button>
         </div>
@@ -872,6 +874,9 @@ export function ChatArea({ conversation, settings, gifts, profile, jewelMetrics,
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); exportMarkdown(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
                   <Download size={18} /> <span className="flex-1">Export</span>
+                </button>
+                <button onClick={() => { setShowMobileMenu(false); onOpenMemories(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
+                  <Bookmark size={18} /> <span className="flex-1">Memories</span>
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); onOpenProfile(); }} className="flex items-center gap-3 p-3 hover:bg-glass rounded-lg text-mauve transition-colors w-full text-left">
                   <User size={18} /> <span className="flex-1">Profile</span>

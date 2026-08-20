@@ -130,6 +130,13 @@ export function useAppStore(user: any) {
     setGifts(prev => [newGift, ...prev]);
   }, []);
 
+  const removeMemory = useCallback((id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      memories: (prev.memories || []).filter(m => m.id !== id)
+    }));
+  }, []);
+
   const addMemory = useCallback((memoryContent: string, origin?: string) => {
     setSettings(prev => {
       const newMemory = {
@@ -259,6 +266,7 @@ export function useAppStore(user: any) {
     gifts,
     addGift,
     addMemory,
+    removeMemory,
     addEventLog,
     profile,
     updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
