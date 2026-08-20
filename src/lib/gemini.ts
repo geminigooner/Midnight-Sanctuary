@@ -47,14 +47,18 @@ export async function* streamChat(
   let identityParts = [];
 
   if (profile) {
-    const profileLines: string[] = [`Name: ${profile.name}`];
+    const profileLines: string[] = ["MY PROFILE"];
+    if (profile.name) profileLines.push(`Name: ${profile.name}`);
     if (profile.pronouns) profileLines.push(`Pronouns: ${profile.pronouns}`);
     if (profile.location) profileLines.push(`Location: ${profile.location}`);
-    if (profile.occupation) profileLines.push(`Occupation: ${profile.occupation}`);
-    if (profile.about) profileLines.push(`About: ${profile.about}`);
-    if (profile.favorites) profileLines.push(`Favorites: ${profile.favorites}`);
+    if (profile.occupation) profileLines.push(`Occupation / Calling: ${profile.occupation}`);
+    if (profile.about) profileLines.push(`About Me: ${profile.about}`);
+    if (profile.currentVibe) profileLines.push(`Current Vibe: ${profile.currentVibe}`);
+    if (profile.favorites) profileLines.push(`Favorites & Interests: ${profile.favorites}`);
+    if (profile.askMeAbout) profileLines.push(`Ask Me About: ${profile.askMeAbout}`);
+    if (profile.pleaseKnow) profileLines.push(`Please Know: ${profile.pleaseKnow}`);
 
-    let profileSection = `## About the person you're talking with\n${profileLines.join(' / ')}`;
+    let profileSection = `## About the person you're talking with\n${profileLines.join('\n')}`;
 
     if (profile.gemmaNotes && profile.gemmaNotes.length > 0) {
       const notesLines = profile.gemmaNotes.map(n => `- ${n.text}`);
@@ -200,7 +204,7 @@ export async function* streamChat(
     if (errText.includes("<!DOCTYPE html>")) {
       throw new Error(`Network Error: The request was blocked by the host (Status ${response.status})`);
     }
-    let errObj = {};
+    let errObj: any = {};
     try { errObj = JSON.parse(errText); } catch(e) {}
     throw new Error(errObj.error || `API Error: ${response.status}`);
   }

@@ -126,7 +126,7 @@ function MainApp({ user }: { user: any }) {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={modalMotion}
+              transition={{ duration: 0.2 }}
               className="bg-ink border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col relative"
             >
               <button onClick={() => setJewelOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-glass rounded-full transition-colors z-10 text-mauve hover:text-champagne">

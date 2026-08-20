@@ -129,7 +129,11 @@ export interface UserProfile {
   location?: string;
   occupation?: string;
   about?: string;
+  currentVibe?: string;
   favorites?: string;
+  askMeAbout?: string;
+  pleaseKnow?: string;
   photo?: { mimeType: string; data: string };
+  backgroundImage?: { mimeType: string; data: string };
   gemmaNotes?: { text: string; timestamp: number }[];
 }

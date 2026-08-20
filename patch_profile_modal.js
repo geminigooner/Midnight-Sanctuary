@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import fs from 'fs';
+const code = `import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, X, Camera, MapPin, Briefcase, Hash, Star, MessageCircle, AlertCircle } from 'lucide-react';
 import { UserProfile } from '../lib/types';
@@ -101,7 +102,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               <div className="flex flex-col items-center gap-3 shrink-0">
                 <div className="w-28 h-28 rounded-full bg-glass border-2 border-glass-border overflow-hidden flex items-center justify-center relative shadow-lg">
                   {photo ? (
-                    <img src={`data:${photo.mimeType};base64,${photo.data}`} alt="Profile" className="w-full h-full object-cover" />
+                    <img src={\`data:\${photo.mimeType};base64,\${photo.data}\`} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
                     <User size={40} className="text-mauve/50" />
                   )}
@@ -291,3 +292,5 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
     </div>
   );
 }
+`;
+fs.writeFileSync('src/components/ProfileModal.tsx', code);

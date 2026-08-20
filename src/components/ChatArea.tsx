@@ -67,6 +67,7 @@ const MessageBubble = React.memo(function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [settled, setSettled] = useState(false);
+  const [favorited, setFavorited] = useState(false);
   
   useEffect(() => {
     if (isLast && !isGenerating) {
@@ -188,10 +189,13 @@ const MessageBubble = React.memo(function MessageBubble({
               </>
             )}
             <button onClick={() => { 
-                onFavorite?.(publicText);
+                if (!favorited) {
+                  onFavorite?.(publicText);
+                  setFavorited(true);
+                }
                 triggerHaptic('light');
-              }} className="p-1.5 bg-glass rounded-lg hover:bg-white/10 hover:text-champagne text-mauve transition-colors" title="Favorite / Save to Memory">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              }} className={`p-1.5 bg-glass rounded-lg hover:bg-white/10 transition-colors ${favorited ? 'text-copper' : 'text-mauve hover:text-champagne'}`} title={favorited ? 'Favorited' : 'Favorite'}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={favorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
             </button>
           </div>
         )}
@@ -583,7 +587,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
          
          const now = Date.now();
          if (force || now - lastUpdateTime > 50) {
-           updateModelMessage(currentModelText, currentModelThought, status);
+           updateModelMessage(currentModelText, currentModelThought, status as any);
            lastUpdateTime = now;
            pendingUpdate = false;
          } else {
@@ -734,7 +738,29 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     }
   };
 
-  const handleCopy = React.useCallback((text: string) => { navigator.clipboard.writeText(text); }, []);
+  const handleCopy = React.useCallback(async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "absolute";
+        textArea.style.left = "-999999px";
+        document.body.prepend(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+        } catch (error) {
+          console.error('execCommand error', error);
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  }, []);
   const handleOpenImage = React.useCallback((url: string) => { setSelectedImage(url); }, []);
 
   const exportMarkdown = () => {
@@ -749,13 +775,11 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       a.click();
       document.body.removeChild(a);
     } catch (e) {
-      navigator.clipboard.writeText(md);
+      handleCopy(md);
       alert('Conversation copied to clipboard.');
     }
     // Also explicitly copy to clipboard as fallback
-    navigator.clipboard.writeText(md).then(() => {
-       console.log('Copied to clipboard');
-    }).catch(() => {});
+    handleCopy(md);
   };
 
   const visibleMessages = conversation.messages.filter(msg => {
@@ -971,7 +995,6 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             onCopy={handleCopy}
             onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
             onFavorite={(content) => {
-              onAddMemory(content, 'user_favorited');
               onAddEventLog('User favorited a message.');
             }}
             onImageClick={(url) => setSelectedImage(url)}
