@@ -143,6 +143,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let functionResponses: any[] = [];
           let hasFunctionCalls = false;
           let hasText = false;
+          let blocked = false;
 
           for await (const chunk of responseStream) {
             const fr = chunk.candidates?.[0]?.finishReason;
@@ -150,9 +151,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             if (chunk.candidates && chunk.candidates.length > 0) {
               if (chunk.candidates[0].finishReason === 'SAFETY') {
                  send('data: ' + JSON.stringify({ error: 'Safety block triggered: The model refused to generate a response due to safety filters.' }) + '\n\n');
-                 break;
-              } else if (chunk.candidates[0].finishReason === 'OTHER') {
-                 send('data: ' + JSON.stringify({ error: 'Model blocked the response (FinishReason: OTHER).' }) + '\n\n');
+                 blocked = true;
                  break;
               }
             }
@@ -183,6 +182,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               }
             }
           }
+
+          if (blocked) { safeClose(); return; }
 
           if (!hasFunctionCalls) {
             // Preserve the exact API response, including thoughtSignature metadata.
