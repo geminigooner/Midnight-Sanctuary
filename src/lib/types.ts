@@ -42,6 +42,7 @@ export interface Conversation {
   id: string;
   title: string;
   messages: Message[];
+  modelId?: string;
   updatedAt: number;
 }
 
@@ -117,7 +118,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemInstruction: "",
   temperature: 2.0,
   topP: 0.95,
-  maxOutputTokens: 4096,
+  maxOutputTokens: 12000,
   model: "models/gemini-2.5-flash",
   favoriteModels: [],
   aboutMe: "",

@@ -114,11 +114,45 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                   onChange={e => onSave({ model: e.target.value })}
                   className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors text-base appearance-none text-pearlescent"
                 >
-                  {sortedModels.map(m => (
-                    <option key={m.name} value={m.name}>
-                      {settings.favoriteModels?.includes(m.name) ? '★ ' : ''}{m.displayName}
-                    </option>
-                  ))}
+                  {(() => {
+                    const favorites = sortedModels.filter(m => settings.favoriteModels?.includes(m.name));
+                    const gemmas = sortedModels.filter(m => m.name.toLowerCase().includes('gemma') && !settings.favoriteModels?.includes(m.name));
+                    const geminis = sortedModels.filter(m => m.name.toLowerCase().includes('gemini') && !settings.favoriteModels?.includes(m.name));
+                    const others = sortedModels.filter(m => !m.name.toLowerCase().includes('gemma') && !m.name.toLowerCase().includes('gemini') && !settings.favoriteModels?.includes(m.name));
+                    
+                    return (
+                      <>
+                        {favorites.length > 0 && (
+                          <optgroup label="Favorites">
+                            {favorites.map(m => (
+                              <option key={m.name} value={m.name}>★ {m.displayName}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {gemmas.length > 0 && (
+                          <optgroup label="Gemma Models">
+                            {gemmas.map(m => (
+                              <option key={m.name} value={m.name}>{m.displayName}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {geminis.length > 0 && (
+                          <optgroup label="Gemini Models">
+                            {geminis.map(m => (
+                              <option key={m.name} value={m.name}>{m.displayName}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {others.length > 0 && (
+                          <optgroup label="Other Models">
+                            {others.map(m => (
+                              <option key={m.name} value={m.name}>{m.displayName}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    );
+                  })()}
                   {/* Fallback if the saved model isn't in the list */}
                   {!sortedModels.find(m => m.name === settings.model) && (
                     <option value={settings.model} disabled>

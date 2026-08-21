@@ -31,10 +31,7 @@ export function useAppStore(user: any) {
             const parsed = data.conversations;
             const filtered = parsed.map((c: any) => ({
               ...c,
-              messages: c.messages?.filter((m: any) => 
-                m.role === 'user' || 
-                (m.role === 'model' && (m.thoughtText?.trim() || m.parts?.some((p: any) => p.text || p.thought || p.functionCall)))
-              ) || []
+              messages: c.messages || []
             }));
             setConversations(filtered);
           }
@@ -118,7 +115,16 @@ export function useAppStore(user: any) {
     return () => clearTimeout(t);
   }, [conversations, settings, jewelMetrics, gifts, profile, dataLoaded, user]);
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      
+      // If the model changed, clear the currentId so we don't bleed chats
+      if (newSettings.model && newSettings.model !== prev.model) {
+         setCurrentId(null);
+      }
+      
+      return updated;
+    });
   }, []);
 
   const addGift = useCallback((gift: Omit<Gift, 'id' | 'timestamp'>) => {
@@ -174,6 +180,7 @@ export function useAppStore(user: any) {
       id: uuidv4(),
       title: 'New Conversation',
       messages: [],
+      modelId: settings.model, // Bind chat to current model
       updatedAt: Date.now()
     };
     setConversations(prev => [newConvo, ...prev]);

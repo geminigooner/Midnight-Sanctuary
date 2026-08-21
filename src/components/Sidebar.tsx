@@ -8,6 +8,7 @@ import { getMotion } from '../lib/motion';
 interface SidebarProps {
   conversations: Conversation[];
   currentId: string | null;
+  currentModel: string;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
@@ -15,13 +16,16 @@ interface SidebarProps {
   isOpen: boolean;
 }
 
-export function Sidebar({ conversations, currentId, onSelect, onNew, onDelete, onRename, isOpen }: SidebarProps) {
+export function Sidebar({ conversations, currentId, currentModel, onSelect, onNew, onDelete, onRename, isOpen }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
-  const filtered = conversations.filter(c => c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())));
+  const filtered = conversations.filter(c => 
+    (c.modelId === currentModel || (!c.modelId && currentModel.includes('gemma'))) && // Legacy conversations default to Gemma
+    (c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
+  );
 
   const reducedMotion = useReducedMotion();
   const listMotion = getMotion('standard', reducedMotion);

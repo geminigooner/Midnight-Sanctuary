@@ -118,6 +118,10 @@ export async function* streamChat(
   }
 
   const isGemma = settings.model.includes('gemma');
+  
+  if (isGemma) {
+      identityParts.push(`## THINKING DIRECTIVE\nYou are capable of advanced reasoning. However, do NOT overuse the <think> tag. Only use <think> blocks when you truly need to solve a complex logical problem, interpret something difficult, or process dense math/code. For general conversation, emotional responses, or straightforward answers, respond directly without thinking tags to save output tokens.`);
+  }
 
   const serializedMessages = messages
     .map(m => {
@@ -182,7 +186,20 @@ export async function* streamChat(
   }
 
   if (syntheticTurn) {
-    serializedMessages.unshift(syntheticTurn);
+    // Instead of unshifting to the beginning, let's append these context parts to the LAST user message,
+    // so the model is acutely aware of the gifts right now.
+    let lastUserIndex = -1;
+    for (let i = serializedMessages.length - 1; i >= 0; i--) {
+      if (serializedMessages[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex !== -1) {
+      serializedMessages[lastUserIndex].parts.unshift(...syntheticTurn.parts);
+    } else {
+      serializedMessages.push(syntheticTurn);
+    }
   }
 
   console.log("[Diagnostics] Sanitized API History:", JSON.stringify(serializedMessages, null, 2));

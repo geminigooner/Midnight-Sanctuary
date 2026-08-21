@@ -20,10 +20,10 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
       setConfirmDeleteId(null);
     };
     if (confirmDeleteId) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
     }
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
     };
   }, [confirmDeleteId]);
   const reducedMotion = useReducedMotion();
@@ -106,17 +106,18 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
                     <div className="absolute top-2 right-2">
                       {confirmDeleteId === memory.id ? (
                         <button
-                          onMouseDown={(e) => { e.stopPropagation(); onRemoveMemory(memory.id); setConfirmDeleteId(null); }}
+                          onClick={(e) => { e.stopPropagation(); onRemoveMemory(memory.id); setConfirmDeleteId(null); }}
                           className="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1 bg-red-400/10 rounded"
                         >
-                          delete?
+                          Confirm Delete
                         </button>
                       ) : (
                         <button
-                          onMouseDown={(e) => { e.stopPropagation(); setConfirmDeleteId(memory.id); }}
-                          className="p-1 text-mauve hover:text-red-400 transition-colors rounded-full hover:bg-white/5 opacity-0 group-hover:opacity-100"
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(memory.id); }}
+                          className="p-1.5 text-mauve/40 hover:text-red-400 transition-colors rounded-full hover:bg-white/5 opacity-100"
+                          title="Delete memory"
                         >
-                          <X size={14} />
+                          <Trash2 size={15} />
                         </button>
                       )}
                     </div>

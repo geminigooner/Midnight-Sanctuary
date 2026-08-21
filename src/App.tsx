@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './lib/store';
 import { Sidebar } from './components/Sidebar';
+import { Menu } from 'lucide-react';
 import { ChatArea } from './components/ChatArea';
 import { Settings } from './components/Settings';
 import { LevinJewel } from './components/LevinJewel';
@@ -29,8 +30,9 @@ function MainApp({ user }: { user: any }) {
 
   const currentConversation = store.conversations.find(c => c.id === store.currentId);
 
+  const themeClass = store.settings.model.includes('gemma') ? 'theme-gemma' : '';
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-obsidian text-pearlescent relative w-full">
+    <div className={`flex h-[100dvh] overflow-hidden bg-obsidian text-pearlescent relative w-full ${themeClass}`}>
       {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div 
@@ -43,6 +45,7 @@ function MainApp({ user }: { user: any }) {
       <div className={`fixed inset-y-0 left-0 z-50 lg:relative transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 w-80 shrink-0`}>
         <Sidebar 
           conversations={store.conversations}
+          currentModel={store.settings.model}
           currentId={store.currentId}
           onSelect={(id) => {
             store.setCurrentId(id);
