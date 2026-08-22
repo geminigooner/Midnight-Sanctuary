@@ -1,73 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-obsidian: #0b0c10;
-  --color-plum: #1c0a1a;
+  --color-obsidian: #151234;
+  --color-plum: #2C194D;
   --color-ink: #070e1c;
   --color-chocolate: #1a100c;
-  --color-mauve: #9e7b8f;
-  --color-copper: #c47653;
-  --color-champagne: #f4e8d3;
+  --color-mauve: #B39DE5;
+  --color-copper: #F198B7;
+  --color-champagne: #F5E1C8;
   --color-pearlescent: #e6e8e6;
   --color-glass: rgba(255, 255, 255, 0.03);
   --color-glass-border: rgba(255, 255, 255, 0.08);
 }
 
-
-/* Gemma Theme Overrides */
-.theme-gemma {
-  --color-obsidian: #0B0E14;
-  --color-plum: #1F2635;
-  --color-ink: #0F121C;
-  --color-chocolate: #161224;
-  --color-mauve: #E0B1CB;
-  --color-copper: #4E31AA;
-  --color-champagne: #F5DDE7;
-  --color-pearlescent: #EEEDF2;
-  --color-glass: rgba(255, 255, 255, 0.04);
-  --color-glass-border: rgba(78, 49, 170, 0.2);
-}
-
-.theme-gemma body {
-  background-image: 
-    radial-gradient(circle at 15% 50%, rgba(31, 38, 53, 0.6) 0%, transparent 50%),
-    radial-gradient(circle at 85% 30%, rgba(78, 49, 170, 0.25) 0%, transparent 50%);
-}
+/* Retro Theme Override */
 body {
-  @apply bg-obsidian text-pearlescent antialiased;
-  background-image: 
-    radial-gradient(circle at 15% 50%, rgba(28, 10, 26, 0.6) 0%, transparent 50%),
-    radial-gradient(circle at 85% 30%, rgba(7, 14, 28, 0.6) 0%, transparent 50%);
-  background-attachment: fixed;
+  @apply bg-[#151234] text-[#F5E1C8] antialiased;
+  font-family: 'Quicksand', 'Nunito', 'Comic Sans MS', sans-serif;
   min-height: 100vh;
-}
-
-/* Material grain overlay */
-body::before {
-  content: "";
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  opacity: 0.03;
-  pointer-events: none;
-  z-index: 50;
 }
 
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-glass-border);
-  border-radius: 4px;
+  background: #2C194D;
+  border-radius: 8px;
+  border: 2px solid #151234;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-mauve);
+  background: #B39DE5;
 }
+
 .prose pre, .prose code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

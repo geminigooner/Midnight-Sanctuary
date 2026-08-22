@@ -233,7 +233,7 @@ function computeLayout(conversations: Conversation[]) {
                   width: size,
                   height: size,
                   transform: 'translate(-50%, -50%)',
-                  backgroundColor: isCurrent ? 'var(--color-copper)' : (isMeaningful ? 'var(--color-champagne)' : 'var(--color-mauve)'),
+                  backgroundColor: isCurrent ? '#F198B7' : (isMeaningful ? '#F5E1C8' : '#B39DE5'),
                   opacity: isMeaningful ? 0.9 : 0.6,
                   boxShadow: isMeaningful ? `0 0 ${size}px currentColor` : 'none',
                 }}
@@ -244,13 +244,13 @@ function computeLayout(conversations: Conversation[]) {
               >
                 {/* Glow ring for meaningful ones */}
                 {isMeaningful && !isCurrent && (
-                   <div className="absolute inset-0 rounded-full border border-champagne opacity-50 animate-pulse" style={{ padding: '2px', left: '-2px', top: '-2px', width: `calc(100% + 4px)`, height: `calc(100% + 4px)` }} />
+                   <div className="absolute inset-0 rounded-full border-[2px] border-[#2C194D] opacity-50 animate-pulse" style={{ padding: '2px', left: '-2px', top: '-2px', width: `calc(100% + 4px)`, height: `calc(100% + 4px)` }} />
                 )}
                 
                 {/* Title tooltip */}
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-ink/80 backdrop-blur border border-glass-border rounded-lg px-2 py-1 text-xs whitespace-nowrap text-pearlescent pointer-events-none z-30 shadow-xl">
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl px-3 py-1.5 text-xs whitespace-nowrap text-[#2C194D] font-bold pointer-events-none z-30 shadow-[4px_4px_0_#2C194D]">
                   {node.title}
-                  <div className="text-[10px] text-mauve/70 mt-0.5">{node.depth} messages</div>
+                  <div className="text-[10px] text-[#2C194D]/60 mt-0.5 font-bold">{node.depth} messages</div>
                 </div>
               </motion.div>
             );

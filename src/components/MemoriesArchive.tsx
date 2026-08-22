@@ -34,26 +34,26 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
     >
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={modalMotion}
-        className="bg-ink border border-glass-border rounded-2xl w-full max-w-4xl max-h-[85vh] shadow-2xl flex flex-col relative overflow-hidden"
+        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden"
       >
-        <div className="flex items-center justify-between p-6 border-b border-glass-border bg-ink/50 backdrop-blur-md shrink-0">
+        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-glass border border-glass-border flex items-center justify-center text-copper shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]">
+            <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
               <Bookmark size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-medium text-pearlescent tracking-wide">Memories Archive</h2>
-              <p className="text-sm text-mauve">Things you considered worth keeping</p>
+              <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Memories Archive</h2>
+              <p className="text-sm font-bold text-[#B39DE5]">Things you considered worth keeping</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-glass rounded-full transition-colors text-mauve hover:text-champagne">
+          <button onClick={onClose} className="p-2 hover:bg-glass rounded-full transition-colors text-[#2C194D] hover:text-[#2C194D]">
             <X size={20} />
           </button>
         </div>
@@ -100,7 +100,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
             return (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {displayMemories.map(memory => (
-                <div key={memory.id} className="bg-glass border border-glass-border rounded-xl p-5 hover:border-copper/40 transition-colors flex flex-col gap-3 group relative">
+                <div key={memory.id} className="bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-5 hover:shadow-[4px_4px_0_#2C194D] transition-colors flex flex-col gap-3 group relative">
                   
                   {onRemoveMemory && (
                     <div className="absolute top-2 right-2">
@@ -123,7 +123,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
                     </div>
                   )}
 
-                  <div className="flex-1 text-pearlescent prose prose-invert prose-p:leading-relaxed prose-sm max-w-none pt-2">
+                  <div className="flex-1 text-[#2C194D] prose prose-p:leading-relaxed prose-sm max-w-none pt-2">
                     {memory.caption && (
                       <div className="text-xs text-copper/90 font-medium mb-2 opacity-80 uppercase tracking-wide">
                         {memory.caption}
@@ -134,7 +134,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
                   
                   <div className="flex justify-between items-end mt-2 pt-3 border-t border-glass-border border-dashed">
                     <div className="flex flex-col gap-1">
-                      <span className="text-xs text-copper/80 uppercase tracking-widest font-medium">
+                      <span className="text-xs text-[#F198B7] uppercase tracking-widest font-bold bg-[#2C194D] px-2 py-1 rounded w-max">
                         {memory.author === 'model' ? (memory.modelId || 'From Model') : (memory.origin === 'gemma_initiated' ? 'From Gemma' : 'Recorded')}
                       </span>
                       <span className="text-[10px] text-mauve italic">

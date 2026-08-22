@@ -71,7 +71,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
     >
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -84,13 +84,13 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setActiveTab('identity')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'identity' ? 'text-champagne border-b-2 border-copper' : 'text-mauve hover:text-champagne/80'}`}
+              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'identity' ? 'text-champagne border-b-2 border-copper' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
             >
               Identity & Memory
             </button>
             <button 
               onClick={() => setActiveTab('model')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-champagne border-b-2 border-copper' : 'text-mauve hover:text-champagne/80'}`}
+              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-champagne border-b-2 border-copper' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
             >
               Model & API
             </button>
@@ -104,7 +104,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
           {activeTab === 'model' && (
             <>
               <div className="space-y-2">
-                <label className="text-sm text-mauve uppercase tracking-wider font-semibold">Model ID</label>
+                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Model ID</label>
             {isModelsLoading ? (
               <div className="text-mauve text-sm py-2">Loading available models...</div>
             ) : (
@@ -112,7 +112,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 <select 
                   value={settings.model}
                   onChange={e => onSave({ model: e.target.value })}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors text-base appearance-none text-pearlescent"
+                  className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors text-base appearance-none text-[#2C194D]"
                 >
                   {(() => {
                     const favorites = sortedModels.filter(m => settings.favoriteModels?.includes(m.name));
@@ -163,10 +163,10 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 
                 {settings.model && sortedModels.find(m => m.name === settings.model) && (
                   <div className="space-y-1">
-                    <div className="text-xs text-mauve/70 flex items-center justify-between">
+                    <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
                       <span>Exact ID: <span className="font-mono text-copper">{settings.model}</span></span>
                     </div>
-                    <div className="text-xs text-mauve/70 flex items-center justify-between">
+                    <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
                       <span>Provider: Google</span>
                       {sortedModels.find(m => m.name === settings.model)?.inputTokenLimit && (
                         <span>Context: {sortedModels.find(m => m.name === settings.model)?.inputTokenLimit?.toLocaleString()} tokens</span>
@@ -178,7 +178,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 {sortedModels.find(m => m.name === settings.model) && (
                   <button 
                     onClick={() => toggleFavorite(settings.model)}
-                    className="flex items-center gap-2 text-sm text-champagne hover:text-copper transition-colors"
+                    className="flex items-center gap-2 text-sm text-[#F5E1C8] font-bold hover:text-copper transition-colors"
                   >
                     <Star size={14} className={settings.favoriteModels?.includes(settings.model) ? 'fill-champagne' : ''} />
                     {settings.favoriteModels?.includes(settings.model) ? 'Remove from Favorites' : 'Add to Favorites'}
@@ -195,20 +195,20 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-mauve uppercase tracking-wider font-semibold">System Instructions</label>
+            <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">System Instructions</label>
             <textarea 
               value={settings.systemInstruction}
               onChange={e => onSave({ systemInstruction: e.target.value })}
               rows={4}
-              className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors resize-none text-base"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold"
             />
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-glass-border">
+          <div className="space-y-4 pt-4 border-t-[3px] border-[#2C194D]">
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm text-champagne">Temperature ({settings.temperature.toFixed(1)})</label>
-                <span className="text-xs text-mauve/70">Controls randomness</span>
+                <label className="text-sm text-[#F5E1C8] font-bold">Temperature ({settings.temperature.toFixed(1)})</label>
+                <span className="text-xs text-[#B39DE5] font-bold">Controls randomness</span>
               </div>
               <input 
                 type="range" min="0" max="2" step="0.1" 
@@ -221,7 +221,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
             <div className="pt-2">
               <button 
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-2 text-sm text-mauve hover:text-champagne transition-colors uppercase tracking-wider font-semibold w-full"
+                className="flex items-center gap-2 text-sm text-[#2C194D] hover:text-[#2C194D] transition-colors uppercase tracking-wider font-semibold w-full"
               >
                 {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 Advanced
@@ -238,8 +238,8 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                     <div className="space-y-6 pt-4 pb-2">
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
-                          <label className="text-sm text-champagne">Top-P ({settings.topP.toFixed(2)})</label>
-                          <span className="text-xs text-mauve/70">Nucleus sampling</span>
+                          <label className="text-sm text-[#F5E1C8] font-bold">Top-P ({settings.topP.toFixed(2)})</label>
+                          <span className="text-xs text-[#B39DE5] font-bold">Nucleus sampling</span>
                         </div>
                         <input 
                           type="range" min="0" max="1" step="0.05" 
@@ -250,8 +250,8 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                       </div>
                       <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
-                          <label className="text-sm text-champagne">Max Tokens ({settings.maxOutputTokens})</label>
-                          <span className="text-xs text-mauve/70">Output length limit</span>
+                          <label className="text-sm text-[#F5E1C8] font-bold">Max Tokens ({settings.maxOutputTokens})</label>
+                          <span className="text-xs text-[#B39DE5] font-bold">Output length limit</span>
                         </div>
                         <input 
                           type="range" min="1" max="8192" step="1" 
@@ -272,33 +272,33 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
           {activeTab === 'identity' && (
             <div className="space-y-6">
               <div className="space-y-2">
-                <label className="text-sm text-mauve uppercase tracking-wider font-semibold">About Me</label>
+                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">About Me</label>
                 <textarea 
                   value={settings.aboutMe || ''}
                   onChange={e => onSave({ aboutMe: e.target.value })}
                   placeholder="Tell the model about yourself..."
                   rows={3}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors resize-none text-base text-pearlescent placeholder:text-mauve/50"
+                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
                 />
               </div>
               
               <div className="space-y-2">
-                <label className="text-sm text-mauve uppercase tracking-wider font-semibold">Conversation Preferences</label>
+                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Conversation Preferences</label>
                 <textarea 
                   value={settings.conversationPreferences || ''}
                   onChange={e => onSave({ conversationPreferences: e.target.value })}
                   placeholder="How should the model talk to you?"
                   rows={3}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors resize-none text-base text-pearlescent placeholder:text-mauve/50"
+                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
                 />
               </div>
 
-              <div className="space-y-4 pt-4 border-t border-glass-border">
+              <div className="space-y-4 pt-4 border-t-[3px] border-[#2C194D]">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm text-mauve uppercase tracking-wider font-semibold">Saved Memories</label>
+                  <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Saved Memories</label>
                   <button 
                     onClick={() => onSave({ memoriesEnabled: !settings.memoriesEnabled })}
-                    className={`text-xs px-2 py-1 rounded transition-colors ${settings.memoriesEnabled ? 'bg-copper text-obsidian' : 'bg-glass text-mauve'}`}
+                    className={`text-xs px-2 py-1 rounded transition-colors ${settings.memoriesEnabled ? 'bg-[#F198B7] text-[#2C194D] border-[3px] border-[#2C194D] font-bold shadow-[2px_2px_0_#2C194D]' : 'bg-[#151234] text-[#B39DE5] border-[3px] border-[#2C194D] font-bold'}`}
                   >
                     {settings.memoriesEnabled ? 'Enabled' : 'Disabled'}
                   </button>
@@ -313,9 +313,9 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                         onChange={e => setNewMemory(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && addMemory()}
                         placeholder="Add a new memory..."
-                        className="flex-1 bg-black/40 border border-glass-border rounded-lg px-3 py-2 focus:outline-none focus:border-copper/50 transition-colors text-sm text-pearlescent placeholder:text-mauve/50"
+                        className="flex-1 bg-black/40 border border-glass-border rounded-lg px-3 py-2 focus:outline-none focus:border-copper/50 transition-colors text-sm text-[#2C194D] placeholder:text-[#2C194D]/40"
                       />
-                      <button onClick={addMemory} className="p-2 bg-glass hover:bg-glass-border rounded-lg transition-colors text-champagne">
+                      <button onClick={addMemory} className="p-2 bg-[#F198B7] hover:bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 transition-all text-[#2C194D]">
                         <Plus size={18} />
                       </button>
                     </div>
@@ -329,12 +329,12 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                             <textarea
                               value={memory.content}
                               onChange={e => updateMemory(memory.id, e.target.value)}
-                              className="flex-1 bg-black/20 border border-transparent hover:border-glass-border focus:border-copper/50 rounded-lg px-3 py-2 focus:outline-none transition-colors text-sm text-pearlescent resize-none"
+                              className="flex-1 bg-black/20 border border-transparent hover:border-glass-border focus:border-copper/50 rounded-lg px-3 py-2 focus:outline-none transition-colors text-sm text-[#2C194D] resize-none"
                               rows={2}
                             />
                             <button 
                               onClick={() => deleteMemory(memory.id)}
-                              className="p-2 mt-1 text-mauve hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-glass shrink-0"
+                              className="p-2 mt-1 text-[#2C194D] hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all rounded-xl hover:bg-[#F198B7] shrink-0 border-[2px] border-transparent hover:border-[#2C194D]"
                             >
                               <Trash2 size={16} />
                             </button>

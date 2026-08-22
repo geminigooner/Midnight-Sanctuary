@@ -63,7 +63,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-obsidian/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -71,14 +71,14 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
         transition={modalMotion}
         className="bg-ink border border-glass-border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col relative overflow-hidden"
       >
-        <div className="flex items-center justify-between p-6 border-b border-glass-border bg-ink/50 backdrop-blur-md shrink-0">
+        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-glass border border-glass-border flex items-center justify-center text-copper shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]">
+            <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
               <User size={20} />
             </div>
             <div>
               <h2 className="text-xl font-medium text-pearlescent">Your Profile</h2>
-              <p className="text-sm text-mauve">Who you intentionally tell the model you are.</p>
+              <p className="text-sm font-bold text-[#B39DE5]">Who you intentionally tell the model you are.</p>
             </div>
           </div>
           <button 
@@ -136,7 +136,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
 
               <div className="flex-1 space-y-4 w-full">
                 <div>
-                  <label className="block text-sm text-mauve mb-1">Name</label>
+                  <label className="block text-sm font-bold text-[#B39DE5] mb-1">Name</label>
                   <input 
                     type="text" 
                     value={name} 
@@ -147,7 +147,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-mauve mb-1">Pronouns</label>
+                    <label className="block text-sm font-bold text-[#B39DE5] mb-1">Pronouns</label>
                     <input 
                       type="text" 
                       value={pronouns} 
@@ -157,7 +157,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-mauve mb-1">Location</label>
+                    <label className="block text-sm font-bold text-[#B39DE5] mb-1">Location</label>
                     <div className="relative">
                       <input 
                         type="text" 
@@ -171,7 +171,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-mauve mb-1">Occupation / Calling</label>
+                  <label className="block text-sm font-bold text-[#B39DE5] mb-1">Occupation / Calling</label>
                   <div className="relative">
                     <input 
                       type="text" 
@@ -265,7 +265,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                 {profile.gemmaNotes.map((note, i) => (
                   <div key={i} className="bg-glass border border-glass-border rounded-lg p-3">
                     <p className="text-sm text-pearlescent">{note.text}</p>
-                    <p className="text-xs text-mauve/70 mt-1">{new Date(note.timestamp).toLocaleString()}</p>
+                    <p className="text-xs text-[#B39DE5] font-bold mt-1">{new Date(note.timestamp).toLocaleString()}</p>
                   </div>
                 ))}
               </div>

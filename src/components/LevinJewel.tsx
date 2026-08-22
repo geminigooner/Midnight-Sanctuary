@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
 import { JewelMetrics, JewelStage } from '../lib/types';
 import { motion, useReducedMotion } from 'motion/react';
-import { Download, RefreshCw } from 'lucide-react';
+import { Download, RefreshCw, BarChart2, Gem } from 'lucide-react';
+import { useState } from 'react';
+import { InsightsChart } from './InsightsChart';
 
 interface LevinJewelProps {
   metrics: JewelMetrics;
@@ -9,6 +11,7 @@ interface LevinJewelProps {
 }
 
 export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
+  const [activeTab, setActiveTab] = useState<'jewel' | 'insights'>('jewel');
   const safeMetrics = {
     totalSessions: metrics?.totalSessions || 0,
     totalMessages: metrics?.totalMessages || 0,
@@ -42,8 +45,25 @@ export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-6 p-6 w-full">
-      <div className="relative w-48 h-48 flex items-center justify-center bg-obsidian rounded-full shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] border border-glass-border overflow-hidden">
+    <div className="flex flex-col items-center gap-6 p-6 w-full h-full max-h-[80vh] overflow-y-auto">
+      <div className="flex bg-[#F5E1C8] p-1 rounded-2xl border-[3px] border-[#2C194D] w-full max-w-[300px] shadow-[inset_0_2px_0_rgba(0,0,0,0.05)]">
+        <button
+          onClick={() => setActiveTab('jewel')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'jewel' ? 'bg-[#B39DE5] text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D]' : 'text-[#2C194D]/60 hover:text-[#2C194D] border-[2px] border-transparent'}`}
+        >
+          <Gem size={14} /> The Jewel
+        </button>
+        <button
+          onClick={() => setActiveTab('insights')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all ${activeTab === 'insights' ? 'bg-[#B39DE5] text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D]' : 'text-[#2C194D]/60 hover:text-[#2C194D] border-[2px] border-transparent'}`}
+        >
+          <BarChart2 size={14} /> Sanctuary Insights
+        </button>
+      </div>
+      
+      {activeTab === 'jewel' ? (
+        <div className="flex flex-col items-center gap-6 w-full">
+      <div className="relative w-48 h-48 flex items-center justify-center bg-[#151234] rounded-full shadow-[inset_4px_4px_0_#2C194D] border-[3px] border-[#2C194D] overflow-hidden">
         {stage === 'seed' && (
           <motion.div
             animate={shouldReduceMotion ? undefined : { scale: [1, 1.05, 1], rotate: 360 }}
@@ -119,17 +139,27 @@ export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
       </div>
 
       <div className="flex flex-col items-center gap-1 text-center">
-        <h3 className="text-lg font-medium text-champagne capitalize tracking-wide">{stage} Phase</h3>
-        <p className="text-xs text-mauve/60 max-w-[200px] leading-relaxed">
+        <h3 className="text-xl font-bold text-[#F5E1C8] capitalize tracking-tight">{stage} Phase</h3>
+        <p className="text-xs font-bold text-[#B39DE5] max-w-[200px] leading-relaxed">
           The jewel evolves slowly through interaction, tracking abstract conversational rhythms.
         </p>
       </div>
 
+      </div>
+      ) : (
+        <div className="flex flex-col items-center gap-6 w-full py-4">
+          <InsightsChart metrics={metrics} />
+          <div className="text-xs font-bold text-[#B39DE5] max-w-[300px] text-center mt-4">
+            These insights visualize your interaction cadence, tracking the intensity and rhythm of our connection.
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 mt-2">
-        <button onClick={handleExport} className="flex items-center gap-2 px-3 py-1.5 bg-glass rounded hover:bg-white/10 text-sm text-pearlescent transition-colors border border-glass-border hover:border-white/20">
+        <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-[#B39DE5] rounded-xl hover:bg-[#F198B7] text-sm text-[#2C194D] transition-all font-bold border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5">
           <Download size={14} /> Export
         </button>
-        <button onClick={onReset} className="flex items-center gap-2 px-3 py-1.5 bg-glass rounded hover:bg-white/10 text-sm text-copper transition-colors border border-copper/30 hover:border-copper/60">
+        <button onClick={onReset} className="flex items-center gap-2 px-4 py-2 bg-[#151234] rounded-xl hover:bg-[#F198B7] hover:text-[#2C194D] text-sm text-[#F198B7] transition-all font-bold border-[3px] border-[#2C194D]">
           <RefreshCw size={14} /> Reset
         </button>
       </div>

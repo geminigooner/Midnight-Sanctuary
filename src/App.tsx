@@ -48,6 +48,10 @@ function MainApp({ user }: { user: any }) {
           currentModel={store.settings.model}
           currentId={store.currentId}
           onSelect={(id) => {
+            const chat = store.conversations.find(c => c.id === id);
+            if (chat && chat.modelId) {
+              store.updateSettings({ model: chat.modelId });
+            }
             store.setCurrentId(id);
             if (window.innerWidth < 1024) setSidebarOpen(false);
           }}

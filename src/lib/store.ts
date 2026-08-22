@@ -118,10 +118,7 @@ export function useAppStore(user: any) {
     setSettings(prev => {
       const updated = { ...prev, ...newSettings };
       
-      // If the model changed, clear the currentId so we don't bleed chats
-      if (newSettings.model && newSettings.model !== prev.model) {
-         setCurrentId(null);
-      }
+      // Model changing no longer clears the current chat.
       
       return updated;
     });
