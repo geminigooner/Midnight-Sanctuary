@@ -102,7 +102,7 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
                     onClick={() => onSelect(c.id)}
                   >
                   <div className="flex items-center gap-3 overflow-hidden flex-1">
-                    <MessageSquare size={16} className="text-[#2C194D] shrink-0" strokeWidth={currentId === c.id ? 2.5 : 2} />
+                    <MessageSquare size={16} className={`${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'} shrink-0`} strokeWidth={currentId === c.id ? 2.5 : 2} />
                     {editingId === c.id ? (
                       <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
                         <input 
@@ -116,16 +116,16 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
                         <button onClick={() => setEditingId(null)} className="p-1 hover:text-red-600 text-[#2C194D]"><X size={14} /></button>
                       </div>
                     ) : (
-                      <span className="truncate text-sm font-bold text-[#2C194D]">{c.title}</span>
+                      <span className={`truncate text-sm font-bold ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}>{c.title}</span>
                     )}
                   </div>
                   
                   {editingId !== c.id && (
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => startEdit(c)} className="p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl text-[#2C194D] transition-all"><Edit2 size={14} /></button>
+                      <button onClick={() => startEdit(c)} className={`p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl transition-all ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}><Edit2 size={14} /></button>
                       <button onClick={() => {
                         if (window.confirm('Delete this sanctuary?')) onDelete(c.id);
-                      }} className="p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl text-[#2C194D] transition-all"><Trash2 size={14} /></button>
+                      }} className={`p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl transition-all ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}><Trash2 size={14} /></button>
                     </div>
                   )}
                   </motion.div>
