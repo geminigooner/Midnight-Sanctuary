@@ -22,7 +22,8 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
-  const filtered = conversations.filter(c => 
+  const modelConversations = conversations.filter(c => !c.modelId || c.modelId === currentModel);
+  const filtered = modelConversations.filter(c => 
     (c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
   );
 
@@ -69,21 +70,14 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
         </div>
       </div>
       
-      <AnimatePresence mode="wait">
+      <div className="flex-1 overflow-hidden flex flex-col relative">
         {viewMode === 'list' ? (
-          <motion.div 
-            key="list"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={viewMotion}
-            className="flex flex-col flex-1 overflow-hidden"
-          >
+          <div className="flex flex-col flex-1 overflow-hidden">
             <div className="p-3 border-b-[3px] border-[#2C194D] relative z-10 shrink-0">
               <Search size={16} className="absolute left-6 top-1/2 -translate-y-1/2 text-[#2C194D]/50" strokeWidth={3} />
               <input 
                 type="text" 
-                placeholder="Search memories..." 
+                placeholder="Search sanctuaries..." 
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl pl-10 pr-4 py-2.5 text-base font-bold focus:outline-none focus:shadow-[2px_2px_0_#2C194D] text-[#2C194D] placeholder-[#2C194D]/40 transition-all"
@@ -132,20 +126,13 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
                 ))}
               </AnimatePresence>
             </div>
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
-            key="nebula"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={viewMotion}
-            className="flex-1 flex overflow-hidden"
-          >
-            <NebulaArchive conversations={conversations} currentId={currentId} onSelect={onSelect} />
-          </motion.div>
+          <div className="flex-1 flex overflow-hidden">
+            <NebulaArchive conversations={modelConversations} currentId={currentId} onSelect={onSelect} />
+          </div>
         )}
-      </AnimatePresence>
+      </div>
     </div>
   );
 }

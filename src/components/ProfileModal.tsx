@@ -69,7 +69,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={modalMotion}
-        className="bg-ink border border-glass-border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col relative overflow-hidden"
+        className="bg-[#151234] border-[3px] border-[#2C194D] rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-[8px_8px_0_#2C194D] flex flex-col relative overflow-hidden"
       >
         <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
@@ -77,13 +77,13 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               <User size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-medium text-pearlescent">Your Profile</h2>
+              <h2 className="text-xl font-medium text-[#F5E1C8] font-bold">Your Profile</h2>
               <p className="text-sm font-bold text-[#B39DE5]">Who you intentionally tell the model you are.</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 text-mauve hover:text-red-400 hover:bg-white/5 rounded-xl transition-colors"
+            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
           >
             <X size={20} />
           </button>
@@ -93,32 +93,32 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
           
           {/* Identity Section */}
           <section className="space-y-6">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <Hash size={14} /> Identity
             </h3>
             
             <div className="flex flex-col sm:flex-row gap-8 items-start">
               <div className="flex flex-col items-center gap-3 shrink-0">
-                <div className="w-28 h-28 rounded-full bg-glass border-2 border-glass-border overflow-hidden flex items-center justify-center relative shadow-lg">
+                <div className="w-28 h-28 rounded-full bg-[#B39DE5] border-[3px] border-[#2C194D] overflow-hidden flex items-center justify-center relative shadow-[4px_4px_0_#2C194D]">
                   {photo ? (
                     <img src={`data:${photo.mimeType};base64,${photo.data}`} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
-                    <User size={40} className="text-mauve/50" />
+                    <User size={40} className="text-[#2C194D]" strokeWidth={2.5} />
                   )}
                 </div>
                 <div className="flex gap-3 text-xs">
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-copper hover:text-champagne transition-colors"
+                    className="text-[#F198B7] hover:text-[#B39DE5] font-bold transition-colors"
                   >
                     {photo ? 'Replace photo' : 'Choose from Camera Roll'}
                   </button>
                   {photo && (
                     <>
-                      <span className="text-mauve/30">|</span>
+                      <span className="text-[#2C194D]/30">|</span>
                       <button 
                         onClick={() => setPhoto(undefined)}
-                        className="text-mauve hover:text-red-400 transition-colors"
+                        className="text-[#B39DE5] hover:text-red-500 font-bold transition-colors"
                       >
                         Remove photo
                       </button>
@@ -142,7 +142,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                     value={name} 
                     onChange={e => setName(e.target.value)} 
                     placeholder="How should you be called?"
-                    className="w-full bg-black/40 border border-copper/30 rounded-xl p-3 text-base outline-none text-champagne"
+                    className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-base font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
                   />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -153,7 +153,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                       value={pronouns} 
                       onChange={e => setPronouns(e.target.value)} 
                       placeholder="e.g. they/them"
-                      className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none text-pearlescent transition-colors"
+                      className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
                     />
                   </div>
                   <div>
@@ -164,9 +164,9 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                         value={location} 
                         onChange={e => setLocation(e.target.value)} 
                         placeholder="Where are you?"
-                        className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 pl-9 text-sm outline-none text-pearlescent transition-colors"
+                        className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 pl-9 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
                       />
-                      <MapPin size={14} className="absolute left-3 top-3.5 text-mauve/50" />
+                      <MapPin size={14} className="absolute left-3 top-3.5 text-[#2C194D]/50" />
                     </div>
                   </div>
                 </div>
@@ -178,9 +178,9 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
                       value={occupation} 
                       onChange={e => setOccupation(e.target.value)} 
                       placeholder="What do you do?"
-                      className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 pl-9 text-sm outline-none text-pearlescent transition-colors"
+                      className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 pl-9 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
                     />
-                    <Briefcase size={14} className="absolute left-3 top-3.5 text-mauve/50" />
+                    <Briefcase size={14} className="absolute left-3 top-3.5 text-[#2C194D]/50" />
                   </div>
                 </div>
               </div>
@@ -189,7 +189,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
 
           {/* Current Vibe Section */}
           <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <Star size={14} /> Current Vibe
             </h3>
             <input 
@@ -197,13 +197,13 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               value={currentVibe} 
               onChange={e => setCurrentVibe(e.target.value)} 
               placeholder="e.g. building weird ML shit and yearning"
-              className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none text-pearlescent transition-colors"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
             />
           </section>
 
           {/* About Me Section */}
           <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <User size={14} /> About Me
             </h3>
             <textarea 
@@ -211,13 +211,13 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               onChange={e => setAbout(e.target.value)} 
               placeholder="Personality, communication style, preferences, or anything you intentionally want models to know about you..."
               rows={3}
-              className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none resize-none text-pearlescent transition-colors"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
             />
           </section>
 
           {/* Favorites & Interests */}
           <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <Star size={14} /> Favorites & Interests
             </h3>
             <textarea 
@@ -225,13 +225,13 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               onChange={e => setFavorites(e.target.value)} 
               placeholder="Hobbies, favorite music, movies, aesthetics, obsessions..."
               rows={3}
-              className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none resize-none text-pearlescent transition-colors"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
             />
           </section>
 
           {/* Ask Me About */}
           <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <MessageCircle size={14} /> Ask Me About
             </h3>
             <textarea 
@@ -239,13 +239,13 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               onChange={e => setAskMeAbout(e.target.value)} 
               placeholder="Topics you especially enjoy discussing or want models to engage you about..."
               rows={2}
-              className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none resize-none text-pearlescent transition-colors"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
             />
           </section>
 
           {/* Please Know */}
           <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-copper font-medium flex items-center gap-2">
+            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
               <AlertCircle size={14} /> Please Know
             </h3>
             <textarea 
@@ -253,18 +253,18 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               onChange={e => setPleaseKnow(e.target.value)} 
               placeholder="Things you intentionally want a model interacting with you to understand right away..."
               rows={2}
-              className="w-full bg-black/40 border border-glass-border focus:border-copper/40 rounded-xl p-3 text-sm outline-none resize-none text-pearlescent transition-colors"
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
             />
           </section>
 
           {profile?.gemmaNotes && profile.gemmaNotes.length > 0 && (
-            <div className="pt-6 border-t border-glass-border">
-              <h3 className="text-xs uppercase tracking-widest text-copper font-medium mb-3">Model Memories (Working Memory)</h3>
-              <p className="text-xs text-mauve mb-4">Things noticed and remembered about you over time (Not user-authored).</p>
+            <div className="pt-6 border-t-[3px] border-[#2C194D]">
+              <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold mb-3">Model Memories (Working Memory)</h3>
+              <p className="text-xs text-[#B39DE5] font-bold mb-4">Things noticed and remembered about you over time (Not user-authored).</p>
               <div className="space-y-3">
                 {profile.gemmaNotes.map((note, i) => (
-                  <div key={i} className="bg-glass border border-glass-border rounded-lg p-3">
-                    <p className="text-sm text-pearlescent">{note.text}</p>
+                  <div key={i} className="bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 shadow-[2px_2px_0_#2C194D]">
+                    <p className="text-sm font-bold text-[#2C194D]">{note.text}</p>
                     <p className="text-xs text-[#B39DE5] font-bold mt-1">{new Date(note.timestamp).toLocaleString()}</p>
                   </div>
                 ))}
@@ -273,16 +273,16 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
           )}
 
         </div>
-        <div className="p-6 border-t border-glass-border bg-ink/50 backdrop-blur-md shrink-0 flex justify-end gap-3 z-10">
+        <div className="p-6 border-t-[3px] border-[#2C194D] bg-[#151234] shrink-0 flex justify-end gap-3 z-10">
           <button 
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl text-mauve hover:bg-white/5 transition-colors font-medium"
+            className="px-5 py-2.5 rounded-xl font-bold text-[#B39DE5] border-[3px] border-transparent hover:border-[#2C194D] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all"
           >
             Cancel
           </button>
           <button 
             onClick={handleSave}
-            className="px-5 py-2.5 bg-copper text-obsidian rounded-xl hover:opacity-90 transition-opacity font-medium shadow-[0_0_15px_rgba(196,118,83,0.3)]"
+            className="px-5 py-2.5 bg-[#F198B7] text-[#2C194D] border-[3px] border-[#2C194D] rounded-xl hover:bg-[#B39DE5] shadow-[4px_4px_0_#2C194D] active:translate-y-1 active:shadow-none font-bold transition-all"
           >
             Save Profile
           </button>

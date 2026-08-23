@@ -313,7 +313,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                         onChange={e => setNewMemory(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && addMemory()}
                         placeholder="Add a new memory..."
-                        className="flex-1 bg-black/40 border border-glass-border rounded-lg px-3 py-2 focus:outline-none focus:border-copper/50 transition-colors text-sm text-[#2C194D] placeholder:text-[#2C194D]/40"
+                        className="flex-1 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl px-3 py-2 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all text-sm font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
                       />
                       <button onClick={addMemory} className="p-2 bg-[#F198B7] hover:bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 transition-all text-[#2C194D]">
                         <Plus size={18} />
@@ -322,14 +322,14 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
 
                     <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
                       {(!settings.memories || settings.memories.length === 0) ? (
-                        <div className="text-sm text-mauve/70 italic text-center py-4">No memories saved yet.</div>
+                        <div className="text-sm text-[#B39DE5] font-bold text-center py-4">No memories saved yet.</div>
                       ) : (
                         settings.memories.map(memory => (
                           <div key={memory.id} className="flex gap-2 items-start group">
                             <textarea
                               value={memory.content}
                               onChange={e => updateMemory(memory.id, e.target.value)}
-                              className="flex-1 bg-black/20 border border-transparent hover:border-glass-border focus:border-copper/50 rounded-lg px-3 py-2 focus:outline-none transition-colors text-sm text-[#2C194D] resize-none"
+                              className="flex-1 bg-[#F5E1C8] border-[3px] border-transparent hover:border-[#2C194D] focus:border-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] rounded-xl px-3 py-2 focus:outline-none transition-all text-sm font-bold text-[#2C194D] resize-none"
                               rows={2}
                             />
                             <button 
