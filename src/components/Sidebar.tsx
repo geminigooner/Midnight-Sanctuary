@@ -22,7 +22,7 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
-  const modelConversations = conversations.filter(c => !c.modelId || c.modelId === currentModel);
+  const modelConversations = conversations;
   const filtered = modelConversations.filter(c => 
     (c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
   );

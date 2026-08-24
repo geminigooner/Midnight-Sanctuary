@@ -40,6 +40,7 @@ export function useAppStore(user: any) {
           if (data.gifts) setGifts(data.gifts);
           if (data.userProfile) setProfile(data.userProfile);
           
+          console.log('LOADING DATA from firestore, conversations count:', data.conversations ? data.conversations.length : 0);
           setDataLoaded(true);
           isInitialLoad = false;
         }
@@ -107,6 +108,7 @@ export function useAppStore(user: any) {
           gifts
         };
         if (profile) payload.userProfile = profile;
+        console.log('SAVING DATA to firestore, conversations count:', conversations.length, 'dataLoaded:', dataLoaded);
         setDoc(userDocRef, payload, { merge: true });
       } catch (e) {
         console.error('Persist failed:', e);

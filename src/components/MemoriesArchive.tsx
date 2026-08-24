@@ -53,21 +53,21 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
               <p className="text-sm font-bold text-[#B39DE5]">Things you considered worth keeping</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-glass rounded-full transition-colors text-[#2C194D] hover:text-[#2C194D]">
+          <button onClick={onClose} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
             <X size={20} />
           </button>
         </div>
 
-        <div className="flex border-b border-glass-border">
+        <div className="flex border-b-[3px] border-[#2C194D]">
           <button
             onClick={() => setActiveTab('model')}
-            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-copper border-b-2 border-copper bg-white/5' : 'text-mauve hover:text-pearlescent'}`}
+            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
           >
             Model Memories
           </button>
           <button
             onClick={() => setActiveTab('user')}
-            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'user' ? 'text-copper border-b-2 border-copper bg-white/5' : 'text-mauve hover:text-pearlescent'}`}
+            className={`flex-1 p-4 text-sm font-medium tracking-wide transition-colors ${activeTab === 'user' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
           >
             User Saved Memories
           </button>
@@ -90,7 +90,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
 
             if (displayMemories.length === 0) {
               return (
-                <div className="h-full flex flex-col items-center justify-center text-mauve opacity-50 space-y-4 min-h-[40vh]">
+                <div className="h-full flex flex-col items-center justify-center text-[#B39DE5] font-bold space-y-4 min-h-[40vh]">
                   <Bookmark size={48} className="opacity-20" />
                   <p className="tracking-widest uppercase text-sm">No memories in this tab.</p>
                 </div>
@@ -114,7 +114,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
                       ) : (
                         <button
                           onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(memory.id); }}
-                          className="p-1.5 text-mauve/40 hover:text-red-400 transition-colors rounded-full hover:bg-white/5 opacity-100"
+                          className="p-1.5 text-[#2C194D]/40 hover:text-red-600 transition-all rounded-xl hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] opacity-100"
                           title="Delete memory"
                         >
                           <Trash2 size={15} />
@@ -125,19 +125,19 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
 
                   <div className="flex-1 text-[#2C194D] prose prose-p:leading-relaxed prose-sm max-w-none pt-2">
                     {memory.caption && (
-                      <div className="text-xs text-copper/90 font-medium mb-2 opacity-80 uppercase tracking-wide">
+                      <div className="text-xs text-[#F198B7] font-bold mb-2 uppercase tracking-wide">
                         {memory.caption}
                       </div>
                     )}
                     {memory.content}
                   </div>
                   
-                  <div className="flex justify-between items-end mt-2 pt-3 border-t border-glass-border border-dashed">
+                  <div className="flex justify-between items-end mt-2 pt-3 border-t-[3px] border-[#2C194D] border-dashed">
                     <div className="flex flex-col gap-1">
                       <span className="text-xs text-[#F198B7] uppercase tracking-widest font-bold bg-[#2C194D] px-2 py-1 rounded w-max">
                         {memory.author === 'model' ? (memory.modelId || 'From Model') : (memory.origin === 'gemma_initiated' ? 'From Gemma' : 'Recorded')}
                       </span>
-                      <span className="text-[10px] text-mauve italic">
+                      <span className="text-[10px] text-[#B39DE5] font-bold">
                         {new Date(memory.createdAt).toLocaleDateString()}
                       </span>
                     </div>

@@ -24,6 +24,7 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "playwright": "^1.61.1",
+    "puppeteer": "^25.8.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",

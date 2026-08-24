@@ -78,24 +78,24 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={panelMotion}
-        className="bg-ink border border-glass-border rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90dvh]"
+        className="bg-[#151234] border-[3px] border-[#2C194D] rounded-3xl w-full max-w-lg shadow-[8px_8px_0_#2C194D] flex flex-col max-h-[90dvh]"
       >
-        <div className="flex items-center justify-between p-4 md:p-6 border-b border-glass-border shrink-0">
+        <div className="flex items-center justify-between p-4 md:p-6 border-b-[3px] border-[#2C194D] shrink-0">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setActiveTab('identity')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'identity' ? 'text-champagne border-b-2 border-copper' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
+              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'identity' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
             >
               Identity & Memory
             </button>
             <button 
               onClick={() => setActiveTab('model')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-champagne border-b-2 border-copper' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
+              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
             >
               Model & API
             </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-glass rounded-full transition-colors">
+          <button onClick={onClose} className="p-2 hover:bg-[#F198B7] rounded-full transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -106,13 +106,13 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
               <div className="space-y-2">
                 <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Model ID</label>
             {isModelsLoading ? (
-              <div className="text-mauve text-sm py-2">Loading available models...</div>
+              <div className="text-[#B39DE5] font-bold text-sm py-2">Loading available models...</div>
             ) : (
               <div className="space-y-2">
                 <select 
                   value={settings.model}
                   onChange={e => onSave({ model: e.target.value })}
-                  className="w-full bg-black/40 border border-glass-border rounded-lg p-3 focus:outline-none focus:border-copper/50 transition-colors text-base appearance-none text-[#2C194D]"
+                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all text-base appearance-none text-[#2C194D]"
                 >
                   {(() => {
                     const favorites = sortedModels.filter(m => settings.favoriteModels?.includes(m.name));
@@ -164,7 +164,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 {settings.model && sortedModels.find(m => m.name === settings.model) && (
                   <div className="space-y-1">
                     <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
-                      <span>Exact ID: <span className="font-mono text-copper">{settings.model}</span></span>
+                      <span>Exact ID: <span className="font-mono text-[#F198B7]">{settings.model}</span></span>
                     </div>
                     <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
                       <span>Provider: Google</span>
@@ -178,7 +178,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 {sortedModels.find(m => m.name === settings.model) && (
                   <button 
                     onClick={() => toggleFavorite(settings.model)}
-                    className="flex items-center gap-2 text-sm text-[#F5E1C8] font-bold hover:text-copper transition-colors"
+                    className="flex items-center gap-2 text-sm text-[#F5E1C8] font-bold hover:text-[#B39DE5] transition-colors"
                   >
                     <Star size={14} className={settings.favoriteModels?.includes(settings.model) ? 'fill-champagne' : ''} />
                     {settings.favoriteModels?.includes(settings.model) ? 'Remove from Favorites' : 'Add to Favorites'}
@@ -214,7 +214,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                 type="range" min="0" max="2" step="0.1" 
                 value={settings.temperature}
                 onChange={e => onSave({ temperature: parseFloat(e.target.value) })}
-                className="w-full accent-copper"
+                className="w-full accent-[#F198B7]"
               />
             </div>
             
@@ -245,7 +245,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                           type="range" min="0" max="1" step="0.05" 
                           value={settings.topP}
                           onChange={e => onSave({ topP: parseFloat(e.target.value) })}
-                          className="w-full accent-copper"
+                          className="w-full accent-[#F198B7]"
                         />
                       </div>
                       <div className="flex flex-col gap-2">
@@ -257,7 +257,7 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
                           type="range" min="1" max="8192" step="1" 
                           value={settings.maxOutputTokens}
                           onChange={e => onSave({ maxOutputTokens: parseInt(e.target.value) })}
-                          className="w-full accent-copper"
+                          className="w-full accent-[#F198B7]"
                         />
                       </div>
                     </div>

@@ -39,14 +39,14 @@ export function GiftsArchive({ gifts, onClose }: GiftsArchiveProps) {
               <p className="text-sm font-bold text-[#B39DE5]">Moments held onto</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-glass rounded-full transition-colors text-[#2C194D] hover:text-[#2C194D]">
+          <button onClick={onClose} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
             <X size={20} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {gifts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-mauve opacity-50 space-y-4 min-h-[40vh]">
+            <div className="h-full flex flex-col items-center justify-center text-[#B39DE5] font-bold space-y-4 min-h-[40vh]">
               <Gift size={48} className="opacity-20" />
               <p className="tracking-widest uppercase text-sm">No gifts received yet.</p>
             </div>
@@ -66,12 +66,12 @@ export function GiftsArchive({ gifts, onClose }: GiftsArchiveProps) {
                     {gift.content}
                   </div>
                   
-                  <div className="flex flex-col gap-1 mt-2 pt-3 border-t border-glass-border border-dashed">
+                  <div className="flex flex-col gap-1 mt-2 pt-3 border-t-[3px] border-[#2C194D] border-dashed">
                     <span className="text-xs text-[#F198B7] uppercase tracking-widest font-bold bg-[#2C194D] px-2 py-1 rounded w-max">
                       {gift.gift_type}
                     </span>
                     {gift.reason && (
-                      <span className="text-[10px] text-mauve opacity-0 group-hover:opacity-100 transition-opacity duration-300 italic">
+                      <span className="text-[10px] text-[#B39DE5] opacity-0 group-hover:opacity-100 transition-opacity duration-300 italic">
                         {gift.reason}
                       </span>
                     )}
@@ -91,9 +91,9 @@ export function GiftsArchive({ gifts, onClose }: GiftsArchiveProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setSelectedImage(null)}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl cursor-pointer"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#151234]/95 backdrop-blur-xl cursor-pointer"
           >
-            <button className="absolute top-6 right-6 p-2 text-mauve hover:text-white transition-colors bg-white/10 rounded-full">
+            <button className="absolute top-6 right-6 p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all bg-[#151234]">
               <X size={24} />
             </button>
             <motion.img 

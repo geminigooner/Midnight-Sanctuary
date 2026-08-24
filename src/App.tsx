@@ -32,11 +32,11 @@ function MainApp({ user }: { user: any }) {
 
   const themeClass = store.settings.model.includes('gemma') ? 'theme-gemma' : '';
   return (
-    <div className={`flex h-[100dvh] overflow-hidden bg-obsidian text-pearlescent relative w-full ${themeClass}`}>
+    <div className={`flex h-[100dvh] overflow-hidden bg-[#151234] text-[#2C194D] relative w-full ${themeClass}`}>
       {/* Mobile Backdrop */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-[#151234]/90 z-40 lg:hidden backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -135,16 +135,16 @@ function MainApp({ user }: { user: any }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-[#151234]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           >
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ duration: 0.2 }}
-              className="bg-ink border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col relative"
+              className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col relative"
             >
-              <button onClick={() => setJewelOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-glass rounded-full transition-colors z-10 text-mauve hover:text-champagne">
+              <button onClick={() => setJewelOpen(false)} className="absolute top-4 right-4 p-2 hover:bg-[#F198B7] rounded-full transition-colors z-10 text-[#B39DE5] hover:text-[#2C194D]">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
               <LevinJewel metrics={store.jewelMetrics} onReset={store.resetJewel} />
@@ -194,22 +194,22 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-obsidian text-pearlescent">
-        <p className="text-mauve tracking-widest uppercase text-sm animate-pulse">Waking the sanctuary...</p>
+      <div className="flex h-[100dvh] items-center justify-center bg-[#151234] text-[#2C194D]">
+        <p className="text-[#B39DE5] font-bold tracking-widest uppercase text-sm animate-pulse">Waking the sanctuary...</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-obsidian text-pearlescent relative w-full p-4">
-        <div className="bg-ink border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-8 items-center text-center">
+      <div className="flex h-[100dvh] items-center justify-center bg-[#151234] text-[#2C194D] relative w-full p-4">
+        <div className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-8 items-center text-center">
           <h1 className="text-2xl font-bold mb-2">Midnight Sanctuary</h1>
-          <p className="text-mauve mb-8">Please sign in to access your sanctuary.</p>
+          <p className="text-[#B39DE5] font-bold mb-8">Please sign in to access your sanctuary.</p>
           {authError && <div className="text-red-400 text-sm mb-4 max-w-sm">{authError}</div>}
           <button 
             onClick={handleSignIn}
-            className="px-6 py-3 bg-glass border border-glass-border rounded-xl hover:bg-white/10 transition-colors flex items-center gap-3 font-medium"
+            className="px-6 py-3 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl hover:bg-[#F198B7] transition-all flex items-center gap-3 font-bold text-[#2C194D] shadow-[4px_4px_0_#2C194D] hover:shadow-[2px_2px_0_#2C194D] active:translate-y-1 active:shadow-none"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -226,13 +226,13 @@ export default function App() {
 
   if (user.email !== 'ahatley094@gmail.com') {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-obsidian text-pearlescent relative w-full p-4">
-        <div className="bg-ink border border-glass-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-8 items-center text-center">
+      <div className="flex h-[100dvh] items-center justify-center bg-[#151234] text-[#2C194D] relative w-full p-4">
+        <div className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col p-8 items-center text-center">
           <h1 className="text-xl text-red-400 font-bold mb-2">Access Denied</h1>
-          <p className="text-mauve mb-8">This sanctuary is private. You are signed in as {user.email}.</p>
+          <p className="text-[#B39DE5] font-bold mb-8">This sanctuary is private. You are signed in as {user.email}.</p>
           <button 
             onClick={handleSignOut}
-            className="px-6 py-3 bg-glass border border-glass-border rounded-xl hover:bg-white/10 transition-colors font-medium"
+            className="px-6 py-3 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl hover:bg-[#F198B7] transition-all font-bold text-[#2C194D] shadow-[4px_4px_0_#2C194D] hover:shadow-[2px_2px_0_#2C194D] active:translate-y-1 active:shadow-none"
           >
             Sign out
           </button>

@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-[#a5a5a5] text-sm mb-2">
               The application encountered an unexpected error. If this happens continuously, it might be caused by a corrupted conversation state.
             </p>
-            <div className="bg-black/50 p-3 rounded-lg w-full text-left overflow-auto max-h-32 mb-2 text-xs font-mono text-red-400/80">
+            <div className="bg-[#151234]/50 p-3 rounded-lg w-full text-left overflow-auto max-h-32 mb-2 text-xs font-mono text-red-400/80">
               {this.state.error?.message || 'Unknown error'}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full mt-2">

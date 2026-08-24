@@ -13,14 +13,14 @@ export function Presence({ state }: PresenceProps) {
   if (shouldReduceMotion) {
     return (
        <div className="w-5 h-5 flex items-center justify-center transition-colors duration-500">
-         {state === 'resting' && <div className="w-1.5 h-1.5 rounded-full bg-mauve opacity-50" />}
-         {state === 'listening' && <div className="w-2 h-2 rounded-full bg-champagne opacity-70" />}
-         {state === 'responding' && <div className="w-2 h-2 rounded-full bg-champagne" />}
-         {state === 'deep_thinking' && <div className="w-2 h-2 rounded-full bg-mauve" />}
-         {state === 'complete' && <div className="w-1.5 h-1.5 rounded-full bg-pearlescent opacity-50" />}
-         {state === 'repetition_stopped' && <div className="w-3 h-0.5 bg-copper rotate-45" />}
-         {state === 'error' && <div className="w-1.5 h-1.5 rounded-full bg-ink border border-glass-border" />}
-         {state === 'rate_limit' && <div className="w-2 h-2 rounded-full bg-mauve/50 flex items-center justify-center"><div className="w-1 h-1 bg-ink rounded-full" /></div>}
+         {state === 'resting' && <div className="w-1.5 h-1.5 rounded-full bg-[#B39DE5] opacity-50" />}
+         {state === 'listening' && <div className="w-2 h-2 rounded-full bg-[#F5E1C8] opacity-70" />}
+         {state === 'responding' && <div className="w-2 h-2 rounded-full bg-[#F5E1C8]" />}
+         {state === 'deep_thinking' && <div className="w-2 h-2 rounded-full bg-[#B39DE5]" />}
+         {state === 'complete' && <div className="w-1.5 h-1.5 rounded-full bg-[#F5E1C8] opacity-50" />}
+         {state === 'repetition_stopped' && <div className="w-3 h-0.5 bg-[#F198B7] rotate-45" />}
+         {state === 'error' && <div className="w-1.5 h-1.5 rounded-full bg-[#151234] border border-[#2C194D]" />}
+         {state === 'rate_limit' && <div className="w-2 h-2 rounded-full bg-[#B39DE5]/50 flex items-center justify-center"><div className="w-1 h-1 bg-[#151234] rounded-full" /></div>}
        </div>
     );
   }
@@ -32,7 +32,7 @@ export function Presence({ state }: PresenceProps) {
         <motion.div 
           animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }} 
           transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-          className="w-1.5 h-1.5 rounded-full bg-mauve shadow-[0_0_8px_rgba(158,123,143,0.5)]"
+          className="w-1.5 h-1.5 rounded-full bg-[#B39DE5] shadow-[0_0_8px_rgba(179,157,229,0.5)]"
         />
       )}
 
@@ -42,9 +42,9 @@ export function Presence({ state }: PresenceProps) {
           <motion.div 
             animate={{ scale: [1, 1.8, 1], opacity: [0.2, 0.5, 0.2] }} 
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-            className="absolute w-2 h-2 rounded-full bg-champagne shadow-[0_0_12px_rgba(244,232,211,0.6)]"
+            className="absolute w-2 h-2 rounded-full bg-[#F5E1C8] shadow-[0_0_12px_rgba(245,225,200,0.6)]"
           />
-          <div className="w-1.5 h-1.5 rounded-full bg-champagne relative z-10" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[#F5E1C8] relative z-10" />
         </>
       )}
 
@@ -61,13 +61,13 @@ export function Presence({ state }: PresenceProps) {
                  scale: [0.5, 1, 0.5]
                }}
                transition={{ repeat: Infinity, duration: 2, ease: "easeInOut", delay: i * 0.2 }}
-               className="absolute w-1 h-1 rounded-full bg-champagne"
+               className="absolute w-1 h-1 rounded-full bg-[#F5E1C8]"
              />
           ))}
           <motion.div 
             animate={{ scale: [1, 1.2, 1] }} 
             transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-            className="w-2 h-2 rounded-full bg-champagne shadow-[0_0_10px_rgba(244,232,211,0.8)] z-10" 
+            className="w-2 h-2 rounded-full bg-[#F5E1C8] shadow-[0_0_10px_rgba(245,225,200,0.8)] z-10" 
           />
         </div>
       )}
@@ -78,17 +78,17 @@ export function Presence({ state }: PresenceProps) {
            <motion.div 
              animate={{ rotate: 360 }}
              transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
-             className="absolute w-6 h-6 rounded-full border border-mauve/20 border-t-mauve/60"
+             className="absolute w-6 h-6 rounded-full border border-[#B39DE5]/20 border-t-mauve/60"
            />
            <motion.div 
              animate={{ rotate: -360, scale: [0.8, 1, 0.8] }}
              transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-             className="absolute w-4 h-4 rounded-full border border-copper/10 border-b-copper/40"
+             className="absolute w-4 h-4 rounded-full border border-[#F198B7]/10 border-b-copper/40"
            />
            <motion.div 
             animate={{ opacity: [0.3, 0.6, 0.3] }} 
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-            className="w-1.5 h-1.5 rounded-full bg-mauve shadow-[0_0_15px_rgba(158,123,143,0.6)]"
+            className="w-1.5 h-1.5 rounded-full bg-[#B39DE5] shadow-[0_0_15px_rgba(179,157,229,0.6)]"
           />
         </div>
       )}
@@ -99,7 +99,7 @@ export function Presence({ state }: PresenceProps) {
           initial={{ scale: 1.5, opacity: 0.8 }}
           animate={{ scale: 1, opacity: 0.3 }}
           transition={{ duration: 1.5, ease: "easeOut" }}
-          className="w-1.5 h-1.5 rounded-full bg-pearlescent shadow-[0_0_8px_rgba(230,232,230,0.5)]"
+          className="w-1.5 h-1.5 rounded-full bg-[#F5E1C8] shadow-[0_0_8px_rgba(245,225,200,0.5)]"
         />
       )}
 
@@ -110,7 +110,7 @@ export function Presence({ state }: PresenceProps) {
              initial={{ pathLength: 0, opacity: 0 }}
              animate={{ pathLength: 1, opacity: 1 }}
              transition={{ duration: 0.5, ease: "easeOut" }}
-             className="w-5 h-5 flex items-center justify-center text-copper drop-shadow-[0_0_4px_rgba(196,118,83,0.8)]"
+             className="w-5 h-5 flex items-center justify-center text-[#F198B7] drop-shadow-[0_0_4px_rgba(241,152,183,0.8)]"
            >
              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-full h-full">
                <path d="M14 4 L10 12 L14 12 L10 20" strokeLinecap="round" strokeLinejoin="round" />
@@ -124,7 +124,7 @@ export function Presence({ state }: PresenceProps) {
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="w-2 h-2 rounded-full bg-ink border border-mauve/40 shadow-inner" 
+          className="w-2 h-2 rounded-full bg-[#151234] border border-[#B39DE5]/40 shadow-inner" 
         />
       )}
 
@@ -133,7 +133,7 @@ export function Presence({ state }: PresenceProps) {
         <motion.div 
           animate={{ scale: [1, 1.1, 1], opacity: [0.2, 0.4, 0.2] }} 
           transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-          className="w-2 h-2 rounded-full bg-mauve shadow-[0_0_6px_rgba(158,123,143,0.3)]"
+          className="w-2 h-2 rounded-full bg-[#B39DE5] shadow-[0_0_6px_rgba(179,157,229,0.3)]"
         />
       )}
     </div>
