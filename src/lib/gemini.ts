@@ -1,5 +1,6 @@
 import { AppSettings, Message, Gift } from './types';
 import { auth, signOut } from './firebase';
+import { getContextMemories, isUserMemory } from './memorySystem';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -78,30 +79,11 @@ export async function* streamChat(
   }
 
   if (settings.memoriesEnabled && settings.memories && settings.memories.length > 0) {
-    const relevantMemories = settings.memories.filter(m => {
-      const isModelAuthor = m.author === 'model' || m.origin === 'gemma_initiated';
-      if (!isModelAuthor) return true; // Include user or legacy memories
-      
-      // If model memory, only include it if it was created by the current model.
-      // If it has no modelId, treat as legacy model memory.
-      if (m.modelId) {
-        return m.modelId === settings.model;
-      }
-      return true; // Include legacy model memories, but we will label them clearly
-    });
+    const relevantMemories = getContextMemories(settings.memories, settings.model);
 
     if (relevantMemories.length > 0) {
       const memoryText = relevantMemories.map(m => {
-        const isExplicitUser = m.author === 'user' || m.origin === 'user_favorited' || m.origin === 'user_saved';
-        const isExplicitModel = (m.author === 'model' || m.origin === 'gemma_initiated') && m.modelId === settings.model;
-        
-        let prefix = '[Legacy/Unassigned Memory]';
-        if (isExplicitUser) {
-           prefix = '[User Saved]';
-        } else if (isExplicitModel) {
-           prefix = '[My Memory]';
-        }
-        
+        const prefix = isUserMemory(m) ? '[User Saved]' : '[My Memory]';
         return `- ${prefix} ${m.content}`;
       }).join('\n');
       identityParts.push(`## Context & Saved Memories:\n${memoryText}`);
