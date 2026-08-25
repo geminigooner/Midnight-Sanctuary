@@ -4,6 +4,21 @@ import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 
+function removeUndefined(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefined);
+  } else if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {};
+    for (const key in obj) {
+      if (obj[key] !== undefined) {
+        newObj[key] = removeUndefined(obj[key]);
+      }
+    }
+    return newObj;
+  }
+  return obj;
+}
+
 export function useAppStore(user: any) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -122,7 +137,7 @@ export function useAppStore(user: any) {
           }
         }
         
-        await setDoc(userDocRef, payload, { merge: true });
+        await setDoc(userDocRef, removeUndefined(payload), { merge: true });
         console.log('[Diagnostic] Save SUCCESS! Data correctly committed to Firestore.');
       } catch (e) {
         console.error('[Diagnostic] Save FAILURE! Actual Firestore Error:', e);
@@ -172,7 +187,7 @@ export function useAppStore(user: any) {
         memories: [newMemory, ...(prev.memories || [])]
       };
       if (user) {
-        setDoc(doc(db, 'users', user.uid), { settings: nextSettings }, { merge: true })
+        setDoc(doc(db, 'users', user.uid), removeUndefined({ settings: nextSettings }), { merge: true })
           .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMemory):', e));
       }
       return nextSettings;
@@ -236,7 +251,7 @@ export function useAppStore(user: any) {
         c.id === conversationId ? { ...c, messages: [...(c.messages || []), message], updatedAt: Date.now() } : c
       );
       if (user) {
-        setDoc(doc(db, 'users', user.uid), { conversations: next }, { merge: true })
+        setDoc(doc(db, 'users', user.uid), removeUndefined({ conversations: next }), { merge: true })
           .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMessage):', e));
       }
       return next;
@@ -262,7 +277,7 @@ export function useAppStore(user: any) {
         } : c
       );
       if (user && updates.status === 'complete') {
-        setDoc(doc(db, 'users', user.uid), { conversations: next }, { merge: true })
+        setDoc(doc(db, 'users', user.uid), removeUndefined({ conversations: next }), { merge: true })
           .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (updateMessage):', e));
       }
       return next;
