@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 function removeUndefined(obj: any): any {
   if (Array.isArray(obj)) {
@@ -18,15 +18,20 @@ function removeUndefined(obj: any): any {
 
 export function loadState(userId: string, onData: (data: any) => void) {
   const userDocRef = doc(db, 'users', userId);
-  return onSnapshot(userDocRef, (docSnap) => {
-    if (docSnap.exists()) {
-      onData(docSnap.data());
-    } else {
+  
+
+    getDoc(userDocRef).then((docSnap) => {
+      if (docSnap.exists()) {
+        onData(docSnap.data());
+      } else {
+        onData(null);
+      }
+    }).catch((error) => {
+      console.error("Firestore getDoc error:", error);
       onData(null);
-    }
-  }, (error) => {
-    console.error("Firestore onSnapshot error:", error);
-  });
+    });
+
+  return () => {}; // return dummy unsubscribe
 }
 
 // Internal generic save to preserve exactly the same behavior and single-write

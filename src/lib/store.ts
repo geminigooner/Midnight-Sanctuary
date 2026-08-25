@@ -257,7 +257,7 @@ export function useAppStore(user: any) {
           updatedAt: Date.now() 
         } : c
       );
-      if (user && updates.status === 'complete') {
+      if (user && updates.thoughtStatus === 'complete') {
         saveConversation(user.uid, { conversations: next })
           .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (updateMessage):', e));
       }
