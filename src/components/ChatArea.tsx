@@ -130,7 +130,6 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     isGeneratingRef.current = isGenerating;
   }, [isGenerating]);
   const [presence, setPresence] = useState<PresenceState>('resting');
-  const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showDebugModel, setShowDebugModel] = useState(false);
@@ -229,7 +228,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
     if (giftFileInputRef.current) giftFileInputRef.current.value = '';
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -238,17 +237,64 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
        return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-       const result = event.target?.result as string;
-       const base64Data = result.split(',')[1];
-       setAttachments(prev => [...prev, {
-         mimeType: file.type,
-         data: base64Data,
-         previewUrl: result
-       }]);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = objectUrl;
+      });
+      
+      const MAX_DIMENSION = 1536;
+      let { width, height } = img;
+      
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round((height * MAX_DIMENSION) / width);
+          width = MAX_DIMENSION;
+        } else {
+          width = Math.round((width * MAX_DIMENSION) / height);
+          height = MAX_DIMENSION;
+        }
+      }
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error("Could not get 2d context");
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      const targetMimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const quality = 0.8;
+      
+      const dataUrl = canvas.toDataURL(targetMimeType, quality);
+      const base64Data = dataUrl.split(',')[1];
+      
+      setAttachments(prev => [...prev, {
+        mimeType: targetMimeType,
+        data: base64Data,
+        previewUrl: dataUrl
+      }]);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error("Error compressing image:", err);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+         const result = event.target?.result as string;
+         const base64Data = result.split(',')[1];
+         setAttachments(prev => [...prev, {
+           mimeType: file.type,
+           data: base64Data,
+           previewUrl: result
+         }]);
+      };
+      reader.readAsDataURL(file);
+    }
+
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -982,13 +1028,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       <div className={`p-3 sm:p-4 bg-[#151234] border-t-[3px] border-[#2C194D] z-10 transition-colors duration-500 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
         <div className="max-w-4xl mx-auto relative">
           <motion.div 
-            animate={{ 
-              scale: isComposerFocused && !reducedMotion ? 1.01 : 1,
-              y: isComposerFocused && !reducedMotion ? -2 : 0,
-              boxShadow: isComposerFocused && !reducedMotion ? '0 8px 30px rgba(0,0,0,0.3)' : '0 2px 10px rgba(0,0,0,0)'
-            }}
-            transition={composerMotion}
-            className={`flex flex-col gap-2 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-2 transition-all duration-300 focus-within:shadow-[4px_4px_0_#2C194D]`}
+            className={`flex flex-col gap-2 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-2 transition-all duration-300 focus-within:shadow-[0_8px_30px_rgba(0,0,0,0.3)]`}
           >
             {attachments.length > 0 && (
               <div className="flex gap-2 px-2 pt-2 overflow-x-auto custom-scrollbar">
@@ -1022,8 +1062,6 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
               <textarea 
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onFocus={() => setIsComposerFocused(true)}
-                onBlur={() => setIsComposerFocused(false)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

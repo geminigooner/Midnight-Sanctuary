@@ -123,6 +123,9 @@ export async function* streamChat(
       identityParts.push(`## THINKING DIRECTIVE\nYou are capable of advanced reasoning. However, do NOT overuse the <think> tag. Only use <think> blocks when you truly need to solve a complex logical problem, interpret something difficult, or process dense math/code. For general conversation, emotional responses, or straightforward answers, respond directly without thinking tags to save output tokens.`);
   }
 
+
+  const lastUserMsgId = [...messages].reverse().find(m => m.role === 'user')?.id;
+
   const serializedMessages = messages
     .map(m => {
       if (m.role === 'model') {
@@ -142,7 +145,10 @@ export async function* streamChat(
         parts: (m.parts || [])
           .map(p => {
             if (p.functionResponse) return { functionResponse: p.functionResponse };
-            if (p.inlineData) return { inlineData: p.inlineData };
+            if (p.inlineData) {
+              if (m.id === lastUserMsgId) return { inlineData: p.inlineData };
+              return { text: '[Image omitted from history to save payload size]' };
+            }
             if (p.text && p.text.trim().length > 0) return { text: p.text };
             return null;
           })
@@ -207,21 +213,47 @@ export async function* streamChat(
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Unauthorized: Please sign in.');
 
+
+  const payloadBody = {
+    messages: serializedMessages,
+    systemInstruction: fullSystemInstruction,
+    temperature: settings.temperature,
+    topP: settings.topP,
+    maxOutputTokens: settings.maxOutputTokens,
+    model: settings.model,
+    forceCloudflare: settings.forceCloudflare
+  };
+  const payloadString = JSON.stringify(payloadBody);
+  const payloadBytes = new TextEncoder().encode(payloadString).length;
+  
+  let attachmentCount = 0;
+  let attachmentSizes = [];
+  for (const m of serializedMessages) {
+    for (const p of m.parts) {
+      if (p.inlineData && p.inlineData.data) {
+        attachmentCount++;
+        attachmentSizes.push(p.inlineData.data.length);
+      }
+    }
+  }
+
+  console.log(`[Diagnostics] Request Prep: Provider=${settings.model}, Messages=${serializedMessages.length}, Attachments=${attachmentCount}, PayloadSize=${(payloadBytes/1024).toFixed(2)}KB`);
+  if (attachmentSizes.length > 0) {
+    console.log(`[Diagnostics] Attachment Sizes: ${attachmentSizes.map(s => (s/1024).toFixed(2) + 'KB').join(', ')}`);
+  }
+
+  const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5MB safe limit
+  if (payloadBytes > MAX_PAYLOAD_BYTES) {
+    throw new Error(`Request too large: ${(payloadBytes/1024/1024).toFixed(2)}MB exceeds safe limit of ${(MAX_PAYLOAD_BYTES/1024/1024).toFixed(2)}MB. Please remove some attachments or clear history.`);
+  }
+
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({
-      messages: serializedMessages,
-      systemInstruction: fullSystemInstruction,
-      temperature: settings.temperature,
-      topP: settings.topP,
-      maxOutputTokens: settings.maxOutputTokens,
-      model: settings.model,
-      forceCloudflare: settings.forceCloudflare
-    }),
+    body: payloadString,
     signal: abortSignal
   });
 
