@@ -14,11 +14,11 @@ app.get('/api/models', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!(process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY)) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
+  if (!process.env.GENAI_API_KEY) {
+    return res.status(500).json({ error: 'GENAI_API_KEY is not configured in the environment.' });
   }
 
-  const ai = new GoogleGenAI({ apiKey: (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY), httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+  const ai = new GoogleGenAI({ apiKey: process.env.GENAI_API_KEY, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   try {
     const response = await ai.models.list();
     const models = [];
@@ -42,10 +42,12 @@ app.post('/api/chat', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const apiKey = (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY);
-
+  const model = req.body?.model || '';
+  const isGemma = model.toLowerCase().includes('gemma');
+  const apiKey = isGemma ? process.env.GEMINI_API_KEY : process.env.GENAI_API_KEY;
+  
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured in the environment.' });
+    return res.status(500).json({ error: `${isGemma ? 'GEMINI_API_KEY' : 'GENAI_API_KEY'} is not configured in the environment.` });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');

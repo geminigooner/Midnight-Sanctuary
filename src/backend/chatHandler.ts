@@ -133,7 +133,11 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           const backoffTimes = [1000, 2500, 5000];
           
           if (forceCloudflare) {
-            throw new Error("Forcing Cloudflare fallback for testing");
+            if (model.toLowerCase().includes('gemma')) {
+              throw new Error("Forcing Cloudflare fallback for testing");
+            } else {
+              // Ignore forceCloudflare for Gemini
+            }
           }
 
           while (true) {
@@ -252,6 +256,9 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
         }
 
         try {
+          if (!model.toLowerCase().includes('gemma')) {
+            throw new Error("Cloudflare fallback is only allowed for Gemma models.");
+          }
           console.log("Attempting Cloudflare fallback...");
           const cfMessages = [];
           if (systemInstruction) {

@@ -98,7 +98,7 @@ export function useAppStore(user: any) {
   // Save on change
   useEffect(() => {
     if (!dataLoaded || !user) return;
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       try {
         const userDocRef = doc(db, 'users', user.uid);
         const payload: any = {
@@ -108,10 +108,24 @@ export function useAppStore(user: any) {
           gifts
         };
         if (profile) payload.userProfile = profile;
-        console.log('SAVING DATA to firestore, conversations count:', conversations.length, 'dataLoaded:', dataLoaded);
-        setDoc(userDocRef, payload, { merge: true });
+        
+        // --- DIAGNOSTICS ---
+        const payloadSize = JSON.stringify(payload).length;
+        console.log(`[Diagnostic] Attempting Firestore save... Payload size approx: ${(payloadSize / 1024).toFixed(2)} KB`);
+        
+        if (conversations.length > 0) {
+          const sortedConvs = [...conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const mostRecentConv = sortedConvs[0];
+          const lastMsg = mostRecentConv?.messages?.[mostRecentConv.messages.length - 1];
+          if (lastMsg) {
+            console.log(`[Diagnostic] Final message in active conv reaches save path -> Role: ${lastMsg.role}, text length: ${lastMsg.publicText?.length || lastMsg.parts?.[0]?.text?.length || 0}`);
+          }
+        }
+        
+        await setDoc(userDocRef, payload, { merge: true });
+        console.log('[Diagnostic] Save SUCCESS! Data correctly committed to Firestore.');
       } catch (e) {
-        console.error('Persist failed:', e);
+        console.error('[Diagnostic] Save FAILURE! Actual Firestore Error:', e);
       }
     }, 1000);
     return () => clearTimeout(t);
@@ -153,12 +167,17 @@ export function useAppStore(user: any) {
         modelId,
         caption
       };
-      return {
+      const nextSettings = {
         ...prev,
         memories: [newMemory, ...(prev.memories || [])]
       };
+      if (user) {
+        setDoc(doc(db, 'users', user.uid), { settings: nextSettings }, { merge: true })
+          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMemory):', e));
+      }
+      return nextSettings;
     });
-  }, []);
+  }, [user]);
 
   const addEventLog = useCallback((description: string) => {
     setSettings(prev => {
@@ -212,29 +231,43 @@ export function useAppStore(user: any) {
   }, []);
 
   const addMessage = useCallback((conversationId: string, message: Message) => {
-    setConversations(prev => prev.map(c => 
-      c.id === conversationId ? { ...c, messages: [...(c.messages || []), message], updatedAt: Date.now() } : c
-    ));
-  }, []);
+    setConversations(prev => {
+      const next = prev.map(c => 
+        c.id === conversationId ? { ...c, messages: [...(c.messages || []), message], updatedAt: Date.now() } : c
+      );
+      if (user) {
+        setDoc(doc(db, 'users', user.uid), { conversations: next }, { merge: true })
+          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMessage):', e));
+      }
+      return next;
+    });
+  }, [user]);
 
   const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
-    setConversations(prev => prev.map(c => 
-      c.id === conversationId ? { 
-        ...c, 
-        messages: (c.messages || []).map(m => {
-          if (m.id === messageId) {
-            const safeUpdates = { ...updates };
-            if (safeUpdates.parts && safeUpdates.parts.length === 0) {
-              safeUpdates.parts = [{ text: '' }];
+    setConversations(prev => {
+      const next = prev.map(c => 
+        c.id === conversationId ? { 
+          ...c, 
+          messages: (c.messages || []).map(m => {
+            if (m.id === messageId) {
+              const safeUpdates = { ...updates };
+              if (safeUpdates.parts && safeUpdates.parts.length === 0) {
+                safeUpdates.parts = [{ text: '' }];
+              }
+              return { ...m, ...safeUpdates };
             }
-            return { ...m, ...safeUpdates };
-          }
-          return m;
-        }),
-        updatedAt: Date.now() 
-      } : c
-    ));
-  }, []);
+            return m;
+          }),
+          updatedAt: Date.now() 
+        } : c
+      );
+      if (user && updates.status === 'complete') {
+        setDoc(doc(db, 'users', user.uid), { conversations: next }, { merge: true })
+          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (updateMessage):', e));
+      }
+      return next;
+    });
+  }, [user]);
 
   const removeMessage = useCallback((conversationId: string, messageId: string) => {
     setConversations(prev => prev.map(c => 
