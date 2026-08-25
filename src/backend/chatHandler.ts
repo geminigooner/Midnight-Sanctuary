@@ -126,6 +126,13 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 4096, 16384);
           }
 
+          if (model.includes('gemini-3')) {
+            config.thinkingConfig = {
+              thinkingLevel: model.includes('flash') ? ThinkingLevel.MEDIUM : ThinkingLevel.HIGH,
+              includeThoughts: true
+            };
+          }
+
           console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
           
           let responseStream: any;
@@ -158,7 +165,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               const status = err?.status;
               
               // Only fallback for Gemini 3 Flash Preview and Gemini 3.1 Pro Preview models
-              const isGemini3Preview = model.includes('gemini-3.0-flash') || model.includes('gemini-3.1-pro');
+              const isGemini3Preview = model.includes('gemini-3-flash-preview') || model.includes('gemini-3.1-pro');
               const isFallbackEligibleError = status === 429 || status === 401 || status === 403 || status === 404;
               const hasLegacyKey = !!process.env.GEMINI_LEGACY_API_KEY;
 
@@ -186,8 +193,17 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let hasText = false;
           let blocked = false;
 
-          for await (const chunk of responseStream) {
-            const fr = chunk.candidates?.[0]?.finishReason;
+          const requestStartTime = Date.now();
+          let firstTokenTime = null;
+          let streamStatus = 'normal';
+
+          try {
+            for await (const chunk of responseStream) {
+              if (firstTokenTime === null) {
+                firstTokenTime = Date.now();
+                console.log(`[Stream] First token latency: ${firstTokenTime - requestStartTime}ms for model ${model}`);
+              }
+              const fr = chunk.candidates?.[0]?.finishReason;
             if (fr) {
               console.log("FINISH REASON:", fr, JSON.stringify(chunk.candidates?.[0]?.safetyRatings ?? []));
               if (fr !== 'STOP') {
@@ -236,6 +252,21 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                   }
                 }
               }
+            }
+            } // close for await
+          } catch (e: any) {
+            if (e.name === 'AbortError' || abortSignal?.aborted) {
+               streamStatus = 'aborted';
+               console.warn(`[Stream] Aborted for model ${model} after ${Date.now() - requestStartTime}ms`);
+               throw e;
+            } else {
+               streamStatus = 'errored';
+               console.error(`[Stream] Errored for model ${model}:`, e.message);
+               throw e;
+            }
+          } finally {
+            if (streamStatus === 'normal') {
+               console.log(`[Stream] Ended normally for model ${model} after ${Date.now() - requestStartTime}ms. First token latency: ${firstTokenTime ? firstTokenTime - requestStartTime : 'N/A'}ms.`);
             }
           }
 

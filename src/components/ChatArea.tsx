@@ -391,10 +391,12 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
 
     const resetIdleTimeout = () => {
       if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
+      const isGemini3 = settings.model.includes('gemini-3');
+      const timeoutMs = isGemini3 ? 240000 : 90000;
       watchdogTimeoutRef.current = setTimeout(() => {
         console.warn("Idle timeout triggered. Aborting stuck stream.");
         if (abortControllerRef.current) abortControllerRef.current.abort();
-      }, 90000); // 90 seconds idle timeout
+      }, timeoutMs); 
     };
     resetIdleTimeout();
 
@@ -438,7 +440,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
         parts: [{ text: '' }],
         publicText: '',
         thoughtText: '',
-        thoughtStatus: settings.model.includes('gemma') ? 'thinking' : 'complete',
+        thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
         timestamp: Date.now() 
       });
 
@@ -618,7 +620,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
                  parts: [{ text: '' }],
                  publicText: '',
                  thoughtText: '',
-                 thoughtStatus: settings.model.includes('gemma') ? 'thinking' : 'complete',
+                 thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
                  timestamp: Date.now(),
                });
             }
@@ -653,7 +655,8 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
       console.error("ChatArea handleSend error:", e);
       if (e.name === 'AbortError') {
          if (!currentModelText && !currentModelThought) {
-            updateModelMessage('[Request timed out after 90 seconds — please try again]', currentModelThought, 'error');
+            const isGemini3 = settings.model.includes('gemini-3');
+            updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          } else {
             // It was aborted manually, keep what we have
