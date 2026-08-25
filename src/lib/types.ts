@@ -87,6 +87,8 @@ export interface AppSettings {
   model: string;
   favoriteModels: string[];
   forceCloudflare?: boolean;
+  thinkingLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+  includeThoughts?: boolean;
   aboutMe: string;
   conversationPreferences: string;
   memories: Memory[];
@@ -121,6 +123,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxOutputTokens: 12000,
   model: "models/gemini-2.5-flash",
   favoriteModels: [],
+  thinkingLevel: "HIGH",
+  includeThoughts: true,
   aboutMe: "",
   conversationPreferences: "",
   memories: [],
