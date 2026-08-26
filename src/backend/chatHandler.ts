@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { resolveModelIdentity } from '../lib/modelSystem';
 
 const gemmaTools = [
   {
@@ -118,28 +119,22 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             ]
           };
 
+          const modelDef = resolveModelIdentity(model);
           const userThinkingLevel = thinkingLevel || 'HIGH';
           const userIncludeThoughts = includeThoughts ?? true;
           
-          if (model.includes('gemma-4')) {
+          if (modelDef?.capabilities.supportsThinking) {
+            const defaultLevel = modelDef.identityId === 'gemini-3-flash-preview' ? ThinkingLevel.MEDIUM : ThinkingLevel.HIGH;
+            config.thinkingConfig = {
+              thinkingLevel: thinkingLevel ? ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
+              includeThoughts: userIncludeThoughts
+            };
+          } else if (model.includes('gemma-4')) {
             config.thinkingConfig = {
               thinkingLevel: ThinkingLevel[userThinkingLevel as keyof typeof ThinkingLevel] || ThinkingLevel.HIGH,
               includeThoughts: userIncludeThoughts
             };
             config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 4096, 16384);
-          }
-
-          if (model.includes('gemini-3')) {
-            // For Gemini 3 Flash, preserve MEDIUM as a safe default if not specified, 
-            // but if the user explicitly set it, try to respect it. 
-            // Actually wait, the prompt says: "preserve a safe supported default rather than failing the request."
-            // If they set it to LOW or MEDIUM or HIGH, we pass it. If it fails, well, the API handles it or we could fallback.
-            // Let's just pass the selected one, or default for flash.
-            const defaultLevel = model.includes('flash') ? ThinkingLevel.MEDIUM : ThinkingLevel.HIGH;
-            config.thinkingConfig = {
-              thinkingLevel: thinkingLevel ? ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
-              includeThoughts: userIncludeThoughts
-            };
           }
 
           console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
@@ -173,8 +168,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             } catch (err: any) {
               const status = err?.status;
               
-              // Only fallback for Gemini 3 Flash Preview and Gemini 3.1 Pro Preview models
-              const isGemini3Preview = model.includes('gemini-3-flash-preview') || model.includes('gemini-3.1-pro');
+              // Only fallback for registered Gemini 3 Preview models
+              const isGemini3Preview = modelDef?.identityId === 'gemini-3-flash-preview' || modelDef?.identityId === 'gemini-3.1-pro-preview';
               const isFallbackEligibleError = status === 429 || status === 401 || status === 403 || status === 404;
               const hasLegacyKey = !!process.env.GEMINI_LEGACY_API_KEY;
 
