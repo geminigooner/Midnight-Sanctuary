@@ -59,7 +59,7 @@ const gemmaTools = [
 ];
 
 export function createChatStream(reqBody: any, apiKey: string, abortSignal?: AbortSignal): ReadableStream {
-  const { messages, systemInstruction, temperature, topP, maxOutputTokens, model, forceCloudflare } = reqBody;
+  const { messages, systemInstruction, temperature, topP, maxOutputTokens, model, forceCloudflare, thinkingLevel, includeThoughts } = reqBody;
 
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.');
@@ -118,8 +118,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             ]
           };
 
-          const userThinkingLevel = settings?.thinkingLevel || 'HIGH';
-          const userIncludeThoughts = settings?.includeThoughts ?? true;
+          const userThinkingLevel = thinkingLevel || 'HIGH';
+          const userIncludeThoughts = includeThoughts ?? true;
           
           if (model.includes('gemma-4')) {
             config.thinkingConfig = {
@@ -137,7 +137,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             // Let's just pass the selected one, or default for flash.
             const defaultLevel = model.includes('flash') ? ThinkingLevel.MEDIUM : ThinkingLevel.HIGH;
             config.thinkingConfig = {
-              thinkingLevel: settings?.thinkingLevel ? ThinkingLevel[settings.thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
+              thinkingLevel: thinkingLevel ? ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
               includeThoughts: userIncludeThoughts
             };
           }

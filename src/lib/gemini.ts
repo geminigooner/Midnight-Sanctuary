@@ -213,7 +213,9 @@ export async function* streamChat(
     topP: settings.topP,
     maxOutputTokens: settings.maxOutputTokens,
     model: settings.model,
-    forceCloudflare: settings.forceCloudflare
+    forceCloudflare: settings.forceCloudflare,
+    thinkingLevel: settings.thinkingLevel,
+    includeThoughts: settings.includeThoughts
   };
   const payloadString = JSON.stringify(payloadBody);
   const payloadBytes = new TextEncoder().encode(payloadString).length;
