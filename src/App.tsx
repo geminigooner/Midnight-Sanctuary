@@ -94,7 +94,7 @@ function MainApp({ user }: { user: any }) {
 
       <AnimatePresence>
         {giftsOpen && (
-          <GiftsArchive gifts={store.gifts} onClose={() => setGiftsOpen(false)} />
+          <GiftsArchive gifts={store.gifts} currentModel={store.settings.model} onClose={() => setGiftsOpen(false)} />
         )}
       </AnimatePresence>
 

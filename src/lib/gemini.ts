@@ -1,6 +1,8 @@
 import { AppSettings, Message, Gift } from './types';
 import { auth, signOut } from './firebase';
 import { getContextMemories, isUserMemory } from './memorySystem';
+import { getModelVisibleGifts } from './giftSystem';
+import { resolveModelIdentity } from './modelSystem';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -90,9 +92,13 @@ export async function* streamChat(
     }
   }
 
-  if (gifts && gifts.length > 0) {
-    const giftsText = gifts.map(g => `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${g.from === 'user' ? 'User' : 'Gemma'}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');
-    identityParts.push(`## Gifts Archive (Given and Received):\n${giftsText}`);
+  const modelGifts = getModelVisibleGifts(gifts, settings.model);
+  const activeModelDef = resolveModelIdentity(settings.model);
+  const modelDisplayName = activeModelDef?.displayName || settings.model.split('/').pop() || 'Model';
+
+  if (modelGifts && modelGifts.length > 0) {
+    const giftsText = modelGifts.map(g => `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${g.from === 'user' ? 'User' : modelDisplayName}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');
+    identityParts.push(`## Gifts Archive (Given and Received between you and User):\n${giftsText}`);
   }
 
   if (settings.eventLog && settings.eventLog.length > 0) {
@@ -157,7 +163,7 @@ export async function* streamChat(
       return acc;
     }, [] as any[]);
 
-  const giftImages = (gifts || []).filter(g => g.inlineData?.data);
+  const giftImages = (modelGifts || []).filter(g => g.inlineData?.data);
   let syntheticTurn: any = null;
 
   if (giftImages.length > 0) {

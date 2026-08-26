@@ -16,7 +16,8 @@ export const MessageBubble = React.memo(function MessageBubble({
   onFavorite,
   onImageClick,
   onDelete,
-  onReact
+  onReact,
+  modelName
 }: { 
    msg: Message;
   isLast: boolean;
@@ -27,6 +28,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onImageClick?: (url: string) => void;
   onDelete?: () => void;
   onReact?: (reaction: string) => void;
+  modelName?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -123,6 +125,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               <ThoughtBubble
                 text={thoughtText || ''}
                 status={msg.thoughtStatus ?? 'complete'}
+                modelName={modelName}
               />
             )}
             

@@ -2,6 +2,8 @@ import html2canvas from "html2canvas";
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
 import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
+import { normalizeModelNamespace } from '../lib/giftSystem';
+import { resolveModelIdentity } from '../lib/modelSystem';
 import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark, Smile, Scan } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { v4 as uuidv4 } from 'uuid';
@@ -510,14 +512,15 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
           } else if (chunk.type === 'gift') {
             hasToolCalls = true;
             onAddGift({
-              from: 'gemma',
+              from: 'model',
+              modelId: settings.model,
               content: chunk.content,
               gift_type: chunk.gift_type,
               reason: chunk.reason
             });
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
-            onAddMemory(chunk.content, 'gemma_initiated', (chunk as any).author, (chunk as any).modelId, (chunk as any).caption);
+            onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, (chunk as any).caption);
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
             onAddGemmaNote(chunk.note);
@@ -1012,6 +1015,7 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             msg={msg}
             isLast={i === visibleMessages.length - 1}
             isGenerating={isGenerating}
+            modelName={(Array.isArray(availableModels) ? availableModels : [])?.find(m => m.name === settings.model)?.displayName || resolveModelIdentity(settings.model)?.displayName || settings.model?.split('/').pop() || 'Model'}
             onCopy={handleCopy}
             onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
             onFavorite={(content) => {
@@ -1211,6 +1215,8 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
                   onClick={() => {
                     onAddGift({
                       from: 'user',
+                      targetModelId: settings.model,
+                      modelId: settings.model,
                       content: giftContent.trim(),
                       gift_type: giftFile ? 'image' : 'text',
                       reason: '',

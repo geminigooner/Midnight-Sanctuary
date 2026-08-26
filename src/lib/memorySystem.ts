@@ -1,4 +1,14 @@
 import { Memory } from './types';
+import { resolveModelIdentity } from './modelSystem';
+
+export function normalizeMemoryNamespace(modelId?: string): string {
+  if (!modelId) return 'unknown';
+  const def = resolveModelIdentity(modelId);
+  if (def) {
+    return def.namespaces.memory || def.identityId;
+  }
+  return modelId.replace(/^models\//, '');
+}
 
 // Core Classification
 export function isUserMemory(m: Memory): boolean {
@@ -15,13 +25,15 @@ export function getUserMemories(memories: Memory[]): Memory[] {
 }
 
 export function getModelMemories(memories: Memory[], modelId: string): Memory[] {
-  return memories.filter(m => isExplicitModelMemory(m) && m.modelId === modelId);
+  const currentNamespace = normalizeMemoryNamespace(modelId);
+  return memories.filter(m => isExplicitModelMemory(m) && normalizeMemoryNamespace(m.modelId) === currentNamespace);
 }
 
 export function getLegacyMemories(memories: Memory[], currentModelId: string): Memory[] {
+  const currentNamespace = normalizeMemoryNamespace(currentModelId);
   return memories.filter(m => {
     if (isUserMemory(m)) return false;
-    if (isExplicitModelMemory(m) && m.modelId === currentModelId) return false;
+    if (isExplicitModelMemory(m) && normalizeMemoryNamespace(m.modelId) === currentNamespace) return false;
     return true; // Unassigned, legacy, or belongs to another model
   });
 }
@@ -35,3 +47,4 @@ export function getContextMemories(memories: Memory[], modelId: string): Memory[
     ...getModelMemories(memories, modelId)
   ];
 }
+

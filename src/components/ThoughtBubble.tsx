@@ -6,9 +6,10 @@ interface ThoughtBubbleProps {
   text: string;
   status: 'thinking' | 'complete' | 'error';
   initiallyOpen?: boolean;
+  modelName?: string;
 }
 
-export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
+export function ThoughtBubble({ text, status, modelName }: ThoughtBubbleProps) {
   const [isOpen, setIsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -27,6 +28,7 @@ export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
   };
 
   const hasText = text.trim().length > 0;
+  const labelPrefix = modelName || 'Model';
 
   return (
     <div className="mb-4 flex flex-col items-start w-full min-w-0 max-w-full">
@@ -39,7 +41,7 @@ export function ThoughtBubble({ text, status }: ThoughtBubbleProps) {
       >
         <Brain size={14} className={`text-[#2C194D] ${status === 'thinking' ? 'animate-pulse' : ''}`} />
         <span className="text-xs font-bold tracking-wide text-[#2C194D] transition-colors">
-          {status === 'thinking' ? 'Gemma is thinking...' : 'Thought process'}
+          {status === 'thinking' ? `${labelPrefix} is thinking...` : 'Thought process'}
         </span>
         {status === 'thinking' && (
           <span className="flex space-x-0.5 ml-1">

@@ -77,6 +77,8 @@ export interface Gift {
   reason: string;
   timestamp: number;
   inlineData?: { mimeType: string; data: string; previewUrl?: string };
+  modelId?: string;
+  targetModelId?: string;
 }
 
 export interface AppSettings {
