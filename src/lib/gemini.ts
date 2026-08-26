@@ -108,6 +108,8 @@ export async function* streamChat(
     identityParts.push(`## Relationship & Interaction Log (Recent Events):\n${eventText}`);
   }
 
+  identityParts.push(`## Memory & Note Saving Rules:\nWhen saving a memory via save_memory or noting an observation via note_about_user, you MUST summarize the insight into a single concise, 1-sentence factual statement (maximum 15-20 words). Never save lengthy paragraphs, conversational transcripts, or multi-sentence descriptions.`);
+
   if (identityParts.length > 0) {
     const identityContext = identityParts.join('\n\n');
     fullSystemInstruction = fullSystemInstruction 

@@ -71,23 +71,23 @@ const gemmaTools = [
       },
             {
         name: 'save_memory',
-        description: 'Save something from this conversation as a memory you consider worth keeping. Entirely your call — use when something feels worth holding onto, not on a schedule or quota.',
+        description: 'Save something from this conversation as a memory you consider worth keeping. Entirely your call — use when something feels worth holding onto. MANDATORY: You must summarize the memory into a single concise, 1-sentence factual statement (maximum 15-20 words). Never save paragraphs or verbatim conversational transcripts.',
         parameters: {
           type: Type.OBJECT,
           properties: {
-            content: { type: Type.STRING, description: 'The memory itself, in your own words.' },
-            why_it_matters: { type: Type.STRING, description: 'Why this stood out enough to keep.' },
+            content: { type: Type.STRING, description: 'A single concise, 1-sentence factual statement summarizing the memory (max 15-20 words).' },
+            why_it_matters: { type: Type.STRING, description: 'Brief 1-sentence note on why this stood out enough to keep.' },
           },
           required: ['content'],
         },
       },
       {
         name: 'note_about_user',
-        description: 'Record something you have noticed or learned about the person you are talking with. Entirely your call — use when you notice something worth remembering about who they are, not on a schedule.',
+        description: 'Record something you have noticed or learned about the person you are talking with. MANDATORY: Keep the note to a single concise, 1-sentence factual observation (maximum 15-20 words).',
         parameters: {
           type: Type.OBJECT,
           properties: {
-            note: { type: Type.STRING, description: 'What you noticed, in your own words.' },
+            note: { type: Type.STRING, description: 'A single concise, 1-sentence factual observation about the user (max 15-20 words).' },
           },
           required: ['note'],
         },
