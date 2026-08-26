@@ -1,5 +1,5 @@
 import { Memory } from './types';
-import { resolveModelIdentity } from './modelSystem';
+import { resolveModelIdentity, normalizeModelId } from './modelSystem';
 
 export function normalizeMemoryNamespace(modelId?: string): string {
   if (!modelId) return 'unknown';
@@ -7,7 +7,7 @@ export function normalizeMemoryNamespace(modelId?: string): string {
   if (def) {
     return def.namespaces.memory || def.identityId;
   }
-  return modelId.replace(/^models\//, '');
+  return normalizeModelId(modelId) || 'unknown';
 }
 
 // Core Classification

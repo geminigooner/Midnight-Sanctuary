@@ -1,5 +1,5 @@
 import { Gift } from './types';
-import { resolveModelIdentity } from './modelSystem';
+import { resolveModelIdentity, normalizeModelId } from './modelSystem';
 
 /**
  * Normalizes a model identifier string to a canonical identity string if registered,
@@ -11,8 +11,7 @@ export function normalizeModelNamespace(modelId?: string): string {
   if (def) {
     return def.namespaces.gifts || def.identityId;
   }
-  // Strip models/ prefix if present for clean grouping
-  return modelId.replace(/^models\//, '');
+  return normalizeModelId(modelId) || 'unknown';
 }
 
 /**

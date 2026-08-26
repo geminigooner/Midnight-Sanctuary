@@ -3,6 +3,8 @@ import { Memory } from '../lib/types';
 import { X, Bookmark, Trash2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
+import { normalizeMemoryNamespace } from '../lib/memorySystem';
+import { resolveModelIdentity } from '../lib/modelSystem';
 
 interface MemoriesArchiveProps {
   memories: Memory[];
@@ -14,6 +16,11 @@ interface MemoriesArchiveProps {
 export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentModel }: MemoriesArchiveProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'model' | 'user' | 'legacy'>('model');
+
+  const activeModelId = currentModel || 'models/gemini-3-flash-preview';
+  const modelDef = resolveModelIdentity(activeModelId);
+  const activeModelDisplayName = modelDef?.displayName || activeModelId.split('/').pop() || 'Current Model';
+  const currentNamespace = normalizeMemoryNamespace(activeModelId);
   
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -63,7 +70,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
             onClick={() => setActiveTab('model')}
             className={`flex-1 min-w-[120px] p-4 text-sm font-medium tracking-wide transition-colors whitespace-nowrap ${activeTab === 'model' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
           >
-            Model Memories
+            {activeModelDisplayName}'s Memories
           </button>
           <button
             onClick={() => setActiveTab('user')}
@@ -75,7 +82,7 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
             onClick={() => setActiveTab('legacy')}
             className={`flex-1 min-w-[120px] p-4 text-sm font-medium tracking-wide transition-colors whitespace-nowrap ${activeTab === 'legacy' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
           >
-            Legacy / Unassigned
+            Legacy / Other Models
           </button>
         </div>
 
@@ -90,13 +97,11 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
               }
               
               if (activeTab === 'model') {
-                return isExplicitModel && m.modelId === currentModel;
+                return isExplicitModel && normalizeMemoryNamespace(m.modelId) === currentNamespace;
               }
               
               // legacy tab
-              if (isExplicitModel && m.modelId !== currentModel) {
-                // Another model's memory (also fits in legacy/unassigned for this view, or we can just say "unassigned")
-                // Wait, if it belongs to another model, it shouldn't be under legacy/unassigned, but for now we put it there so it's not hidden.
+              if (isExplicitModel && normalizeMemoryNamespace(m.modelId) !== currentNamespace) {
                 return true; 
               }
               if (!isExplicitUser && !isExplicitModel) {
@@ -159,7 +164,10 @@ export function MemoriesArchive({ memories, onClose, onRemoveMemory, currentMode
                            const isExplicitUser = memory.author === 'user' || memory.origin === 'user_favorited' || memory.origin === 'user_saved';
                            const isExplicitModel = memory.author === 'model' || memory.origin === 'gemma_initiated';
                            if (isExplicitUser) return 'User Saved';
-                           if (isExplicitModel) return memory.modelId ? `Model: ${memory.modelId}` : 'Model: Unknown';
+                           if (isExplicitModel) {
+                             const resolvedName = memory.modelId ? (resolveModelIdentity(memory.modelId)?.displayName || memory.modelId) : 'Unknown';
+                             return `Model: ${resolvedName}`;
+                           }
                            return 'Legacy / Unassigned';
                         })()}
                       </span>

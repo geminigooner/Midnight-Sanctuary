@@ -3,6 +3,7 @@ import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWE
 import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut } from './firebase';
 import { loadState, saveConversation, saveSettings, saveMemory, saveGift } from './persistenceSystem';
+import { normalizeModelId } from './modelSystem';
 
 
 
@@ -143,6 +144,8 @@ export function useAppStore(user: any) {
     const newGift: Gift = {
       ...gift,
       id: uuidv4(),
+      modelId: gift.modelId ? normalizeModelId(gift.modelId) : undefined,
+      targetModelId: gift.targetModelId ? normalizeModelId(gift.targetModelId) : undefined,
       timestamp: Date.now()
     };
     setGifts(prev => [newGift, ...prev]);
@@ -163,7 +166,7 @@ export function useAppStore(user: any) {
         createdAt: Date.now(),
         origin,
         author,
-        modelId,
+        modelId: modelId ? normalizeModelId(modelId) : undefined,
         caption
       };
       const nextSettings = {
@@ -197,13 +200,13 @@ export function useAppStore(user: any) {
       id: uuidv4(),
       title: 'New Conversation',
       messages: [],
-      modelId: settings.model, // Bind chat to current model
+      modelId: normalizeModelId(settings.model), // Bind chat to normalized canonical model ID
       updatedAt: Date.now()
     };
     setConversations(prev => [newConvo, ...prev]);
     setCurrentId(newConvo.id);
     return newConvo;
-  }, []);
+  }, [settings.model]);
 
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id));

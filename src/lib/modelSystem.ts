@@ -111,3 +111,17 @@ export function resolveModelIdentity(modelString?: string): ModelDefinition | un
   if (!modelString) return undefined;
   return getModelByIdentityId(modelString) || getModelByApiModelId(modelString);
 }
+
+/**
+ * Normalizes any model identifier into a strict, deterministic canonical string ID.
+ * Registered models always resolve to their canonical identityId (e.g. 'gemini-3-flash-preview').
+ * Unregistered models have any 'models/' prefix stripped.
+ */
+export function normalizeModelId(modelId?: string): string {
+  if (!modelId) return '';
+  const def = resolveModelIdentity(modelId);
+  if (def) {
+    return def.identityId;
+  }
+  return modelId.replace(/^models\//, '');
+}
