@@ -54,13 +54,25 @@ export function Sidebar() {
   return (
     <div className="flex flex-col h-full bg-[#151234] border-r-[3px] border-[#2C194D] w-full relative">
       <div className="p-4 border-b-[3px] border-[#2C194D] flex flex-col gap-3 z-10 shrink-0">
-        <button 
-          onClick={handleNew}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all text-[#2C194D] font-bold text-lg tracking-tight"
-        >
-          <Plus size={18} />
-          <span>New Sanctuary</span>
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={handleNew}
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all text-[#2C194D] font-bold text-base tracking-tight"
+          >
+            <Plus size={18} />
+            <span>New Sanctuary</span>
+          </button>
+          <button 
+            onClick={() => {
+              store.setCurrentId(null);
+              if (window.innerWidth < 1024) setSidebarOpen(false);
+            }}
+            title="Return to Sanctuary Home Hub"
+            className={`px-3.5 py-3 border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all font-bold text-sm flex items-center justify-center ${store.currentId === null ? 'bg-[#9D7FE3] text-[#2C194D]' : 'bg-[#F5E1C8] text-[#2C194D]'}`}
+          >
+            🏠
+          </button>
+        </div>
 
         <div className="flex bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-1 shadow-[inset_0_2px_0_rgba(0,0,0,0.05)]">
           <button 

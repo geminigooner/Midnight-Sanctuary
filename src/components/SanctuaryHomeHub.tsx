@@ -188,6 +188,49 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
         </motion.button>
       </div>
 
+      {/* ── RECENT SANCTUARY SESSIONS (RESUME) ── */}
+      {store.conversations.filter(c => (c.messages || []).length > 0).length > 0 && (
+        <div className="w-full max-w-2xl mb-8">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <span className="text-xs font-bold text-[#F5E1C8] tracking-wider uppercase flex items-center gap-1.5">
+              <Compass className="w-3.5 h-3.5 text-[#B39DE5]" />
+              Recent Sanctuaries
+            </span>
+            <span className="text-[11px] text-[#B39DE5]/60">Resume past conversations</span>
+          </div>
+
+          <div className="space-y-2">
+            {store.conversations
+              .filter(c => (c.messages || []).length > 0)
+              .slice(0, 2)
+              .map(conv => (
+                <motion.button
+                  key={conv.id}
+                  whileHover={{ scale: 1.005, x: 2 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => store.setCurrentId(conv.id)}
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-[#20153B]/70 hover:bg-[#2A1B4E] border border-[#9D7FE3]/20 hover:border-[#9D7FE3]/50 transition-all text-left group shadow-sm"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-7 h-7 rounded-lg bg-[#2C194D] border border-[#9D7FE3]/30 flex items-center justify-center shrink-0">
+                      <MessageSquareQuote className="w-3.5 h-3.5 text-[#F5E1C8]" />
+                    </div>
+                    <div className="truncate">
+                      <div className="text-xs font-bold text-[#F5E1C8] truncate group-hover:text-white transition-colors">
+                        {conv.title || 'Untitled Sanctuary'}
+                      </div>
+                      <div className="text-[10px] text-[#B39DE5]/70">
+                        {conv.messages.length} messages · {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#B39DE5]/40 group-hover:text-[#F198B7] transition-colors shrink-0 ml-2" />
+                </motion.button>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* ── SPARK PROMPTS (ONE-TAP CONVERSATION STARTERS) ── */}
       <div className="w-full max-w-2xl">
         <div className="flex items-center justify-between mb-3 px-1">

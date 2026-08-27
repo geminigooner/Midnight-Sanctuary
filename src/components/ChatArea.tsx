@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message, getPublicMessageText } from '../lib/types';
 import { useChatStream } from '../hooks/useChatStream';
-import { X } from 'lucide-react';
+import { X, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { ChatInputDock } from './ChatInputDock';
+import { SanctuaryHomeHub } from './SanctuaryHomeHub';
 import { compressImage } from '../lib/imageUtils';
-import { useStore } from '../context/AppContext';
+import { useStore, useUI } from '../context/AppContext';
 
 export { compressImage };
 
 export function ChatArea() {
   const store = useStore();
+  const ui = useUI();
   const conversation = store.conversations.find(c => c.id === store.currentId);
 
   const [input, setInput] = useState('');
@@ -56,6 +58,13 @@ export function ChatArea() {
     const rawText = textToSend !== undefined ? textToSend : input;
     if (!rawText.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) return;
 
+    // If on home view without an active conversation, create one automatically
+    let activeConvId = store.currentId;
+    if (!activeConvId || !store.conversations.some(c => c.id === activeConvId)) {
+      const newConv = store.createConversation();
+      activeConvId = newConv.id;
+    }
+
     if (replaceIndex === undefined && textToSend === undefined) {
       setInput('');
     }
@@ -70,7 +79,7 @@ export function ChatArea() {
       replaceIndex,
       additionalMessages
     });
-  }, [input, attachments, sendMessage]);
+  }, [input, attachments, sendMessage, store]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!conversation) return;
@@ -102,33 +111,51 @@ export function ChatArea() {
     (m: Message) => m.role === 'user' || m.role === 'model'
   );
 
-  if (!conversation) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-[#151234] text-[#B39DE5] font-bold">
-        Select or start a new sanctuary.
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#151234] relative overflow-hidden min-w-0 max-w-full">
-      <ChatHeader
-        conversation={conversation}
-        presence={presence}
-        visibleMessagesCount={visibleMessages.length}
-        onExportMarkdown={handleExportMarkdown}
-      />
+      {conversation ? (
+        <ChatHeader
+          conversation={conversation}
+          presence={presence}
+          visibleMessagesCount={visibleMessages.length}
+          onExportMarkdown={handleExportMarkdown}
+        />
+      ) : (
+        <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2C194D] rounded-[32px] bg-[#9D7FE3] relative z-30 shrink-0 min-w-0 shadow-[4px_4px_0px_#2C194D]">
+          <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-1">
+            <button 
+              onClick={() => ui.setSidebarOpen(prev => !prev)} 
+              className="w-12 h-12 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 lg:hidden shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"
+            >
+              <Menu size={24} strokeWidth={2.5} />
+            </button>
+            <div className="flex-1 flex items-center justify-center min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[#F5E1C8]">✨</span>
+                <span className="font-bold text-[#2C194D] text-lg sm:text-xl tracking-tight">Midnight Sanctuary</span>
+                <span className="text-[#F5E1C8]">✨</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <MessageList
-        conversation={conversation}
-        visibleMessages={visibleMessages}
-        isGenerating={isGenerating}
-        onCopy={handleCopy}
-        onResend={(content, origIndex) => handleSend(content, origIndex)}
-        onFavorite={handleFavorite}
-        onImageClick={(url) => setSelectedImage(url)}
-        onSelectPrompt={(prompt) => handleSend(prompt)}
-      />
+      {conversation && visibleMessages.length > 0 ? (
+        <MessageList
+          conversation={conversation}
+          visibleMessages={visibleMessages}
+          isGenerating={isGenerating}
+          onCopy={handleCopy}
+          onResend={(content, origIndex) => handleSend(content, origIndex)}
+          onFavorite={handleFavorite}
+          onImageClick={(url) => setSelectedImage(url)}
+          onSelectPrompt={(prompt) => handleSend(prompt)}
+        />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full flex items-center justify-center">
+          <SanctuaryHomeHub onSelectPrompt={(prompt) => handleSend(prompt)} />
+        </div>
+      )}
 
       <ChatInputDock
         conversation={conversation}
