@@ -1,13 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message, UserProfile } from './types';
 import { v4 as uuidv4 } from 'uuid';
-import { db, auth, signOut } from './firebase';
+import { db, auth, signOut, onAuthStateChanged } from './firebase';
 import { loadState, saveConversation, saveSettings, saveMemory, saveGift } from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
 
+export function useAppStore(passedUser?: any) {
+  const [authUser, setAuthUser] = useState<any>(passedUser || null);
 
+  useEffect(() => {
+    if (passedUser !== undefined) {
+      setAuthUser(passedUser);
+      return;
+    }
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setAuthUser(u);
+    });
+    return () => unsubscribe();
+  }, [passedUser]);
 
-export function useAppStore(user: any) {
+  const user = authUser;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -16,7 +28,6 @@ export function useAppStore(user: any) {
   const [isModelsLoading, setIsModelsLoading] = useState(true);
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-
 
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -100,23 +111,36 @@ export function useAppStore(user: any) {
     if (!dataLoaded || !user) return;
     const t = setTimeout(async () => {
       try {
-        const payload: any = {
+        console.log('[Diagnostic] Debounced Auto-Save Triggered for User:', user.uid);
+        
+        // Strip undefined values across the state hierarchy to ensure strictly valid Firestore JSON
+        const sanitizeForFirestore = (obj: any): any => {
+          if (Array.isArray(obj)) {
+            return obj.map(sanitizeForFirestore);
+          } else if (obj !== null && typeof obj === 'object') {
+            return Object.entries(obj).reduce((acc: any, [k, v]) => {
+              if (v !== undefined) {
+                acc[k] = sanitizeForFirestore(v);
+              }
+              return acc;
+            }, {});
+          }
+          return obj;
+        };
+
+        const payload = sanitizeForFirestore({
           conversations,
           settings,
           jewelMetrics,
-          gifts
-        };
-        if (profile) payload.userProfile = profile;
-        
-        // --- DIAGNOSTICS ---
-        const payloadSize = JSON.stringify(payload).length;
-        console.log(`[Diagnostic] Attempting Firestore save... Payload size approx: ${(payloadSize / 1024).toFixed(2)} KB`);
-        
+          gifts,
+          userProfile: profile
+        });
+
+        // Diagnostic tracing for user and model messages
         if (conversations.length > 0) {
-          const sortedConvs = [...conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          const mostRecentConv = sortedConvs[0];
-          const lastMsg = mostRecentConv?.messages?.[mostRecentConv.messages.length - 1];
-          if (lastMsg) {
+          const activeConv = conversations.find(c => c.id === currentId) || conversations[0];
+          if (activeConv && activeConv.messages && activeConv.messages.length > 0) {
+            const lastMsg = activeConv.messages[activeConv.messages.length - 1];
             console.log(`[Diagnostic] Final message in active conv reaches save path -> Role: ${lastMsg.role}, text length: ${lastMsg.publicText?.length || lastMsg.parts?.[0]?.text?.length || 0}`);
           }
         }
@@ -130,12 +154,10 @@ export function useAppStore(user: any) {
     }, 1000);
     return () => clearTimeout(t);
   }, [conversations, settings, jewelMetrics, gifts, profile, dataLoaded, user]);
+
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prev => {
       const updated = { ...prev, ...newSettings };
-      
-      // Model changing no longer clears the current chat.
-      
       return updated;
     });
   }, []);
@@ -164,22 +186,22 @@ export function useAppStore(user: any) {
         id: uuidv4(),
         content: memoryContent,
         createdAt: Date.now(),
-        origin,
-        author,
+        origin: origin || 'direct_input',
+        author: author || 'user',
         modelId: modelId ? normalizeModelId(modelId) : undefined,
-        caption
+        caption: caption
       };
-      const nextSettings = {
+      
+      const prevMemories = prev.memories || [];
+      const isDuplicate = prevMemories.some(m => m.content.toLowerCase().trim() === memoryContent.toLowerCase().trim());
+      if (isDuplicate) return prev;
+
+      return {
         ...prev,
-        memories: [newMemory, ...(prev.memories || [])]
+        memories: [newMemory, ...prevMemories]
       };
-      if (user) {
-        saveMemory(user.uid, { settings: nextSettings })
-          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMemory):', e));
-      }
-      return nextSettings;
     });
-  }, [user]);
+  }, []);
 
   const addEventLog = useCallback((description: string) => {
     setSettings(prev => {
@@ -190,60 +212,86 @@ export function useAppStore(user: any) {
       };
       return {
         ...prev,
-        eventLog: [newEvent, ...(prev.eventLog || [])]
+        eventLog: [newEvent, ...(prev.eventLog || [])].slice(0, 10)
       };
     });
   }, []);
 
   const createConversation = useCallback(() => {
-    const newConvo: Conversation = {
-      id: uuidv4(),
-      title: 'New Conversation',
+    const newId = uuidv4();
+    const newConv: Conversation = {
+      id: newId,
+      title: 'New Sanctuary',
       messages: [],
-      modelId: normalizeModelId(settings.model), // Bind chat to normalized canonical model ID
+      modelId: settings.model,
       updatedAt: Date.now()
     };
-    setConversations(prev => [newConvo, ...prev]);
-    setCurrentId(newConvo.id);
-    return newConvo;
+    setConversations(prev => [newConv, ...prev]);
+    setCurrentId(newId);
+    return newConv;
   }, [settings.model]);
 
   const deleteConversation = useCallback((id: string) => {
-    setConversations(prev => prev.filter(c => c.id !== id));
-    if (currentId === id) setCurrentId(null);
+    setConversations(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (currentId === id) {
+        setCurrentId(next.length > 0 ? next[0].id : null);
+      }
+      return next;
+    });
   }, [currentId]);
 
-  const renameConversation = useCallback((id: string, title: string) => {
-    setConversations(prev => prev.map(c => c.id === id ? { ...c, title, updatedAt: Date.now() } : c));
+  const renameConversation = useCallback((id: string, newTitle: string) => {
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c));
   }, []);
 
   const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
-    setConversations(prev => prev.map(c => {
-      if (c.id === id) {
-        if (updates.messages && updates.messages.length === 0 && c.messages && c.messages.length > 0) {
-          console.warn("Blocked attempt to clear messages in updateConversation");
-          const safeUpdates = { ...updates };
-          delete safeUpdates.messages;
-          return { ...c, ...safeUpdates, updatedAt: Date.now() };
-        }
-        return { ...c, ...updates, updatedAt: Date.now() };
-      }
-      return c;
-    }));
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c));
   }, []);
 
   const addMessage = useCallback((conversationId: string, message: Message) => {
     setConversations(prev => {
-      const next = prev.map(c => 
-        c.id === conversationId ? { ...c, messages: [...(c.messages || []), message], updatedAt: Date.now() } : c
-      );
+      let targetFound = false;
+      const next = prev.map(c => {
+        if (c.id === conversationId) {
+          targetFound = true;
+          const currentMsgs = c.messages || [];
+          const existingIndex = currentMsgs.findIndex(m => m.id === message.id);
+          let newMsgs: Message[];
+          if (existingIndex >= 0) {
+            newMsgs = [...currentMsgs];
+            newMsgs[existingIndex] = message;
+          } else {
+            newMsgs = [...currentMsgs, message];
+          }
+          return {
+            ...c,
+            messages: newMsgs,
+            updatedAt: Date.now()
+          };
+        }
+        return c;
+      });
+
+      if (!targetFound) {
+        const newConv: Conversation = {
+          id: conversationId,
+          title: message.parts?.[0]?.text?.slice(0, 30) || 'New Sanctuary',
+          messages: [message],
+          modelId: settings.model,
+          updatedAt: Date.now()
+        };
+        next.unshift(newConv);
+      }
+
       if (user) {
         saveConversation(user.uid, { conversations: next })
           .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMessage):', e));
       }
+
       return next;
     });
-  }, [user]);
+  }, [user, settings.model]);
 
   const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
     setConversations(prev => {
@@ -290,6 +338,7 @@ export function useAppStore(user: any) {
   }, []);
 
   return {
+    user,
     conversations,
     currentId,
     setCurrentId,

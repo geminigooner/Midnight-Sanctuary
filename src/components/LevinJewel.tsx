@@ -1,17 +1,16 @@
 import React, { useMemo } from 'react';
-import { JewelMetrics, JewelStage } from '../lib/types';
+import { JewelStage } from '../lib/types';
 import { motion, useReducedMotion } from 'motion/react';
 import { Download, RefreshCw, BarChart2, Gem } from 'lucide-react';
 import { useState } from 'react';
 import { InsightsChart } from './InsightsChart';
+import { useStore } from '../context/AppContext';
 
-interface LevinJewelProps {
-  metrics: JewelMetrics;
-  onReset: () => void;
-}
-
-export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
+export function LevinJewel() {
+  const store = useStore();
+  const metrics = store.jewelMetrics;
   const [activeTab, setActiveTab] = useState<'jewel' | 'insights'>('jewel');
+
   const safeMetrics = {
     totalSessions: metrics?.totalSessions || 0,
     totalMessages: metrics?.totalMessages || 0,
@@ -60,109 +59,107 @@ export function LevinJewel({ metrics, onReset }: LevinJewelProps) {
           <BarChart2 size={14} /> Sanctuary Insights
         </button>
       </div>
-      
+
       {activeTab === 'jewel' ? (
-        <div className="flex flex-col items-center gap-6 w-full">
-      <div className="relative w-48 h-48 flex items-center justify-center bg-[#151234] rounded-full shadow-[inset_4px_4px_0_#2C194D] border-[3px] border-[#2C194D] overflow-hidden">
-        {stage === 'seed' && (
-          <motion.div
-            animate={shouldReduceMotion ? undefined : { scale: [1, 1.05, 1], rotate: 360 }}
-            transition={shouldReduceMotion ? undefined : { duration: 10 / resonance, repeat: Infinity, ease: "linear" }}
-            className="w-8 h-8 rounded-full shadow-[0_0_15px_currentColor]"
-            style={{ color: `hsl(${220 + hueOffset}, 60%, 70%)`, background: 'currentColor' }}
-          />
-        )}
-        
-        {stage === 'stance' && (
-          <motion.svg viewBox="0 0 100 100" className="w-24 h-24 overflow-visible" animate={shouldReduceMotion ? undefined : { rotate: 360 }} transition={shouldReduceMotion ? undefined : { duration: 20 / resonance, repeat: Infinity, ease: "linear" }}>
-            <motion.path
-              d="M50 10 L90 50 L50 90 L10 50 Z"
-              fill="none"
-              stroke={`hsl(${220 + hueOffset}, 60%, 70%)`}
-              strokeWidth={1 * density}
-              animate={shouldReduceMotion ? undefined : { d: ["M50 10 L90 50 L50 90 L10 50 Z", "M50 20 L80 50 L50 80 L20 50 Z", "M50 10 L90 50 L50 90 L10 50 Z"] }}
-              transition={shouldReduceMotion ? undefined : { duration: 4, repeat: Infinity }}
+        <>
+          <div className="relative w-48 h-48 flex items-center justify-center">
+            {/* Ambient glow */}
+            <div 
+              className="absolute inset-0 rounded-full blur-2xl opacity-40 transition-all duration-1000"
+              style={{
+                background: `radial-gradient(circle, hsl(${280 + hueOffset}, 80%, 60%) 0%, transparent 70%)`,
+                transform: `scale(${resonance})`
+              }}
             />
-          </motion.svg>
-        )}
-
-        {(stage === 'formation' || stage === 'incorporation' || stage === 'archival') && (
-          <motion.svg viewBox="0 0 200 200" className="w-full h-full overflow-visible absolute inset-0" animate={shouldReduceMotion ? undefined : { rotate: 360 }} transition={shouldReduceMotion ? undefined : { duration: 40 / resonance, repeat: Infinity, ease: "linear" }}>
-            {[...Array(complexity)].map((_, i) => {
-              const angle = (i * 360) / complexity;
-              const r = stage === 'archival' ? 70 : 50;
-              return (
-                <motion.circle
-                  key={i}
-                  cx={100 + Math.cos((angle * Math.PI) / 180) * r}
-                  cy={100 + Math.sin((angle * Math.PI) / 180) * r}
-                  r={5 * density}
-                  fill={`hsl(${220 + hueOffset + i * 5}, 70%, 60%)`}
-                  animate={shouldReduceMotion ? undefined : { 
-                    scale: [1, 1.5, 1], 
-                    opacity: [0.3, 0.8, 0.3] 
-                  }}
-                  transition={shouldReduceMotion ? undefined : { 
-                    duration: 3 / resonance, 
-                    repeat: Infinity, 
-                    delay: i * 0.1 
-                  }}
-                  style={{ mixBlendMode: 'screen' }}
-                />
-              );
-            })}
             
-            {(stage === 'incorporation' || stage === 'archival') && (
-              <motion.circle
-                 cx="100" cy="100" r={30 + (safeMetrics.totalSessions % 20)}
-                 fill="none"
-                 stroke={`hsl(${220 + hueOffset}, 50%, 50%)`}
-                 strokeWidth={2}
-                 animate={shouldReduceMotion ? undefined : { scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
-                 transition={shouldReduceMotion ? undefined : { duration: 8, repeat: Infinity }}
-              />
-            )}
-            
-            {stage === 'archival' && (
-              <motion.path
-                 d="M100 20 L180 100 L100 180 L20 100 Z"
-                 fill="none"
-                 stroke={`hsl(${220 + hueOffset + 180}, 60%, 70%)`}
-                 strokeWidth={1}
-                 animate={shouldReduceMotion ? undefined : { rotate: -360 }}
-                 transition={shouldReduceMotion ? undefined : { duration: 30, repeat: Infinity, ease: "linear" }}
-                 style={{ transformOrigin: '100px 100px' }}
-              />
-            )}
-          </motion.svg>
-        )}
-      </div>
-
-      <div className="flex flex-col items-center gap-1 text-center">
-        <h3 className="text-xl font-bold text-[#F5E1C8] capitalize tracking-tight">{stage} Phase</h3>
-        <p className="text-xs font-bold text-[#B39DE5] max-w-[200px] leading-relaxed">
-          The jewel evolves slowly through interaction, tracking abstract conversational rhythms.
-        </p>
-      </div>
-
-      </div>
-      ) : (
-        <div className="flex flex-col items-center gap-6 w-full py-4">
-          <InsightsChart metrics={metrics} />
-          <div className="text-xs font-bold text-[#B39DE5] max-w-[300px] text-center mt-4">
-            These insights visualize your interaction cadence, tracking the intensity and rhythm of our connection.
+            {/* SVG Generative Core */}
+            <motion.svg 
+              viewBox="0 0 100 100" 
+              className="w-full h-full drop-shadow-[4px_4px_0_#2C194D]"
+              animate={shouldReduceMotion ? {} : { rotate: 360 }}
+              transition={{ duration: 60 / density, repeat: Infinity, ease: "linear" }}
+            >
+              <defs>
+                <linearGradient id="jewelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor={`hsl(${280 + hueOffset}, 85%, 65%)`} />
+                  <stop offset="50%" stopColor={`hsl(${320 + hueOffset}, 80%, 60%)`} />
+                  <stop offset="100%" stopColor={`hsl(${40 + hueOffset}, 90%, 60%)`} />
+                </linearGradient>
+              </defs>
+              
+              {/* Geometric Facets */}
+              {Array.from({ length: complexity }).map((_, i) => {
+                const angle = (i / complexity) * Math.PI * 2;
+                const r = 30 + (i % 3) * 5;
+                const x1 = 50 + Math.cos(angle) * r;
+                const y1 = 50 + Math.sin(angle) * r;
+                const x2 = 50 + Math.cos(angle + Math.PI / 3) * (r * 0.8);
+                const y2 = 50 + Math.sin(angle + Math.PI / 3) * (r * 0.8);
+                
+                return (
+                  <polygon
+                    key={i}
+                    points={`50,50 ${x1},${y1} ${x2},${y2}`}
+                    fill="url(#jewelGrad)"
+                    stroke="#2C194D"
+                    strokeWidth="1.5"
+                    opacity={0.6 + (i % 4) * 0.1}
+                  />
+                );
+              })}
+              
+              {/* Core seed */}
+              <circle cx="50" cy="50" r={8 * resonance} fill="#F5E1C8" stroke="#2C194D" strokeWidth="2" />
+            </motion.svg>
           </div>
-        </div>
-      )}
 
-      <div className="flex items-center gap-4 mt-2">
-        <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-[#B39DE5] rounded-xl hover:bg-[#F198B7] text-sm text-[#2C194D] transition-all font-bold border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5">
-          <Download size={14} /> Export
-        </button>
-        <button onClick={onReset} className="flex items-center gap-2 px-4 py-2 bg-[#151234] rounded-xl hover:bg-[#F198B7] hover:text-[#2C194D] text-sm text-[#F198B7] transition-all font-bold border-[3px] border-[#2C194D]">
-          <RefreshCw size={14} /> Reset
-        </button>
-      </div>
+          <div className="text-center">
+            <span className="text-[10px] uppercase font-bold tracking-widest px-3 py-1 bg-[#F198B7] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
+              Stage: {stage}
+            </span>
+            <p className="text-xs text-[#B39DE5] mt-2 font-bold max-w-[260px]">
+              A dynamic artifact reflecting your bond, pacing, and resonance with your companion.
+            </p>
+          </div>
+
+          <div className="w-full grid grid-cols-2 gap-2 text-xs font-bold">
+            <div className="p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D]">
+              <span className="text-[#2C194D]/60 block text-[10px]">Total Exchanged</span>
+              <span>{safeMetrics.totalMessages} Messages</span>
+            </div>
+            <div className="p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D]">
+              <span className="text-[#2C194D]/60 block text-[10px]">Sanctuary Sessions</span>
+              <span>{safeMetrics.totalSessions} Sessions</span>
+            </div>
+            <div className="p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D]">
+              <span className="text-[#2C194D]/60 block text-[10px]">Resonance Depth</span>
+              <span>{(resonance * 100).toFixed(0)}%</span>
+            </div>
+            <div className="p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D]">
+              <span className="text-[#2C194D]/60 block text-[10px]">Facet Complexity</span>
+              <span>{complexity} Points</span>
+            </div>
+          </div>
+
+          <div className="flex gap-2 w-full">
+            <button
+              onClick={handleExport}
+              className="flex-1 py-2.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D] font-bold text-xs shadow-[2px_2px_0_#2C194D] hover:bg-[#F198B7] transition-all flex items-center justify-center gap-1.5"
+            >
+              <Download size={14} /> Export Safe State
+            </button>
+            <button
+              onClick={store.resetJewel}
+              className="p-2.5 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-[#2C194D] font-bold text-xs shadow-[2px_2px_0_#2C194D] hover:bg-red-400 hover:text-white transition-all flex items-center justify-center"
+              title="Reset Jewel"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <InsightsChart metrics={metrics} />
+      )}
     </div>
   );
 }

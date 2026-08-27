@@ -1,53 +1,6 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { resolveModelIdentity } from '../lib/modelSystem';
-import { getUserMemories, getModelMemories } from '../lib/memorySystem';
-import { getModelVisibleGifts } from '../lib/giftSystem';
+import { modelRegistry, assembleModelContext } from '../lib/modelRegistry';
 import { Memory, Gift } from '../lib/types';
-
-/**
- * Quick helper function that gathers user memories, model memories for activeModelId,
- * and the 3 most recent gifts for that model into a unified context payload.
- */
-export function assembleModelContext(
-  memories: Memory[] = [],
-  gifts: Gift[] = [],
-  activeModelId: string
-) {
-  const userMems = getUserMemories(memories);
-  const modelMems = getModelMemories(memories, activeModelId);
-  const modelGifts = getModelVisibleGifts(gifts, activeModelId);
-  const recentGifts = [...modelGifts]
-    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-    .slice(-3);
-
-  const modelDef = resolveModelIdentity(activeModelId);
-  const modelDisplayName = modelDef?.displayName || activeModelId.split('/').pop() || 'Model';
-
-  const sections: string[] = [];
-
-  if (userMems.length > 0 || modelMems.length > 0) {
-    const memoryLines = [
-      ...userMems.map(m => `- [User Saved] ${m.content}`),
-      ...modelMems.map(m => `- [${modelDisplayName} Memory] ${m.content}`)
-    ];
-    sections.push(`## Context & Saved Memories:\n${memoryLines.join('\n')}`);
-  }
-
-  if (recentGifts.length > 0) {
-    const giftLines = recentGifts.map(g => {
-      const sender = g.from === 'user' ? 'User' : modelDisplayName;
-      return `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${sender}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`;
-    });
-    sections.push(`## Recent Gifts Exchanged (Last 3):\n${giftLines.join('\n')}`);
-  }
-
-  return {
-    userMemories: userMems,
-    modelMemories: modelMems,
-    recentGifts,
-    contextSummaryText: sections.join('\n\n')
-  };
-}
 
 const gemmaTools = [
   {
@@ -167,12 +120,13 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             ]
           };
 
-          const modelDef = resolveModelIdentity(model);
+          const modelDef = modelRegistry.get(model);
           const userThinkingLevel = thinkingLevel || 'HIGH';
           const userIncludeThoughts = includeThoughts ?? true;
           
           if (modelDef?.capabilities.supportsThinking) {
-            const defaultLevel = modelDef.identityId === 'gemini-3-flash-preview' ? ThinkingLevel.MEDIUM : ThinkingLevel.HIGH;
+            const defLevelKey = modelDef.defaultThinkingLevel || 'MEDIUM';
+            const defaultLevel = ThinkingLevel[defLevelKey as keyof typeof ThinkingLevel] || ThinkingLevel.MEDIUM;
             config.thinkingConfig = {
               thinkingLevel: thinkingLevel ? ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
               includeThoughts: userIncludeThoughts

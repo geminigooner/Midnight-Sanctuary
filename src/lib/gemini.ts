@@ -2,7 +2,7 @@ import { AppSettings, Message, Gift } from './types';
 import { auth, signOut } from './firebase';
 import { getContextMemories, isUserMemory } from './memorySystem';
 import { getModelVisibleGifts } from './giftSystem';
-import { resolveModelIdentity } from './modelSystem';
+import { modelRegistry } from './modelRegistry';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -93,8 +93,7 @@ export async function* streamChat(
   }
 
   const modelGifts = getModelVisibleGifts(gifts, settings.model);
-  const activeModelDef = resolveModelIdentity(settings.model);
-  const modelDisplayName = activeModelDef?.displayName || settings.model.split('/').pop() || 'Model';
+  const modelDisplayName = modelRegistry.getDisplayName(settings.model);
 
   if (modelGifts && modelGifts.length > 0) {
     const giftsText = modelGifts.map(g => `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${g.from === 'user' ? 'User' : modelDisplayName}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');

@@ -1,0 +1,58 @@
+import React, { createContext, useContext, ReactNode } from 'react';
+import { useAppStore } from '../lib/store';
+
+export type AppStore = ReturnType<typeof useAppStore>;
+
+export interface UIState {
+  sidebarOpen: boolean;
+  setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  settingsOpen: boolean;
+  setSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  jewelOpen: boolean;
+  setJewelOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  giftsOpen: boolean;
+  setGiftsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  profileOpen: boolean;
+  setProfileOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  memoriesOpen: boolean;
+  setMemoriesOpen: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export interface AppContextType {
+  store: AppStore;
+  ui: UIState;
+}
+
+const AppContext = createContext<AppContextType | null>(null);
+
+export function AppProvider({
+  children,
+  store,
+  ui,
+}: {
+  children: ReactNode;
+  store: AppStore;
+  ui: UIState;
+}) {
+  return (
+    <AppContext.Provider value={{ store, ui }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp(): AppContextType {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+}
+
+export function useStore(): AppStore {
+  return useApp().store;
+}
+
+export function useUI(): UIState {
+  return useApp().ui;
+}

@@ -85,6 +85,7 @@ export interface AppSettings {
   systemInstruction: string;
   temperature: number;
   topP: number;
+  topK?: number;
   maxOutputTokens: number;
   model: string;
   favoriteModels: string[];

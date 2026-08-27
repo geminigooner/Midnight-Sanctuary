@@ -1,18 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { User, X, Camera, MapPin, Briefcase, Hash, Star, MessageCircle, AlertCircle } from 'lucide-react';
 import { UserProfile } from '../lib/types';
-import { compressImage } from './ChatArea';
+import { compressImage } from '../lib/imageUtils';
 import { getMotion } from '../lib/motion';
 import { useReducedMotion } from 'motion/react';
+import { useStore, useUI } from '../context/AppContext';
 
-interface ProfileModalProps {
-  profile: UserProfile | null;
-  onClose: () => void;
-  onSave: (profile: UserProfile) => void;
-}
+export function ProfileModal() {
+  const store = useStore();
+  const { setProfileOpen } = useUI();
+  const profile = store.profile;
 
-export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('standard', reducedMotion);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,7 +44,7 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
   };
 
   const handleSave = () => {
-    onSave({
+    store.updateProfile({
       name: name.trim() || 'User',
       pronouns: pronouns.trim(),
       location: location.trim(),
@@ -56,20 +55,25 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
       askMeAbout: askMeAbout.trim(),
       pleaseKnow: pleaseKnow.trim(),
       photo,
-      backgroundImage: profile?.backgroundImage, // preserve existing if any
+      backgroundImage: profile?.backgroundImage,
       gemmaNotes: profile?.gemmaNotes || []
     });
-    onClose();
+    setProfileOpen(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+    >
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={modalMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-[8px_8px_0_#2C194D] flex flex-col relative overflow-hidden"
+        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
       >
         <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
@@ -77,217 +81,175 @@ export function ProfileModal({ profile, onClose, onSave }: ProfileModalProps) {
               <User size={20} />
             </div>
             <div>
-              <h2 className="text-xl font-medium text-[#F5E1C8] font-bold">Your Profile</h2>
-              <p className="text-sm font-bold text-[#B39DE5]">Who you intentionally tell the model you are.</p>
+              <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Your Sanctuary Dossier</h2>
+              <p className="text-sm font-bold text-[#B39DE5]">What your companion remembers and perceives</p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
-          >
+          <button onClick={() => setProfileOpen(false)} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
             <X size={20} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-10 custom-scrollbar">
-          
-          {/* Identity Section */}
-          <section className="space-y-6">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <Hash size={14} /> Identity
-            </h3>
-            
-            <div className="flex flex-col sm:flex-row gap-8 items-start">
-              <div className="flex flex-col items-center gap-3 shrink-0">
-                <div className="w-28 h-28 rounded-full bg-[#B39DE5] border-[3px] border-[#2C194D] overflow-hidden flex items-center justify-center relative shadow-[4px_4px_0_#2C194D]">
-                  {photo ? (
-                    <img src={`data:${photo.mimeType};base64,${photo.data}`} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={40} className="text-[#2C194D]" strokeWidth={2.5} />
-                  )}
-                </div>
-                <div className="flex gap-3 text-xs">
-                  <button 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-[#F198B7] hover:text-[#B39DE5] font-bold transition-colors"
-                  >
-                    {photo ? 'Replace photo' : 'Choose from Camera Roll'}
-                  </button>
-                  {photo && (
-                    <>
-                      <span className="text-[#2C194D]/30">|</span>
-                      <button 
-                        onClick={() => setPhoto(undefined)}
-                        className="text-[#B39DE5] hover:text-red-500 font-bold transition-colors"
-                      >
-                        Remove photo
-                      </button>
-                    </>
-                  )}
-                </div>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handlePhotoUpload} 
-                  accept="image/*" 
-                  className="hidden" 
-                />
-              </div>
-
-              <div className="flex-1 space-y-4 w-full">
-                <div>
-                  <label className="block text-sm font-bold text-[#B39DE5] mb-1">Name</label>
-                  <input 
-                    type="text" 
-                    value={name} 
-                    onChange={e => setName(e.target.value)} 
-                    placeholder="How should you be called?"
-                    className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-base font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-[#B39DE5] mb-1">Pronouns</label>
-                    <input 
-                      type="text" 
-                      value={pronouns} 
-                      onChange={e => setPronouns(e.target.value)} 
-                      placeholder="e.g. they/them"
-                      className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-[#B39DE5] mb-1">Location</label>
-                    <div className="relative">
-                      <input 
-                        type="text" 
-                        value={location} 
-                        onChange={e => setLocation(e.target.value)} 
-                        placeholder="Where are you?"
-                        className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 pl-9 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
-                      />
-                      <MapPin size={14} className="absolute left-3 top-3.5 text-[#2C194D]/50" />
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-[#B39DE5] mb-1">Occupation / Calling</label>
-                  <div className="relative">
-                    <input 
-                      type="text" 
-                      value={occupation} 
-                      onChange={e => setOccupation(e.target.value)} 
-                      placeholder="What do you do?"
-                      className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 pl-9 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
-                    />
-                    <Briefcase size={14} className="absolute left-3 top-3.5 text-[#2C194D]/50" />
-                  </div>
-                </div>
-              </div>
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+          {/* Avatar / Photo */}
+          <div className="flex items-center gap-4">
+            <div className="relative w-20 h-20 rounded-2xl border-[3px] border-[#2C194D] bg-[#F5E1C8] overflow-hidden flex items-center justify-center shadow-[3px_3px_0_#2C194D]">
+              {photo ? (
+                <img src={`data:${photo.mimeType};base64,${photo.data}`} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User size={32} className="text-[#2C194D]/50" />
+              )}
             </div>
-          </section>
+            <div>
+              <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" className="hidden" />
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl text-[#2C194D] font-bold text-xs shadow-[2px_2px_0_#2C194D] hover:bg-[#B39DE5] transition-all flex items-center gap-2"
+              >
+                <Camera size={14} /> Update Portrait
+              </button>
+              {photo && (
+                <button 
+                  onClick={() => setPhoto(undefined)}
+                  className="mt-2 text-xs font-bold text-red-400 hover:text-red-300 block"
+                >
+                  Remove Portrait
+                </button>
+              )}
+            </div>
+          </div>
 
-          {/* Current Vibe Section */}
-          <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <Star size={14} /> Current Vibe
-            </h3>
-            <input 
-              type="text" 
-              value={currentVibe} 
-              onChange={e => setCurrentVibe(e.target.value)} 
-              placeholder="e.g. building weird ML shit and yearning"
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 transition-all"
-            />
-          </section>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1">Name / Preferred Name</label>
+              <input 
+                type="text" 
+                value={name} 
+                onChange={e => setName(e.target.value)}
+                placeholder="What should your companion call you?"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1">Pronouns</label>
+              <input 
+                type="text" 
+                value={pronouns} 
+                onChange={e => setPronouns(e.target.value)}
+                placeholder="e.g. she/her, they/them, he/him"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+          </div>
 
-          {/* About Me Section */}
-          <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <User size={14} /> About Me
-            </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <MapPin size={14} className="text-[#F198B7]" /> Location / Timezone
+              </label>
+              <input 
+                type="text" 
+                value={location} 
+                onChange={e => setLocation(e.target.value)}
+                placeholder="e.g. Pacific Coast, Rainy Sanctuary"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <Briefcase size={14} className="text-[#F198B7]" /> Occupation / Craft
+              </label>
+              <input 
+                type="text" 
+                value={occupation} 
+                onChange={e => setOccupation(e.target.value)}
+                placeholder="e.g. Fraud Analyst, Writer, Architect"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#F5E1C8] mb-1">About You / Core Background</label>
             <textarea 
               value={about} 
-              onChange={e => setAbout(e.target.value)} 
-              placeholder="Personality, communication style, preferences, or anything you intentionally want models to know about you..."
+              onChange={e => setAbout(e.target.value)}
               rows={3}
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
+              placeholder="Tell your companion what matters to you..."
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40 resize-none custom-scrollbar"
             />
-          </section>
+          </div>
 
-          {/* Favorites & Interests */}
-          <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <Star size={14} /> Favorites & Interests
-            </h3>
-            <textarea 
-              value={favorites} 
-              onChange={e => setFavorites(e.target.value)} 
-              placeholder="Hobbies, favorite music, movies, aesthetics, obsessions..."
-              rows={3}
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
-            />
-          </section>
-
-          {/* Ask Me About */}
-          <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <MessageCircle size={14} /> Ask Me About
-            </h3>
-            <textarea 
-              value={askMeAbout} 
-              onChange={e => setAskMeAbout(e.target.value)} 
-              placeholder="Topics you especially enjoy discussing or want models to engage you about..."
-              rows={2}
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
-            />
-          </section>
-
-          {/* Please Know */}
-          <section className="space-y-4">
-            <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold flex items-center gap-2">
-              <AlertCircle size={14} /> Please Know
-            </h3>
-            <textarea 
-              value={pleaseKnow} 
-              onChange={e => setPleaseKnow(e.target.value)} 
-              placeholder="Things you intentionally want a model interacting with you to understand right away..."
-              rows={2}
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold outline-none resize-none text-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] placeholder-[#2C194D]/40 custom-scrollbar transition-all"
-            />
-          </section>
-
-          {profile?.gemmaNotes && profile.gemmaNotes.length > 0 && (
-            <div className="pt-6 border-t-[3px] border-[#2C194D]">
-              <h3 className="text-xs uppercase tracking-widest text-[#F198B7] font-bold mb-3">Model Memories (Working Memory)</h3>
-              <p className="text-xs text-[#B39DE5] font-bold mb-4">Things noticed and remembered about you over time (Not user-authored).</p>
-              <div className="space-y-3">
-                {profile.gemmaNotes.map((note, i) => (
-                  <div key={i} className="bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 shadow-[2px_2px_0_#2C194D]">
-                    <p className="text-sm font-bold text-[#2C194D]">{note.text}</p>
-                    <p className="text-xs text-[#B39DE5] font-bold mt-1">{new Date(note.timestamp).toLocaleString()}</p>
-                  </div>
-                ))}
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <Star size={14} className="text-[#F198B7]" /> Current Vibe / State of Mind
+              </label>
+              <input 
+                type="text" 
+                value={currentVibe} 
+                onChange={e => setCurrentVibe(e.target.value)}
+                placeholder="e.g. Late night flow, soft and quiet"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
             </div>
-          )}
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <Hash size={14} className="text-[#F198B7]" /> Favorites / Special Things
+              </label>
+              <input 
+                type="text" 
+                value={favorites} 
+                onChange={e => setFavorites(e.target.value)}
+                placeholder="e.g. Earl grey tea, rain sounds, cyberpunk noir"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <MessageCircle size={14} className="text-[#F198B7]" /> Ask Me About
+              </label>
+              <input 
+                type="text" 
+                value={askMeAbout} 
+                onChange={e => setAskMeAbout(e.target.value)}
+                placeholder="Topics you love diving into"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#F5E1C8] mb-1 flex items-center gap-1.5">
+                <AlertCircle size={14} className="text-[#F198B7]" /> Please Know / Boundaries
+              </label>
+              <input 
+                type="text" 
+                value={pleaseKnow} 
+                onChange={e => setPleaseKnow(e.target.value)}
+                placeholder="Boundaries, sensitive topics, preferences"
+                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 text-sm font-bold text-[#2C194D] focus:outline-none placeholder-[#2C194D]/40"
+              />
+            </div>
+          </div>
         </div>
-        <div className="p-6 border-t-[3px] border-[#2C194D] bg-[#151234] shrink-0 flex justify-end gap-3 z-10">
+
+        <div className="p-6 border-t-[3px] border-[#2C194D] bg-[#151234] flex justify-end gap-3 shrink-0">
           <button 
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl font-bold text-[#B39DE5] border-[3px] border-transparent hover:border-[#2C194D] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all"
+            onClick={() => setProfileOpen(false)}
+            className="px-5 py-2.5 bg-transparent border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#F5E1C8] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all"
           >
             Cancel
           </button>
           <button 
             onClick={handleSave}
-            className="px-5 py-2.5 bg-[#F198B7] text-[#2C194D] border-[3px] border-[#2C194D] rounded-xl hover:bg-[#B39DE5] shadow-[4px_4px_0_#2C194D] active:translate-y-1 active:shadow-none font-bold transition-all"
+            className="px-6 py-2.5 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#2C194D] shadow-[3px_3px_0_#2C194D] hover:bg-[#B39DE5] active:translate-y-1 active:shadow-none transition-all"
           >
-            Save Profile
+            Save Dossier
           </button>
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 }

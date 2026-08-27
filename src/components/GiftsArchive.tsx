@@ -1,24 +1,22 @@
 import React, { useState } from 'react';
-import { Gift as GiftType } from '../lib/types';
 import { X, Gift, Sparkles } from 'lucide-react';
 import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { getModelVisibleGifts, getLegacyOrOtherModelGifts, normalizeModelNamespace } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
+import { useStore, useUI } from '../context/AppContext';
 
-interface GiftsArchiveProps {
-  gifts: GiftType[];
-  onClose: () => void;
-  currentModel?: string;
-}
+export function GiftsArchive() {
+  const store = useStore();
+  const { setGiftsOpen } = useUI();
+  const { gifts, settings } = store;
 
-export function GiftsArchive({ gifts, onClose, currentModel }: GiftsArchiveProps) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
 
-  const activeModelId = currentModel || 'models/gemini-3-flash-preview';
+  const activeModelId = settings.model || 'models/gemini-3-flash-preview';
   const modelDef = resolveModelIdentity(activeModelId);
   const activeModelDisplayName = modelDef?.displayName || activeModelId.split('/').pop() || 'Current Model';
 
@@ -52,7 +50,7 @@ export function GiftsArchive({ gifts, onClose, currentModel }: GiftsArchiveProps
                 <p className="text-sm font-bold text-[#B39DE5]">Moments held onto with {activeModelDisplayName}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
+            <button onClick={() => setGiftsOpen(false)} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
               <X size={20} />
             </button>
           </div>
@@ -60,70 +58,68 @@ export function GiftsArchive({ gifts, onClose, currentModel }: GiftsArchiveProps
           <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar">
             <button
               onClick={() => setActiveTab('current')}
-              className={`flex-1 min-w-[140px] p-4 text-sm font-medium tracking-wide transition-colors whitespace-nowrap ${activeTab === 'current' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
+              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+                activeTab === 'current'
+                  ? 'bg-[#F198B7] text-[#2C194D]'
+                  : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+              }`}
             >
-              {activeModelDisplayName}'s Gifts ({currentModelGifts.length})
+              Current Model Gifts ({currentModelGifts.length})
             </button>
             <button
               onClick={() => setActiveTab('all')}
-              className={`flex-1 min-w-[140px] p-4 text-sm font-medium tracking-wide transition-colors whitespace-nowrap ${activeTab === 'all' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#B39DE5] hover:text-[#F5E1C8] font-bold'}`}
+              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+                activeTab === 'all'
+                  ? 'bg-[#F198B7] text-[#2C194D]'
+                  : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+              }`}
             >
-              Other Models / Legacy ({otherGifts.length})
+              Other Sanctuary Gifts ({otherGifts.length})
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+          <div className="p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
             {displayGifts.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-[#B39DE5] font-bold space-y-4 min-h-[40vh]">
-                <Gift size={48} className="opacity-20" />
-                <p className="tracking-widest uppercase text-sm">
-                  {activeTab === 'current' 
-                    ? `No gifts shared with ${activeModelDisplayName} yet.`
-                    : 'No other gifts in archive.'}
-                </p>
+              <div className="flex flex-col items-center justify-center h-48 text-[#B39DE5] font-bold">
+                <Sparkles size={32} className="mb-2 opacity-50" />
+                <p>No gifts collected in this space yet.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayGifts.map(gift => {
-                  const isFromUser = gift.from === 'user';
-                  const senderName = isFromUser ? 'User' : (gift.modelId ? (resolveModelIdentity(gift.modelId)?.displayName || gift.modelId) : 'Model');
-                  const targetName = gift.targetModelId ? (resolveModelIdentity(gift.targetModelId)?.displayName || gift.targetModelId) : undefined;
-
-                  return (
-                    <div key={gift.id} className="bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-5 hover:shadow-[4px_4px_0_#2C194D] transition-colors flex flex-col gap-3 group">
-                      {gift.inlineData && (
-                        <div 
-                          className="w-full h-32 overflow-hidden rounded-lg mb-2 cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => setSelectedImage(`data:${gift.inlineData!.mimeType};base64,${gift.inlineData!.data}`)}
-                        >
-                          <img src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`} className="w-full h-full object-cover" alt="gift" />
-                        </div>
-                      )}
-                      <div className="flex-1 text-[#2C194D] prose prose-p:leading-relaxed prose-sm max-w-none">
-                        {gift.content}
-                      </div>
-                      
-                      <div className="flex flex-col gap-1.5 mt-2 pt-3 border-t-[3px] border-[#2C194D] border-dashed">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="text-xs text-[#F198B7] uppercase tracking-widest font-bold bg-[#2C194D] px-2 py-1 rounded w-max">
-                            {gift.gift_type}
-                          </span>
-                          <span className="text-[10px] text-[#2C194D] font-bold bg-[#B39DE5]/40 px-2 py-0.5 rounded">
-                            {isFromUser ? (targetName ? `To ${targetName}` : 'From User') : `From ${senderName}`}
-                          </span>
-                        </div>
-                        {gift.reason && (
-                          <span className="text-[10px] text-[#2C194D]/70 italic">
-                            {gift.reason}
-                          </span>
-                        )}
-                        <span className="text-[9px] text-[#2C194D]/50 font-bold">
-                          {new Date(gift.timestamp || Date.now()).toLocaleDateString()}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {displayGifts.map((gift) => (
+                  <div
+                    key={gift.id}
+                    className="p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex flex-col justify-between shadow-[3px_3px_0_#2C194D]"
+                  >
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D]">
+                          {gift.from === 'user' ? 'From You' : 'From Companion'}
+                        </span>
+                        <span className="text-[10px] font-bold text-[#2C194D]/60">
+                          {new Date(gift.timestamp).toLocaleDateString()}
                         </span>
                       </div>
+
+                      {gift.inlineData && (
+                        <img
+                          src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`}
+                          alt="Gift attachment"
+                          onClick={() => setSelectedImage(`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`)}
+                          className="w-full h-36 object-cover rounded-xl border-[2px] border-[#2C194D] mb-2 cursor-pointer hover:opacity-95 transition-opacity"
+                        />
+                      )}
+
+                      <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{gift.content}</p>
                     </div>
-                  );
-                })}
+
+                    {gift.reason && (
+                      <p className="text-xs text-[#2C194D]/70 italic mt-3 border-t border-[#2C194D]/20 pt-2 font-bold">
+                        "{gift.reason}"
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -137,17 +133,17 @@ export function GiftsArchive({ gifts, onClose, currentModel }: GiftsArchiveProps
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setSelectedImage(null)}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#151234]/95 backdrop-blur-xl cursor-pointer"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#151234]/95 backdrop-blur-md cursor-pointer"
           >
-            <button className="absolute top-6 right-6 p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all bg-[#151234]">
+            <button className="absolute top-6 right-6 p-2 text-[#2C194D] hover:text-white transition-colors bg-white/10 rounded-full">
               <X size={24} />
             </button>
-            <motion.img 
+            <motion.img
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               src={selectedImage}
-              alt="Full screen gift"
+              alt="Full size gift"
               className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />

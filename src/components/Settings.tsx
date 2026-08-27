@@ -1,18 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { AppSettings, ModelInfo } from '../lib/types';
+import { AppSettings } from '../lib/types';
 import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Edit2, Check } from 'lucide-react';
 import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
 import { getMotion } from '../lib/motion';
+import { useStore, useUI } from '../context/AppContext';
 
-interface SettingsProps {
-  settings: AppSettings;
-  onSave: (settings: Partial<AppSettings>) => void;
-  onClose: () => void;
-  availableModels: ModelInfo[];
-  isModelsLoading: boolean;
-}
+export function Settings() {
+  const store = useStore();
+  const { setSettingsOpen } = useUI();
+  const { settings, availableModels, isModelsLoading } = store;
 
-export function Settings({ settings, onSave, onClose, availableModels, isModelsLoading }: SettingsProps) {
   const reducedMotion = useReducedMotion();
   const panelMotion = getMotion('heavy', reducedMotion);
   
@@ -25,29 +22,17 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
     const newFavs = isFav 
       ? (settings.favoriteModels || []).filter(m => m !== modelName)
       : [...(settings.favoriteModels || []), modelName];
-    onSave({ favoriteModels: newFavs });
+    store.updateSettings({ favoriteModels: newFavs });
   };
 
   const addMemory = () => {
     if (!newMemory.trim()) return;
-    const memory = {
-      id: Math.random().toString(36).substring(2, 9),
-      content: newMemory.trim(),
-      createdAt: Date.now(),
-      author: 'user' as const
-    };
-    onSave({ memories: [memory, ...(settings.memories || [])] });
+    store.addMemory(newMemory.trim(), 'user_settings', 'user');
     setNewMemory('');
   };
 
   const deleteMemory = (id: string) => {
-    onSave({ memories: (settings.memories || []).filter(m => m.id !== id) });
-  };
-
-  const updateMemory = (id: string, content: string) => {
-    onSave({
-      memories: (settings.memories || []).map(m => m.id === id ? { ...m, content } : m)
-    });
+    store.removeMemory(id);
   };
 
   const sortedModels = useMemo(() => {
@@ -57,11 +42,6 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
       const aFav = settings.favoriteModels?.includes(a.name) ? 1 : 0;
       const bFav = settings.favoriteModels?.includes(b.name) ? 1 : 0;
       if (aFav !== bFav) return bFav - aFav;
-      
-      const aGemma = a.name.toLowerCase().includes('gemma') ? 1 : 0;
-      const bGemma = b.name.toLowerCase().includes('gemma') ? 1 : 0;
-      if (aGemma !== bGemma) return bGemma - aGemma;
-
       return a.displayName.localeCompare(b.displayName);
     });
   }, [availableModels, settings.favoriteModels]);
@@ -78,294 +58,201 @@ export function Settings({ settings, onSave, onClose, availableModels, isModelsL
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={panelMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] rounded-3xl w-full max-w-lg shadow-[8px_8px_0_#2C194D] flex flex-col max-h-[90dvh]"
+        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
       >
-        <div className="flex items-center justify-between p-4 md:p-6 border-b-[3px] border-[#2C194D] shrink-0">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setActiveTab('identity')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'identity' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
-            >
-              Identity & Memory
-            </button>
-            <button 
-              onClick={() => setActiveTab('model')}
-              className={`text-lg font-medium tracking-wide transition-colors ${activeTab === 'model' ? 'text-[#F5E1C8] font-bold border-b-[3px] border-[#F198B7]' : 'text-[#2C194D] hover:text-[#2C194D]/80'}`}
-            >
-              Model & API
-            </button>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-[#F198B7] rounded-full transition-colors">
+        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
+          <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Sanctuary Configuration</h2>
+          <button 
+            onClick={() => setSettingsOpen(false)}
+            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
+          >
             <X size={20} />
           </button>
         </div>
-        
-        <div className="p-4 md:p-6 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
-          {activeTab === 'model' && (
-            <>
-              <div className="space-y-2">
-                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Model ID</label>
-            {isModelsLoading ? (
-              <div className="text-[#B39DE5] font-bold text-sm py-2">Loading available models...</div>
-            ) : (
-              <div className="space-y-2">
-                <select 
-                  value={settings.model}
-                  onChange={e => onSave({ model: e.target.value })}
-                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all text-base appearance-none text-[#2C194D]"
-                >
-                  {(() => {
-                    const favorites = sortedModels.filter(m => settings.favoriteModels?.includes(m.name));
-                    const gemmas = sortedModels.filter(m => m.name.toLowerCase().includes('gemma') && !settings.favoriteModels?.includes(m.name));
-                    const geminis = sortedModels.filter(m => m.name.toLowerCase().includes('gemini') && !settings.favoriteModels?.includes(m.name));
-                    const others = sortedModels.filter(m => !m.name.toLowerCase().includes('gemma') && !m.name.toLowerCase().includes('gemini') && !settings.favoriteModels?.includes(m.name));
-                    
-                    return (
-                      <>
-                        {favorites.length > 0 && (
-                          <optgroup label="Favorites">
-                            {favorites.map(m => (
-                              <option key={m.name} value={m.name}>★ {m.displayName}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {gemmas.length > 0 && (
-                          <optgroup label="Gemma Models">
-                            {gemmas.map(m => (
-                              <option key={m.name} value={m.name}>{m.displayName}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {geminis.length > 0 && (
-                          <optgroup label="Gemini Models">
-                            {geminis.map(m => (
-                              <option key={m.name} value={m.name}>{m.displayName}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {others.length > 0 && (
-                          <optgroup label="Other Models">
-                            {others.map(m => (
-                              <option key={m.name} value={m.name}>{m.displayName}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </>
-                    );
-                  })()}
-                  {/* Fallback if the saved model isn't in the list */}
-                  {!sortedModels.find(m => m.name === settings.model) && (
-                    <option value={settings.model} disabled>
-                      {settings.model} (Unavailable)
-                    </option>
-                  )}
-                </select>
-                
-                {settings.model && sortedModels.find(m => m.name === settings.model) && (
-                  <div className="space-y-1">
-                    <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
-                      <span>Exact ID: <span className="font-mono text-[#F198B7]">{settings.model}</span></span>
-                    </div>
-                    <div className="text-xs text-[#B39DE5] font-bold flex items-center justify-between">
-                      <span>Provider: Google</span>
-                      {sortedModels.find(m => m.name === settings.model)?.inputTokenLimit && (
-                        <span>Context: {sortedModels.find(m => m.name === settings.model)?.inputTokenLimit?.toLocaleString()} tokens</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {sortedModels.find(m => m.name === settings.model) && (
-                  <button 
-                    onClick={() => toggleFavorite(settings.model)}
-                    className="flex items-center gap-2 text-sm text-[#F5E1C8] font-bold hover:text-[#B39DE5] transition-colors"
-                  >
-                    <Star size={14} className={settings.favoriteModels?.includes(settings.model) ? 'fill-champagne' : ''} />
-                    {settings.favoriteModels?.includes(settings.model) ? 'Remove from Favorites' : 'Add to Favorites'}
-                  </button>
-                )}
 
-                {!sortedModels.find(m => m.name === settings.model) && (
-                  <div className="text-red-400 text-sm py-1">
-                    The selected model is unavailable. Please choose another model.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+        <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar">
+          <button
+            onClick={() => setActiveTab('identity')}
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'identity'
+                ? 'bg-[#F198B7] text-[#2C194D]'
+                : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+            }`}
+          >
+            Identity & Persona
+          </button>
+          <button
+            onClick={() => setActiveTab('model')}
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+              activeTab === 'model'
+                ? 'bg-[#F198B7] text-[#2C194D]'
+                : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+            }`}
+          >
+            Model & Parameters
+          </button>
+        </div>
 
-          <div className="space-y-2">
-            <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">System Instructions</label>
-            <textarea 
-              value={settings.systemInstruction}
-              onChange={e => onSave({ systemInstruction: e.target.value })}
-              rows={4}
-              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold"
-            />
-          </div>
-
-          <div className="space-y-4 pt-4 border-t-[3px] border-[#2C194D]">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-[#F5E1C8] font-bold">Temperature ({settings.temperature.toFixed(1)})</label>
-                <span className="text-xs text-[#B39DE5] font-bold">Controls randomness</span>
-              </div>
-              <input 
-                type="range" min="0" max="2" step="0.1" 
-                value={settings.temperature}
-                onChange={e => onSave({ temperature: parseFloat(e.target.value) })}
-                className="w-full accent-[#F198B7]"
-              />
-            </div>
-            
-            <div className="pt-2">
-              <button 
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-2 text-sm text-[#2C194D] hover:text-[#2C194D] transition-colors uppercase tracking-wider font-semibold w-full"
-              >
-                {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Advanced
-              </button>
-              
-              <AnimatePresence>
-                {showAdvanced && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="space-y-6 pt-4 pb-2">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm text-[#F5E1C8] font-bold">Top-P ({settings.topP.toFixed(2)})</label>
-                          <span className="text-xs text-[#B39DE5] font-bold">Nucleus sampling</span>
-                        </div>
-                        <input 
-                          type="range" min="0" max="1" step="0.05" 
-                          value={settings.topP}
-                          onChange={e => onSave({ topP: parseFloat(e.target.value) })}
-                          className="w-full accent-[#F198B7]"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm text-[#F5E1C8] font-bold">Max Tokens ({settings.maxOutputTokens})</label>
-                          <span className="text-xs text-[#B39DE5] font-bold">Output length limit</span>
-                        </div>
-                        <input 
-                          type="range" min="1" max="8192" step="1" 
-                          value={settings.maxOutputTokens}
-                          onChange={e => onSave({ maxOutputTokens: parseInt(e.target.value) })}
-                          className="w-full accent-[#F198B7]"
-                        />
-                      </div>
-                      
-                      <div className="flex flex-col gap-2">
-                        <label className="text-sm text-[#F5E1C8] font-bold">Thinking Level</label>
-                        <select
-                          value={settings.thinkingLevel || 'HIGH'}
-                          onChange={e => onSave({ thinkingLevel: e.target.value as any })}
-                          className="w-full bg-[#151234] text-[#F5E1C8] border-2 border-[#2C194D] rounded-xl p-2 font-medium"
-                        >
-                          <option value="LOW">Low (Fastest)</option>
-                          <option value="MEDIUM">Medium (Balanced)</option>
-                          <option value="HIGH">High (Deepest)</option>
-                        </select>
-                      </div>
-
-                      <div className="flex flex-row items-center justify-between">
-                        <label className="text-sm text-[#F5E1C8] font-bold">Show Thought Process</label>
-                        <input
-                          type="checkbox"
-                          checked={settings.includeThoughts ?? true}
-                          onChange={e => onSave({ includeThoughts: e.target.checked })}
-                          className="w-5 h-5 accent-[#F198B7] cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-          </>
-          )}
-
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
           {activeTab === 'identity' && (
             <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">About Me</label>
-                <textarea 
-                  value={settings.aboutMe || ''}
-                  onChange={e => onSave({ aboutMe: e.target.value })}
-                  placeholder="Tell the model about yourself..."
-                  rows={3}
-                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Conversation Preferences</label>
-                <textarea 
-                  value={settings.conversationPreferences || ''}
-                  onChange={e => onSave({ conversationPreferences: e.target.value })}
-                  placeholder="How should the model talk to you?"
-                  rows={3}
-                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all resize-none text-base text-[#2C194D] font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
+              <div>
+                <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
+                  System Instruction / Core Identity
+                </label>
+                <textarea
+                  value={settings.systemInstruction}
+                  onChange={(e) => store.updateSettings({ systemInstruction: e.target.value })}
+                  placeholder="Define your companion's tone, worldview, and boundaries..."
+                  rows={6}
+                  className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-4 text-[#2C194D] font-bold text-sm resize-none focus:outline-none focus:shadow-[4px_4px_0_#2C194D] custom-scrollbar placeholder-[#2C194D]/40"
                 />
               </div>
 
-              <div className="space-y-4 pt-4 border-t-[3px] border-[#2C194D]">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-[#F5E1C8] uppercase tracking-wider font-bold">Saved Memories</label>
-                  <button 
-                    onClick={() => onSave({ memoriesEnabled: !settings.memoriesEnabled })}
-                    className={`text-xs px-2 py-1 rounded transition-colors ${settings.memoriesEnabled ? 'bg-[#F198B7] text-[#2C194D] border-[3px] border-[#2C194D] font-bold shadow-[2px_2px_0_#2C194D]' : 'bg-[#151234] text-[#B39DE5] border-[3px] border-[#2C194D] font-bold'}`}
+              <div>
+                <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
+                  Memories & Facts
+                </label>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newMemory}
+                    onChange={(e) => setNewMemory(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addMemory()}
+                    placeholder="Add a new permanent memory..."
+                    className="flex-1 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl px-4 py-2 text-[#2C194D] font-bold text-sm focus:outline-none placeholder-[#2C194D]/40"
+                  />
+                  <button
+                    onClick={addMemory}
+                    className="px-4 py-2 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl text-[#2C194D] font-bold text-sm hover:bg-[#B39DE5] transition-colors"
                   >
-                    {settings.memoriesEnabled ? 'Enabled' : 'Disabled'}
+                    <Plus size={16} />
                   </button>
                 </div>
-                
-                {settings.memoriesEnabled && (
-                  <>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text"
-                        value={newMemory}
-                        onChange={e => setNewMemory(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addMemory()}
-                        placeholder="Add a new memory..."
-                        className="flex-1 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl px-3 py-2 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] transition-all text-sm font-bold text-[#2C194D] placeholder:text-[#2C194D]/40"
-                      />
-                      <button onClick={addMemory} className="p-2 bg-[#F198B7] hover:bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 transition-all text-[#2C194D]">
-                        <Plus size={18} />
+
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                  {(settings.memories || []).map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-sm font-bold text-[#2C194D]"
+                    >
+                      <span className="truncate flex-1 pr-2">{m.content}</span>
+                      <button
+                        onClick={() => deleteMemory(m.id)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                      >
+                        <Trash2 size={14} />
                       </button>
                     </div>
+                  ))}
+                  {(!settings.memories || settings.memories.length === 0) && (
+                    <p className="text-xs text-[#B39DE5] italic font-bold">No memories stored yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
-                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                      {(!settings.memories || settings.memories.length === 0) ? (
-                        <div className="text-sm text-[#B39DE5] font-bold text-center py-4">No memories saved yet.</div>
-                      ) : (
-                        settings.memories.map(memory => (
-                          <div key={memory.id} className="flex gap-2 items-start group">
-                            <textarea
-                              value={memory.content}
-                              onChange={e => updateMemory(memory.id, e.target.value)}
-                              className="flex-1 bg-[#F5E1C8] border-[3px] border-transparent hover:border-[#2C194D] focus:border-[#2C194D] focus:shadow-[4px_4px_0_#2C194D] rounded-xl px-3 py-2 focus:outline-none transition-all text-sm font-bold text-[#2C194D] resize-none"
-                              rows={2}
-                            />
-                            <button 
-                              onClick={() => deleteMemory(memory.id)}
-                              className="p-2 mt-1 text-[#2C194D] hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all rounded-xl hover:bg-[#F198B7] shrink-0 border-[2px] border-transparent hover:border-[#2C194D]"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+          {activeTab === 'model' && (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
+                  Select Model
+                </label>
+                {isModelsLoading ? (
+                  <p className="text-xs text-[#B39DE5] animate-pulse font-bold">Loading available models...</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto custom-scrollbar p-1">
+                    {sortedModels.map((m) => {
+                      const isSelected = settings.model === m.name;
+                      const isFav = settings.favoriteModels?.includes(m.name);
+                      return (
+                        <div
+                          key={m.name}
+                          onClick={() => store.updateSettings({ model: m.name })}
+                          className={`p-3 rounded-2xl border-[3px] border-[#2C194D] cursor-pointer transition-all flex items-center justify-between ${
+                            isSelected ? 'bg-[#F198B7] shadow-[3px_3px_0_#2C194D]' : 'bg-[#F5E1C8] hover:bg-[#F5E1C8]/80'
+                          }`}
+                        >
+                          <div className="truncate pr-2">
+                            <p className="font-bold text-sm text-[#2C194D] truncate">{m.displayName}</p>
+                            <p className="text-[10px] text-[#2C194D]/60 truncate">{m.name.split('/').pop()}</p>
                           </div>
-                        ))
-                      )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(m.name);
+                            }}
+                            className="p-1 text-[#2C194D]/50 hover:text-amber-500"
+                          >
+                            <Star size={16} fill={isFav ? 'currentColor' : 'none'} className={isFav ? 'text-amber-500' : ''} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-sm font-bold text-[#F5E1C8]">Temperature</label>
+                  <span className="text-sm font-bold text-[#F198B7]">{settings.temperature.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.05"
+                  value={settings.temperature}
+                  onChange={(e) => store.updateSettings({ temperature: parseFloat(e.target.value) })}
+                  className="w-full accent-[#F198B7] cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="flex items-center gap-2 text-sm font-bold text-[#B39DE5] hover:text-[#F5E1C8] transition-colors"
+                >
+                  {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  Advanced Sampling Parameters
+                </button>
+
+                {showAdvanced && (
+                  <div className="mt-4 space-y-4 p-4 bg-[#151234] border-[3px] border-[#2C194D] rounded-2xl">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs font-bold text-[#F5E1C8]">Top P</label>
+                        <span className="text-xs font-bold text-[#F198B7]">{settings.topP?.toFixed(2) ?? '0.95'}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={settings.topP ?? 0.95}
+                        onChange={(e) => store.updateSettings({ topP: parseFloat(e.target.value) })}
+                        className="w-full accent-[#F198B7] cursor-pointer"
+                      />
                     </div>
-                  </>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs font-bold text-[#F5E1C8]">Top K</label>
+                        <span className="text-xs font-bold text-[#F198B7]">{settings.topK ?? 40}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={settings.topK ?? 40}
+                        onChange={(e) => store.updateSettings({ topK: parseInt(e.target.value) })}
+                        className="w-full accent-[#F198B7] cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

@@ -1,1129 +1,148 @@
-import html2canvas from "html2canvas";
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Conversation, Message, AppSettings, JewelMetrics, ModelInfo, Gift as GiftType, UserProfile, getPublicMessageText, getThoughtMessageText } from '../lib/types';
-import { streamChat, RepetitionError, APIError, RateLimitError, ChatStreamEvent } from '../lib/gemini';
-import { normalizeModelNamespace } from '../lib/giftSystem';
-import { resolveModelIdentity } from '../lib/modelSystem';
-import { Send, Settings as SettingsIcon, Menu, StopCircle, RefreshCw, Copy, Download, Edit3, Paperclip, Terminal, Gift, X, MoreVertical, User, Bookmark, Smile, Scan } from 'lucide-react';
-import Markdown from 'react-markdown';
-import { v4 as uuidv4 } from 'uuid';
-import { Presence, PresenceState } from './Presence';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { getMotion } from '../lib/motion';
-import { MessageBubble } from './MessageBubble';
-import { triggerHaptic } from '../lib/haptics';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Message, getPublicMessageText } from '../lib/types';
+import { useChatStream } from '../hooks/useChatStream';
+import { X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ChatHeader } from './ChatHeader';
+import { MessageList } from './MessageList';
+import { ChatInputDock } from './ChatInputDock';
+import { compressImage } from '../lib/imageUtils';
+import { useStore } from '../context/AppContext';
 
+export { compressImage };
 
-function GemmaTypingIndicator() {
-  return (
-    <div className="flex items-center h-[28px] space-x-1.5 opacity-80">
-       {[0, 1, 2].map((i) => (
-         <motion.div
-           key={i}
-           animate={{ 
-             opacity: [0.2, 1, 0.2], 
-             y: [0, -2, 0], 
-             x: [0, 1, 0] 
-           }}
-           transition={{ 
-             repeat: Infinity, 
-             duration: 2.5, 
-             delay: i * 0.4, 
-             ease: "easeInOut" 
-           }}
-           className="w-1 h-1 rounded-full bg-pearlescent shadow-[0_0_4px_rgba(230,232,230,0.8)]"
-         />
-       ))}
-    </div>
-  );
-}
+export function ChatArea() {
+  const store = useStore();
+  const conversation = store.conversations.find(c => c.id === store.currentId);
 
-
-
-
-export const compressImage = (file: File): Promise<{ mimeType: string, data: string, previewUrl: string }> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        const maxEdge = 1024;
-        if (width > maxEdge || height > maxEdge) {
-          if (width > height) {
-            height = Math.round((height * maxEdge) / width);
-            width = maxEdge;
-          } else {
-            width = Math.round((width * maxEdge) / height);
-            height = maxEdge;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject('No canvas context');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        let quality = 0.85;
-        let dataUrl = canvas.toDataURL('image/jpeg', quality);
-        let base64Data = dataUrl.split(',')[1];
-        
-        if (base64Data.length > 700000) {
-          quality = 0.6;
-          dataUrl = canvas.toDataURL('image/jpeg', quality);
-          base64Data = dataUrl.split(',')[1];
-        }
-        
-        resolve({
-          mimeType: 'image/jpeg',
-          data: base64Data,
-          previewUrl: dataUrl
-        });
-      };
-      img.onerror = reject;
-      img.src = result;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-interface ChatAreaProps {
-  conversation: Conversation | undefined;
-  settings: AppSettings;
-  gifts: GiftType[];
-  profile: UserProfile | null;
-  jewelMetrics: JewelMetrics;
-  onUpdate: (id: string, updates: Partial<Conversation>) => void;
-  onAddMessage: (conversationId: string, message: Message) => void;
-  onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
-  onRemoveMessage: (conversationId: string, messageId: string) => void;
-  onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
-  onUpdateSettings: (settings: Partial<AppSettings>) => void;
-  onToggleSidebar: () => void;
-  onOpenSettings: () => void;
-  onOpenJewel: () => void;
-  onOpenGifts: () => void;
-  onOpenProfile: () => void;
-  onOpenMemories: () => void;
-  availableModels: ModelInfo[];
-  onAddGift: (gift: any) => void;
-  onAddMemory: (content: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string) => void;
-  onAddEventLog: (description: string) => void;
-}
-
-export function ChatArea({ conversation, settings, onUpdateSettings, gifts, profile, jewelMetrics, onUpdate, onAddMessage, onUpdateMessage, onRemoveMessage, onUpdateJewel, onToggleSidebar, onOpenSettings, onOpenJewel, onOpenGifts, onOpenProfile, onOpenMemories, availableModels, onAddGift, onAddMemory, onAddEventLog, onAddGemmaNote }: ChatAreaProps & { onAddGemmaNote: (note: string) => void }) {
-  const [isScanningProfile, setIsScanningProfile] = useState(false);
   const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState<{mimeType: string, data: string, previewUrl?: string}[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const conversationRef = useRef(conversation);
-  useEffect(() => {
-    conversationRef.current = conversation;
-  }, [conversation]);
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const isGeneratingRef = useRef(false);
-  useEffect(() => {
-    isGeneratingRef.current = isGenerating;
-  }, [isGenerating]);
-  const [presence, setPresence] = useState<PresenceState>('resting');
-  const [showDevPanel, setShowDevPanel] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [showDebugModel, setShowDebugModel] = useState(false);
-  const [showLeaveGift, setShowLeaveGift] = useState(false);
-  const [giftContent, setGiftContent] = useState('');
-  const [giftFile, setGiftFile] = useState<{mimeType: string, data: string, previewUrl?: string} | null>(null);
+  const [attachments, setAttachments] = useState<{ mimeType: string; data: string; previewUrl?: string }[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const giftFileInputRef = useRef<HTMLInputElement>(null);
-  
-  const reducedMotion = useReducedMotion();
-  const composerMotion = getMotion('snappy', reducedMotion);
-  
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const presenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const activeGenerationConversationIdRef = useRef<string | null>(null);
-  const watchdogTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const setTemporaryPresence = (newState: PresenceState, revertTo: PresenceState, delay: number = 3000) => {
-    setPresence(newState);
-    if (presenceTimeoutRef.current) clearTimeout(presenceTimeoutRef.current);
-    presenceTimeoutRef.current = setTimeout(() => {
-      setPresence(revertTo);
-    }, delay);
-  };
+  const {
+    isGenerating,
+    presence,
+    setPresence,
+    isScanningProfile,
+    sendMessage,
+    regenerateMessage,
+    stopGeneration,
+  } = useChatStream({
+    conversation,
+    settings: store.settings,
+    gifts: store.gifts,
+    profile: store.profile,
+    jewelMetrics: store.jewelMetrics,
+    onUpdate: store.updateConversation,
+    onAddMessage: store.addMessage,
+    onUpdateMessage: store.updateMessage,
+    onUpdateJewel: store.updateJewelMetrics,
+    onAddGift: store.addGift,
+    onAddMemory: store.addMemory,
+    onAddEventLog: store.addEventLog,
+    onAddGemmaNote: store.addGemmaNote,
+  });
 
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      if (presenceTimeoutRef.current) clearTimeout(presenceTimeoutRef.current);
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-    };
+  const handleCopy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
   }, []);
 
-  useEffect(() => {
-    if (!isGenerating && presence !== 'error' && presence !== 'repetition_stopped' && presence !== 'complete') {
-      if (input.trim().length > 0) {
-        setPresence('listening');
-      } else {
-        setPresence('resting');
-      }
-    }
-  }, [input, isGenerating, presence]);
+  const handleFavorite = useCallback((content: string) => {
+    const activeModelId = store.settings.model;
+    store.addMemory(content, 'chat_starred', 'user', activeModelId);
+  }, [store.settings.model, store.addMemory]);
 
-  const scrollTimeoutRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (scrollTimeoutRef.current) {
-      window.cancelAnimationFrame(scrollTimeoutRef.current);
+  const handleSend = useCallback((textToSend?: string, replaceIndex?: number, additionalMessages?: Message[]) => {
+    const rawText = textToSend !== undefined ? textToSend : input;
+    if (!rawText.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) return;
+
+    if (replaceIndex === undefined && textToSend === undefined) {
+      setInput('');
     }
-    scrollTimeoutRef.current = window.requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ block: 'end' });
+
+    const currentAttachments = [...attachments];
+    if (replaceIndex === undefined && textToSend === undefined) {
+      setAttachments([]);
+    }
+
+    sendMessage(rawText, {
+      attachments: currentAttachments,
+      replaceIndex,
+      additionalMessages
     });
-  }, [conversation?.messages, isGenerating]);
+  }, [input, attachments, sendMessage]);
+
+  const handleExportMarkdown = useCallback(() => {
+    if (!conversation) return;
+    const md = conversation.messages.map(m => {
+      const role = m.role === 'user' ? '**You**' : `**${store.settings.model?.split('/').pop() || 'Model'}**`;
+      const text = getPublicMessageText(m);
+      return `${role}\n\n${text}\n\n---\n`;
+    }).join('\n');
+    
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${conversation.title || 'sanctuary'}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [conversation, store.settings.model]);
+
+  // Update presence based on typing
+  useEffect(() => {
+    if (input.trim().length > 0 && !isGenerating) {
+      setPresence('listening');
+    } else if (!isGenerating) {
+      setPresence('resting');
+    }
+  }, [input, isGenerating, setPresence]);
+
+  const visibleMessages = (conversation?.messages || []).filter(
+    (m: Message) => m.role === 'user' || m.role === 'model'
+  );
 
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-[#2C194D]">
-        <div className="w-16 h-16 rounded-full bg-[#F5E1C8] flex items-center justify-center mb-4">
-          <SettingsIcon size={24} className="opacity-50" />
-        </div>
-        <p>Select or create a sanctuary to begin.</p>
-        <button onClick={onToggleSidebar} className="mt-4 px-4 py-2 border-[3px] border-[#2C194D] rounded-full hover:bg-[#F5E1C8] lg:hidden">Open Menu</button>
+      <div className="flex-1 flex items-center justify-center bg-[#151234] text-[#B39DE5] font-bold">
+        Select or start a new sanctuary.
       </div>
     );
   }
 
-  const stopGeneration = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setIsGenerating(false);
-      activeGenerationConversationIdRef.current = null;
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      setTemporaryPresence('complete', input.trim().length > 0 ? 'listening' : 'resting');
-    }
-  };
-
-  const handleGiftFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-       alert('Only images are supported currently.');
-       return;
-    }
-
-    try {
-      const compressed = await compressImage(file);
-      setGiftFile(compressed);
-    } catch (err) {
-      console.error("Failed to compress image:", err);
-    }
-    
-    if (giftFileInputRef.current) giftFileInputRef.current.value = '';
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-       alert('Only images are supported currently.');
-       return;
-    }
-
-    try {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = objectUrl;
-      });
-      
-      const MAX_DIMENSION = 1536;
-      let { width, height } = img;
-      
-      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-        if (width > height) {
-          height = Math.round((height * MAX_DIMENSION) / width);
-          width = MAX_DIMENSION;
-        } else {
-          width = Math.round((width * MAX_DIMENSION) / height);
-          height = MAX_DIMENSION;
-        }
-      }
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error("Could not get 2d context");
-      
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      const targetMimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-      const quality = 0.8;
-      
-      const dataUrl = canvas.toDataURL(targetMimeType, quality);
-      const base64Data = dataUrl.split(',')[1];
-      
-      setAttachments(prev => [...prev, {
-        mimeType: targetMimeType,
-        data: base64Data,
-        previewUrl: dataUrl
-      }]);
-      URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      console.error("Error compressing image:", err);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-         const result = event.target?.result as string;
-         const base64Data = result.split(',')[1];
-         setAttachments(prev => [...prev, {
-           mimeType: file.type,
-           data: base64Data,
-           previewUrl: result
-         }]);
-      };
-      reader.readAsDataURL(file);
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleSend = async (textToAnalyse: string = input, replaceIndex?: number, additionalMessages?: Message[]) => {
-    const requestConversationId = conversationRef.current?.id;
-
-    if (!requestConversationId) {
-      console.warn("handleSend blocked: No active conversation.");
-      return;
-    }
-
-    if ((isGenerating || isGeneratingRef.current) && (!additionalMessages || additionalMessages.length === 0)) {
-      console.warn("handleSend blocked: Generation already in progress.");
-      triggerHaptic('heavy');
-      setInput(prev => prev); // trigger re-render
-      // Show an ephemeral toast or message in the UI so they know it's blocked
-      if (typeof window !== 'undefined') {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'fixed top-1/4 left-1/2 -translate-x-1/2 bg-rose text-white px-4 py-2 rounded-xl shadow-lg z-[9999] animate-in fade-in slide-in-from-top-4 duration-300';
-        errorDiv.innerText = "Gemma is still thinking...";
-        document.body.appendChild(errorDiv);
-        setTimeout(() => {
-          errorDiv.classList.add('animate-out', 'fade-out', 'slide-out-to-top-4');
-          setTimeout(() => errorDiv.remove(), 300);
-        }, 2000);
-      }
-      return;
-    }
-
-    if (!textToAnalyse.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) {
-      return;
-    }
-
-    triggerHaptic('light');
-
-    const now = Date.now();
-    onUpdateJewel(prev => {
-      let rapid = prev.rapidExchanges;
-      let long = prev.longPauses;
-      if (prev.lastInteractionTimestamp > 0) {
-        const diff = now - prev.lastInteractionTimestamp;
-        if (diff < 10000) rapid++;
-        else if (diff > 3600000) long++;
-      }
-      return {
-        ...prev,
-        totalMessages: prev.totalMessages + 1,
-        rapidExchanges: rapid,
-        longPauses: long,
-        lastInteractionTimestamp: now
-      };
-    });
-
-    let currentMessages = [...(conversationRef.current?.messages || [])];
-    
-    if (replaceIndex !== undefined && replaceIndex > 0) {
-      currentMessages = currentMessages.slice(0, replaceIndex);
-      onUpdate(requestConversationId, { messages: currentMessages });
-    } else if (replaceIndex === 0) {
-      console.warn("handleSend blocked replaceIndex=0 to prevent clearing chat");
-    }
-    
-    const parts: any[] = [];
-    if (textToAnalyse.trim()) parts.push({ text: textToAnalyse });
-    attachments.forEach(a => parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } }));
-    
-    if (!additionalMessages || additionalMessages.length === 0) {
-      const userMsg: Message = { id: uuidv4(), role: 'user', parts, timestamp: now };
-      currentMessages.push(userMsg);
-      onAddMessage(requestConversationId, userMsg);
-    } else {
-      currentMessages.push(...additionalMessages);
-      additionalMessages.forEach(msg => onAddMessage(requestConversationId, msg));
-    }
-    if (currentMessages.length === 1) {
-      onUpdate(requestConversationId, { title: textToAnalyse.slice(0, 30) });
-    }
-    
-    setInput('');
-    setAttachments([]);
-
-    setIsGenerating(true);
-    setPresence('deep_thinking');
-    abortControllerRef.current = new AbortController();
-    activeGenerationConversationIdRef.current = requestConversationId;
-    
-    let modelMsgId = uuidv4();
-    let currentModelText = '';
-    let currentModelThought = '';
-    let currentModelApiParts: any[] = [];
-    let currentModelFinishReason: string | undefined;
-    let currentModelBackend: string | undefined;
-    let isFirstChunk = true;
-
-    const resetIdleTimeout = () => {
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      const isGemini3 = settings.model.includes('gemini-3');
-      const timeoutMs = isGemini3 ? 240000 : 90000;
-      watchdogTimeoutRef.current = setTimeout(() => {
-        console.warn("Idle timeout triggered. Aborting stuck stream.");
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-      }, timeoutMs); 
-    };
-    resetIdleTimeout();
-
-    const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
-      const partsToSave: any[] = [];
-      if (thought) {
-        partsToSave.push({
-          thought: true,
-          text: thought,
-        });
-      }
-      if (text) {
-        partsToSave.push({
-          text,
-        });
-      }
-      const functionCalls = currentModelApiParts.filter(p => p.functionCall);
-      partsToSave.push(...functionCalls);
-
-      if (partsToSave.length === 0) {
-        partsToSave.push({ text: '' });
-      }
-
-      onUpdateMessage(requestConversationId, modelMsgId, {
-        parts: partsToSave,
-        publicText: text,
-        thoughtText: thought,
-        thoughtStatus: status,
-        finishReason: currentModelFinishReason,
-        backend: currentModelBackend,
-      });
-    };
-
-    try {
-      let hasToolCalls = false;
-      const generator = streamChat(currentMessages, settings, gifts, profile, abortControllerRef.current.signal);
-      
-      onAddMessage(requestConversationId, { 
-        id: modelMsgId, 
-        role: 'model', 
-        parts: [{ text: '' }],
-        publicText: '',
-        thoughtText: '',
-        thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
-        timestamp: Date.now() 
-      });
-
-      let rawTextAccumulator = '';
-      let apiThoughtAccumulator = '';
-      let hasClientFulfillmentRef = false;
-      let lastUpdateTime = 0;
-      let pendingUpdate = false;
-
-      const updateWithParsedThinking = (textChunk, force = false) => {
-         if (textChunk) rawTextAccumulator += textChunk;
-         
-         let parsedThought = apiThoughtAccumulator;
-         let parsedText = rawTextAccumulator;
-         let status = 'complete';
-         
-         let currentText = rawTextAccumulator;
-         let extractedThoughts = [];
-         
-         while (true) {
-             const startIndex = currentText.indexOf('<think>');
-             if (startIndex === -1) break;
-             
-             const endIndex = currentText.indexOf('</think>', startIndex);
-             if (endIndex !== -1) {
-                 extractedThoughts.push(currentText.substring(startIndex + 7, endIndex));
-                 currentText = currentText.substring(0, startIndex) + currentText.substring(endIndex + 8);
-             } else {
-                 extractedThoughts.push(currentText.substring(startIndex + 7));
-                 currentText = currentText.substring(0, startIndex);
-                 status = 'thinking';
-                 break;
-             }
-         }
-         
-         if (extractedThoughts.length > 0) {
-             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\n' : '') + extractedThoughts.join('\n\n');
-         }
-         parsedText = currentText;
-         
-         currentModelText = parsedText.trimStart();
-         currentModelThought = parsedThought.trimStart();
-         
-         const now = Date.now();
-         if (force || now - lastUpdateTime > 50) {
-           updateModelMessage(currentModelText, currentModelThought, status as any);
-           lastUpdateTime = now;
-           pendingUpdate = false;
-         } else {
-           pendingUpdate = true;
-         }
-      };
-
-      for await (const chunk of generator) {
-        resetIdleTimeout();
-        if (typeof chunk === 'string') {
-          if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-          updateWithParsedThinking(chunk);
-        } else if (chunk && typeof chunk === 'object') {
-          if (chunk.type === 'thought') {
-            apiThoughtAccumulator += chunk.text;
-            updateWithParsedThinking('', true);
-            updateModelMessage(currentModelText, currentModelThought, 'thinking');
-          } else if (chunk.type === 'text') {
-            if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-            updateWithParsedThinking(chunk.text);
-          } else if (chunk.type === 'gift') {
-            hasToolCalls = true;
-            onAddGift({
-              from: 'model',
-              modelId: settings.model,
-              content: chunk.content,
-              gift_type: chunk.gift_type,
-              reason: chunk.reason
-            });
-          } else if (chunk.type === 'memory') {
-            hasToolCalls = true;
-            onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, (chunk as any).caption);
-          } else if (chunk.type === 'user_note') {
-            hasToolCalls = true;
-            onAddGemmaNote(chunk.note);
-          } else if (chunk.type === 'eventLog') {
-            hasToolCalls = true;
-            onAddEventLog(chunk.description);
-          } else if (chunk.type === 'client_tool_call') {
-            hasToolCalls = true;
-            hasClientFulfillmentRef = true;
-            const element = document.getElementById('capture-profile-view');
-            if (element) {
-               try {
-                 const canvas = await html2canvas(element, { backgroundColor: null });
-                 const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                 const base64Data = dataUrl.split(',')[1];
-                 
-                 // Append the tool response message
-                 const functionResponseMsg = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    role: 'user',
-                    parts: [
-                       {
-                          functionResponse: {
-                             name: chunk.name,
-                             id: chunk.callId,
-                             response: {
-                                result: "The profile image is attached to this message."
-                             }
-                          }
-                       },
-                       {
-                          inlineData: { mimeType: 'image/jpeg', data: base64Data }
-                       }
-                    ],
-                    timestamp: Date.now()
-                 };
-                 setIsScanningProfile(true);
-                 setTimeout(() => {
-                   setIsScanningProfile(false);
-                   handleSend('', undefined, [functionResponseMsg as any]);
-                 }, 1500);
-               } catch (e) {
-                 console.error("Failed to capture profile view", e);
-               }
-            } else {
-               // Profile view not found, send graceful failure
-                 const functionResponseMsg = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    role: 'user',
-                    parts: [{
-                       functionResponse: {
-                          name: chunk.name,
-                          id: chunk.callId,
-                          response: {
-                             result: "The visual profile view cannot be captured right now or the selected model does not support vision."
-                          }
-                       }
-                    }],
-                    timestamp: Date.now()
-                 };
-                 handleSend('', undefined, [functionResponseMsg as any]);
-            }
-          } else if (chunk.type === 'model_parts') {
-            currentModelApiParts = chunk.parts;
-            updateModelMessage(
-              currentModelText,
-              currentModelThought,
-              'complete'
-            );
-          } else if (chunk.type === 'history_append') {
-            const msgs = chunk.messages;
-            currentModelApiParts = msgs[0].parts;
-            onUpdateMessage(requestConversationId, modelMsgId, {
-              parts: currentModelApiParts,
-              thoughtText: currentModelThought,
-              publicText: currentModelText,
-              thoughtStatus: 'complete',
-              finishReason: currentModelFinishReason,
-              backend: currentModelBackend,
-            });
-            if (msgs.length > 1 && msgs[1]) {
-              onAddMessage(requestConversationId, {
-                id: uuidv4(),
-                role: 'user',
-                parts: msgs[1].parts,
-                timestamp: Date.now(),
-              });
-            }
-            modelMsgId = uuidv4();
-            currentModelText = '';
-            currentModelThought = '';
-            currentModelApiParts = [];
-            rawTextAccumulator = '';
-            apiThoughtAccumulator = '';
-            isFirstChunk = true;
-            if (!hasClientFulfillmentRef) {
-               onAddMessage(requestConversationId, {
-                 id: modelMsgId,
-                 role: 'model',
-                 parts: [{ text: '' }],
-                 publicText: '',
-                 thoughtText: '',
-                 thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
-                 timestamp: Date.now(),
-               });
-            }
-          } else if (chunk.type === 'finish_reason') {
-            currentModelFinishReason = chunk.reason;
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
-          } else if (chunk.type === 'backend') {
-            currentModelBackend = chunk.name;
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
-          }
-        }
-      }
-      
-      if (!currentModelText && currentModelThought) {
-        // Gemma opened a thought channel but never an answer channel.
-        // Surface the reasoning rather than showing nothing.
-        updateModelMessage(currentModelThought, '', 'complete');
-      } else if (!currentModelText && !currentModelThought) {
-         updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error');
-         setTemporaryPresence('error', 'resting', 5000);
-      } else {
-        updateModelMessage(currentModelText, currentModelThought, 'complete');
-        onUpdateJewel(prev => ({
-          ...prev,
-          totalMessages: prev.totalMessages + 1,
-          totalResponseCharacters: prev.totalResponseCharacters + currentModelText.length,
-          lastInteractionTimestamp: Date.now()
-        }));
-      }
-      setTemporaryPresence('complete', 'resting');
-    } catch (e: any) {
-      console.error("ChatArea handleSend error:", e);
-      if (e.name === 'AbortError') {
-         if (!currentModelText && !currentModelThought) {
-            const isGemini3 = settings.model.includes('gemini-3');
-            updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
-            setTemporaryPresence('error', 'resting', 5000);
-         } else {
-            // It was aborted manually, keep what we have
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
-         }
-      } else if (e.name === 'RepetitionError') {
-         currentModelText += e.message;
-         updateModelMessage(currentModelText, currentModelThought, 'complete');
-         setTemporaryPresence('repetition_stopped', 'resting', 5000);
-      } else if (e.name === 'RateLimitError') {
-         currentModelText += `\n\n*${e.message}*`;
-         updateModelMessage(currentModelText, currentModelThought, 'complete');
-         setTemporaryPresence('rate_limit', 'resting', 3000);
-      } else {
-         if (!currentModelText && !currentModelThought) {
-            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
-            setTemporaryPresence('error', 'resting', 5000);
-         } else {
-            currentModelText += `\n\n[Error: ${e.message}]`;
-            updateModelMessage(currentModelText, currentModelThought, 'error');
-            setTemporaryPresence('error', 'resting', 5000);
-         }
-      }
-    } finally {
-      if (true) {
-        setIsGenerating(false);
-        activeGenerationConversationIdRef.current = null;
-        if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      }
-      abortControllerRef.current = null;
-    }
-  };
-
-  const handleRegenerate = () => {
-    if (conversation.messages.length < 2) return;
-    const lastUserIndex = conversation.messages.map(m => m.role).lastIndexOf('user');
-    if (lastUserIndex !== -1) {
-      handleSend(getPublicMessageText(conversation.messages[lastUserIndex]) || '', lastUserIndex);
-    }
-  };
-
-  const handleCopy = React.useCallback(async (text: string) => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        textArea.style.position = "absolute";
-        textArea.style.left = "-999999px";
-        document.body.prepend(textArea);
-        textArea.select();
-        try {
-          document.execCommand('copy');
-        } catch (error) {
-          console.error('execCommand error', error);
-        } finally {
-          textArea.remove();
-        }
-      }
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  }, []);
-  const handleOpenImage = React.useCallback((url: string) => { setSelectedImage(url); }, []);
-
-  const exportMarkdown = () => {
-    const md = conversation.messages.map(m => `**${m.role === 'user' ? 'You' : 'Gemma'}**:\n${getPublicMessageText(m) || ''}\n`).join('\n---\n\n');
-    try {
-      const blob = new Blob([md], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${conversation.title}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (e) {
-      handleCopy(md);
-      alert('Conversation copied to clipboard.');
-    }
-    // Also explicitly copy to clipboard as fallback
-    handleCopy(md);
-  };
-
-  const visibleMessages = conversation.messages.filter(msg => {
-    if (!msg.parts || !Array.isArray(msg.parts)) return true;
-    
-    // Only hide explicit internal bookkeeping messages (tool calls without text)
-    const isToolCallOnly = msg.role === 'model' && msg.parts.length > 0 && msg.parts.every(p => p.functionCall && !p.text && !p.thought);
-    const isToolResponseOnly = msg.role === 'user' && msg.parts.length > 0 && msg.parts.every(p => p.functionResponse && !p.text);
-    
-    if (isToolCallOnly || isToolResponseOnly) return false;
-    
-    return true;
-  });
-  
-  console.log("ChatArea render:", { 
-    id: conversation.id,
-    allMessagesCount: conversation.messages.length, 
-    visibleCount: visibleMessages.length,
-    visibleIds: visibleMessages.map(m => m.id),
-    firstMsgParts: conversation.messages[0]?.parts,
-    lastMsgParts: conversation.messages[conversation.messages.length - 1]?.parts
-  });
-
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#151234] relative">
-      <div className="hidden"></div>
-      <AnimatePresence>
-        {isScanningProfile && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 pointer-events-none z-[100] overflow-hidden"
-          >
-             <div className="absolute inset-0 bg-copper/5 mix-blend-screen" />
-             <motion.div 
-               initial={{ top: '-10%' }}
-               animate={{ top: '110%' }}
-               transition={{ duration: 1.5, ease: "linear" }}
-               className="absolute left-0 right-0 h-1 bg-copper shadow-[0_0_15px_rgba(196,118,83,0.8)]"
-             />
-             <div className="absolute top-4 right-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] px-4 py-2 rounded-2xl flex items-center gap-2 shadow-[4px_4px_0_#2C194D]">
-                <Scan size={14} className="text-[#F198B7] animate-pulse" />
-                <span className="text-xs text-[#F198B7] tracking-widest uppercase">Model is inspecting your profile...</span>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
-      {/* Header */}
-      <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2C194D] rounded-[32px] bg-[#9D7FE3] relative z-30 shrink-0 min-w-0 shadow-[4px_4px_0px_#2C194D]">
-        <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-1">
-          <button onClick={onToggleSidebar} className="w-12 h-12 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 lg:hidden shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"><Menu size={24} strokeWidth={2.5} /></button>
-          <Presence state={presence} />
-          
-          <div className="flex-1 flex items-center justify-center min-w-0">
-             <div className="flex flex-col items-center min-w-0 w-full max-w-[280px]">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[#F5E1C8]">✨</span>
-                  <span className="font-bold text-[#2C194D] text-lg sm:text-xl tracking-tight">Midnight Sanctuary</span>
-                  <span className="text-[#F5E1C8]">✨</span>
-                </div>
-                <div className="relative bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-full px-4 py-1.5 w-full flex justify-between items-center shadow-[inset_0_-2px_0_rgba(0,0,0,0.05)] text-sm overflow-hidden">
-                   <select 
-                     value={settings.model} 
-                     onChange={(e) => {
-                       onUpdateSettings({ model: e.target.value });
-                       if (conversation) {
-                         onUpdate(conversation.id, { modelId: e.target.value });
-                       }
-                     }}
-                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                   >
-                     {(Array.isArray(availableModels) ? availableModels : []).map(m => (
-                       <option key={m.name} value={m.name}>{m.displayName}</option>
-                     ))}
-                     {settings.model && !((Array.isArray(availableModels) ? availableModels : []).find(m => m.name === settings.model)) && (
-                       <option key={settings.model} value={settings.model}>{settings.model.split('/').pop()}</option>
-                     )}
-                   </select>
-                   <span className="text-[#2C194D] font-bold truncate pointer-events-none">
-                     ✨ {(Array.isArray(availableModels) ? availableModels : [])?.find(m => m.name === settings.model)?.displayName || settings.model?.split('/').pop() || 'Unknown Model'}
-                   </span>
-                   <svg className="pointer-events-none shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2C194D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                </div>
-                <div className="flex justify-between w-full px-2 mt-1 text-[10px] sm:text-xs font-bold text-[#2C194D]/70 uppercase tracking-widest">
-                   <span>Temp {settings.temperature.toFixed(1)}</span>
-                   <span className="text-[#F198B7]">•</span>
-                   <span>Msgs {conversation.messages.length} / {visibleMessages.length}</span>
-                </div>
-             </div>
-          </div>
-        </div>
-        
-        {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0 px-1 relative">
-           <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="w-12 h-12 flex sm:hidden items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"><MoreVertical size={24} strokeWidth={2.5} /></button>
-           <button onClick={() => setShowDevPanel(!showDevPanel)} className="hidden sm:flex w-12 h-12 items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all" title="Developer Details"><Terminal size={20} strokeWidth={2.5} /></button>
-           
-           <AnimatePresence>
-            {showMobileMenu && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute top-full right-0 mt-3 w-56 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-3 shadow-[6px_6px_0_#2C194D] z-50 text-base flex flex-col gap-2 max-w-[calc(100vw-1.5rem)]"
-              >
-                <div className="absolute -top-3 right-5 w-4 h-4 bg-[#F5E1C8] border-t-[3px] border-l-[3px] border-[#2C194D] rotate-45"></div>
-                <button onClick={() => { setShowMobileMenu(false); setShowDevPanel(true); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><Terminal size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Developer</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); onOpenGifts(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><Gift size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Gifts</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); onOpenJewel(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                  </div>
-                  <span className="flex-1 font-bold">Jewel</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); exportMarkdown(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><Download size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Export</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); onOpenMemories(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><Bookmark size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Memories</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); onOpenProfile(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><User size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Profile</span>
-                </button>
-                <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
-                <button onClick={() => { setShowMobileMenu(false); onOpenSettings(); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
-                  <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><SettingsIcon size={18} strokeWidth={2.5} /></div>
-                  <span className="flex-1 font-bold">Settings</span>
-                </button>
-              </motion.div>
-            )}
-           </AnimatePresence>
-           
-           <AnimatePresence>
-            {showDevPanel && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                className="absolute top-full right-0 mt-3 w-64 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-4 shadow-[6px_6px_0_#2C194D] z-50 text-sm max-w-[calc(100vw-1.5rem)] text-[#2C194D]"
-              >
-                <div className="absolute -top-3 right-5 w-4 h-4 bg-[#F5E1C8] border-t-[3px] border-l-[3px] border-[#2C194D] rotate-45 hidden sm:block"></div>
-                <div className="flex flex-col gap-3">
-                  <div className="flex justify-between items-center border-b-[3px] border-[#2C194D] pb-2">
-                    <span className="font-bold text-lg">Developer Details</span>
-                    <button onClick={() => setShowDevPanel(false)} className="bg-[#F198B7] border-[3px] border-[#2C194D] rounded-lg p-1 shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 transition-all"><X size={14} strokeWidth={3} /></button>
-                  </div>
-                  
-                  <div className="space-y-2 text-xs font-bold">
-                    <div className="flex justify-between">
-                      <span className="text-[#2C194D]/70">Provider</span>
-                      <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D]">Google</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#2C194D]/70">Model ID</span>
-                      <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]" title={settings.model}>{settings.model}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#2C194D]/70">Endpoint</span>
-                      <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]">/api/chat</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#2C194D]/70">Temperature</span>
-                      <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D]">{settings.temperature.toFixed(1)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#2C194D]/70">Streaming</span>
-                      <span className="bg-[#F198B7] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D]">Enabled</span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-           </AnimatePresence>
-        </div>
-      </div>
-{/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full">
-        {visibleMessages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center relative">
-             <div className="absolute top-[20%] left-[20%] text-[#F198B7] opacity-60">✦</div>
-             <div className="absolute top-[40%] right-[20%] text-[#B39DE5] opacity-60">✦</div>
-             <div className="absolute bottom-[30%] left-[30%] text-[#F198B7] opacity-60 text-xs">❤</div>
-             <div className="absolute top-[10%] right-[30%] text-[#B39DE5] opacity-60 text-xs">✦</div>
-             
-             <div className="relative mb-6">
-  <svg width="150" height="150" viewBox="0 0 150 150" className="drop-shadow-[6px_6px_0_rgba(44,25,77,1)] hover:scale-105 transition-transform duration-500">
-    <defs>
-      <linearGradient id="cloudGrad" x1="10%" y1="90%" x2="90%" y2="10%">
-        <stop offset="0%" stopColor="#3B28CC" />
-        <stop offset="40%" stopColor="#8B5CF6" />
-        <stop offset="75%" stopColor="#FF9EBB" />
-        <stop offset="100%" stopColor="#FBCFE8" />
-      </linearGradient>
-    </defs>
-    
-    {/* Outer stroke group */}
-    <g stroke="#2C194D" strokeWidth="8" strokeLinejoin="round" strokeLinecap="round" fill="#2C194D">
-      <circle cx="75" cy="75" r="45" />
-      <circle cx="113" cy="75" r="25" />
-      <circle cx="102" cy="102" r="23" />
-      <circle cx="75" cy="113" r="22" />
-      <circle cx="48" cy="102" r="24" />
-      <circle cx="37" cy="75" r="25" />
-      <circle cx="48" cy="48" r="23" />
-      <circle cx="75" cy="37" r="22" />
-      <circle cx="102" cy="48" r="24" />
-    </g>
+    <div className="flex-1 flex flex-col h-full bg-[#151234] relative overflow-hidden min-w-0 max-w-full">
+      <ChatHeader
+        conversation={conversation}
+        presence={presence}
+        visibleMessagesCount={visibleMessages.length}
+        onExportMarkdown={handleExportMarkdown}
+      />
 
-    {/* Inner gradient fill group */}
-    <g fill="url(#cloudGrad)">
-      <circle cx="75" cy="75" r="45" />
-      <circle cx="113" cy="75" r="25" />
-      <circle cx="102" cy="102" r="23" />
-      <circle cx="75" cy="113" r="22" />
-      <circle cx="48" cy="102" r="24" />
-      <circle cx="37" cy="75" r="25" />
-      <circle cx="48" cy="48" r="23" />
-      <circle cx="75" cy="37" r="22" />
-      <circle cx="102" cy="48" r="24" />
-    </g>
+      <MessageList
+        conversation={conversation}
+        visibleMessages={visibleMessages}
+        isGenerating={isGenerating}
+        onCopy={handleCopy}
+        onResend={(content, origIndex) => handleSend(content, origIndex)}
+        onFavorite={handleFavorite}
+        onImageClick={(url) => setSelectedImage(url)}
+      />
 
-    {/* Face details */}
-    {/* Blush */}
-    <ellipse cx="46" cy="85" rx="7" ry="5" fill="#FF9EBB" opacity="0.9" />
-    <ellipse cx="104" cy="85" rx="7" ry="5" fill="#FF9EBB" opacity="0.9" />
-    
-    {/* Eyes */}
-    <circle cx="58" cy="78" r="4.5" fill="#2C194D" />
-    <circle cx="92" cy="78" r="4.5" fill="#2C194D" />
-    
-    {/* Mouth 'w' */}
-    <path d="M 68 81 Q 71.5 86 75 82 Q 78.5 86 82 81" fill="none" stroke="#2C194D" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-</div>
-             <h3 className="text-[#9D7FE3] font-bold text-2xl tracking-tight">The sanctuary</h3>
-             <h3 className="text-[#9D7FE3] font-bold text-2xl tracking-tight">is quiet.</h3>
-          </div>
-        )}
-        
-        <motion.div 
-          className="flex flex-col gap-6 w-full"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            hidden: {},
-            visible: { 
-              transition: { staggerChildren: 0.05 }
-            }
-          }}
-        >
-          {visibleMessages.map((msg, i) => (
-            <MessageBubble 
-              key={msg.id}
-            msg={msg}
-            isLast={i === visibleMessages.length - 1}
-            isGenerating={isGenerating}
-            modelName={(Array.isArray(availableModels) ? availableModels : [])?.find(m => m.name === settings.model)?.displayName || resolveModelIdentity(settings.model)?.displayName || settings.model?.split('/').pop() || 'Model'}
-            onCopy={handleCopy}
-            onResend={(content) => handleSend(content, conversation.messages.findIndex(m => m.id === msg.id))}
-            onFavorite={(content) => {
-              onAddEventLog('User favorited a message.');
-              onAddMemory(content, 'user_favorited', 'user', undefined, 'User Saved Memory');
-            }}
-            onImageClick={(url) => setSelectedImage(url)}
-            onDelete={() => onRemoveMessage(conversation.id, msg.id)}
-            onReact={(reaction) => onUpdateMessage(conversation.id, msg.id, { reaction })}
-            />
-          ))}
-          <div ref={bottomRef} />
-        </motion.div>
-      </div>
+      <ChatInputDock
+        conversation={conversation}
+        visibleMessages={visibleMessages}
+        isGenerating={isGenerating}
+        input={input}
+        setInput={setInput}
+        attachments={attachments}
+        setAttachments={setAttachments}
+        onSend={handleSend}
+        onStopGeneration={stopGeneration}
+        onRegenerate={regenerateMessage}
+      />
 
-      {/* Composer */}
-      <div className={`p-3 sm:p-4 bg-[#151234] border-t-[3px] border-[#2C194D] z-10 transition-colors duration-500 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]`}>
-        <div className="max-w-4xl mx-auto relative">
-          <motion.div 
-            className={`flex flex-col gap-2 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-2 transition-all duration-300 focus-within:shadow-[0_8px_30px_rgba(0,0,0,0.3)]`}
-          >
-            {attachments.length > 0 && (
-              <div className="flex gap-2 px-2 pt-2 overflow-x-auto custom-scrollbar">
-                {attachments.map((att, i) => (
-                  <div key={i} className="relative shrink-0">
-                    <img src={att.previewUrl} className="h-16 w-16 object-cover rounded-lg border-[3px] border-[#2C194D]" alt="attachment" />
-                    <button 
-                      onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
-                      className="absolute -top-2 -right-2 bg-[#151234] rounded-full p-1 border-[3px] border-[#2C194D] hover:text-red-400 transition-colors"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex items-end gap-2">
-              <input 
-                type="file" 
-                accept="image/*" 
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden" 
-              />
-              <button onClick={() => fileInputRef.current?.click()} className="p-3 text-[#2C194D]/50 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D]" title="Attach Image">
-                <Paperclip size={20} />
-              </button>
-              <button onClick={() => setShowLeaveGift(true)} className="p-3 text-[#2C194D]/50 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D]" title="Leave a Gift">
-                <Gift size={20} />
-              </button>
-              <textarea 
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Whisper to the void..."
-                className="flex-1 bg-transparent max-h-48 min-h-[44px] min-w-0 px-3 py-2 resize-none outline-none text-[#2C194D] font-bold placeholder-[#2C194D]/40 custom-scrollbar text-base"
-                rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 5) : 1}
-              />
-              
-              {isGenerating ? (
-                <button onClick={stopGeneration} className="p-3 text-red-500 hover:bg-red-500/20 border-[2px] border-transparent hover:border-red-500 rounded-xl transition-colors mb-0.5 shrink-0 font-bold">
-                  <StopCircle size={20} />
-                </button>
-              ) : (
-                <div className="flex items-center gap-1 mb-0.5 shrink-0">
-                  {visibleMessages.length > 0 && visibleMessages[visibleMessages.length-1].role === 'model' && (
-                     <button onClick={handleRegenerate} className="hidden sm:block p-3 text-[#2C194D]/80 hover:text-[#2C194D] hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl transition-colors font-bold" title="Regenerate Last">
-                       <RefreshCw size={20} />
-                     </button>
-                  )}
-                  <button 
-                    onClick={() => handleSend()} 
-                    disabled={!input.trim() && attachments.length === 0}
-                    className="p-3 text-[#2C194D] hover:bg-[#B39DE5] border-[2px] border-transparent hover:border-[#2C194D] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-transparent rounded-xl transition-colors shrink-0 font-bold"
-                  >
-                    <Send size={20} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </motion.div>
-          <div className="flex justify-center mt-2">
-            <button 
-              onClick={() => setShowDebugModel(!showDebugModel)}
-              className="text-xs font-bold text-[#2C194D] bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl px-4 py-2 shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 transition-all"
-              title="Toggle Debug Info"
-            >
-              DEBUG
-            </button>
-          </div>
-          
-          {showDebugModel && (
-            <div className="mt-4 p-4 bg-[#151234] text-xs font-mono text-green-400 overflow-y-auto max-h-64 rounded-xl border border-green-500/30">
-              <strong>Diagnostics:</strong><br/>
-              Conversation ID: {conversation.id}<br/>
-              All Messages: {conversation.messages.length}<br/>
-              Visible Messages: {visibleMessages.length}<br/>
-              Data: {JSON.stringify(conversation.messages, null, 2)}
-            </div>
-          )}
-        </div>
-      </div>
-
+      {/* Lightbox Modal */}
       <AnimatePresence>
         {selectedImage && (
           <motion.div
@@ -1136,103 +155,15 @@ export function ChatArea({ conversation, settings, onUpdateSettings, gifts, prof
             <button className="absolute top-6 right-6 p-2 text-[#2C194D] hover:text-white transition-colors bg-white/10 rounded-full">
               <X size={24} />
             </button>
-            <motion.img 
+            <motion.img
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               src={selectedImage}
-              alt="Full screen attachment"
+              alt="Full size attachment"
               className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showLeaveGift && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
-          >
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-md p-6"
-            >
-              <h2 className="text-2xl font-bold text-[#F5E1C8] mb-1">Leave a Gift</h2>
-              <p className="text-sm font-bold text-[#B39DE5] mb-4">A small offering for the void.</p>
-              
-              {giftFile && (
-                <div className="relative mb-4">
-                  <img src={giftFile.previewUrl} className="w-full h-32 object-cover rounded-2xl border-[3px] border-[#2C194D] shadow-[4px_4px_0_#2C194D]" alt="gift" />
-                  <button 
-                    onClick={() => setGiftFile(null)}
-                    className="absolute top-2 right-2 bg-[#F198B7] text-[#2C194D] rounded-full p-1 border-[3px] border-[#2C194D] hover:bg-red-500 hover:text-white transition-all"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-              
-              <textarea 
-                value={giftContent}
-                onChange={e => setGiftContent(e.target.value)}
-                placeholder="Describe your gift..."
-                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-3 text-[#2C194D] font-bold text-sm resize-none h-32 focus:outline-none focus:shadow-[4px_4px_0_#2C194D] custom-scrollbar mb-4 placeholder-[#2C194D]/40 transition-all"
-              />
-              
-              <div className="flex items-center justify-between mb-4">
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  ref={giftFileInputRef}
-                  onChange={handleGiftFileChange}
-                  className="hidden" 
-                />
-                <button onClick={() => giftFileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#2C194D] bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 hover:bg-[#F198B7] transition-all">
-                  <Paperclip size={16} />
-                  Attach Image
-                </button>
-              </div>
-              
-              <div className="flex justify-end gap-3">
-                <button 
-                  onClick={() => {
-                    setShowLeaveGift(false);
-                    setGiftContent('');
-                    setGiftFile(null);
-                  }} 
-                  className="px-4 py-2 rounded-xl text-[#F198B7] border-[3px] border-[#2C194D] bg-[#151234] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all text-sm font-bold"
-                >
-                  Cancel
-                </button>
-                <button 
-                  disabled={!giftContent.trim() && !giftFile}
-                  onClick={() => {
-                    onAddGift({
-                      from: 'user',
-                      targetModelId: settings.model,
-                      modelId: settings.model,
-                      content: giftContent.trim(),
-                      gift_type: giftFile ? 'image' : 'text',
-                      reason: '',
-                      inlineData: giftFile ? { mimeType: giftFile.mimeType, data: giftFile.data } : undefined
-                    });
-                    setGiftContent('');
-                    setGiftFile(null);
-                    setShowLeaveGift(false);
-                    onAddEventLog('User left a gift.');
-                  }} 
-                  className="px-4 py-2 rounded-lg bg-[#F5E1C8] border border-[#2C194D] text-[#F198B7] hover:bg-[#F198B7] hover:text-[#2C194D] transition-colors text-sm disabled:opacity-50 disabled:hover:bg-[#F5E1C8] disabled:hover:text-[#F198B7]"
-                >
-                  Leave Gift
-                </button>
-              </div>
-            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

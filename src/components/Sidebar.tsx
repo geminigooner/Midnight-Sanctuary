@@ -1,28 +1,21 @@
 import React, { useState } from 'react';
 import { Conversation } from '../lib/types';
-import { MessageSquare, Trash2, Edit2, Check, X, Plus, Search, List, Orbit } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
 import { getMotion } from '../lib/motion';
+import { useStore, useUI } from '../context/AppContext';
 
-interface SidebarProps {
-  conversations: Conversation[];
-  currentId: string | null;
-  currentModel: string;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-  onDelete: (id: string) => void;
-  onRename: (id: string, title: string) => void;
-  isOpen: boolean;
-}
-
-export function Sidebar({ conversations, currentId, currentModel, onSelect, onNew, onDelete, onRename, isOpen }: SidebarProps) {
+export function Sidebar() {
+  const store = useStore();
+  const { setSidebarOpen } = useUI();
+  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
-  const modelConversations = conversations;
+  const modelConversations = store.conversations;
   const filtered = modelConversations.filter(c => 
     (c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
   );
@@ -38,16 +31,31 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
 
   const saveEdit = () => {
     if (editingId && editTitle.trim()) {
-      onRename(editingId, editTitle.trim());
+      store.renameConversation(editingId, editTitle.trim());
     }
     setEditingId(null);
   };
 
+  const handleSelect = (id: string) => {
+    const chat = store.conversations.find(c => c.id === id);
+    if (chat && chat.modelId) {
+      store.updateSettings({ model: chat.modelId });
+    }
+    store.setCurrentId(id);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  };
+
+  const handleNew = () => {
+    store.createConversation();
+    store.updateJewelMetrics(prev => ({ ...prev, totalSessions: prev.totalSessions + 1 }));
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  };
+
   return (
-    <div className={`flex flex-col h-full bg-[#151234] border-r-[3px] border-[#2C194D] w-full relative`}>
+    <div className="flex flex-col h-full bg-[#151234] border-r-[3px] border-[#2C194D] w-full relative">
       <div className="p-4 border-b-[3px] border-[#2C194D] flex flex-col gap-3 z-10 shrink-0">
         <button 
-          onClick={onNew}
+          onClick={handleNew}
           className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all text-[#2C194D] font-bold text-lg tracking-tight"
         >
           <Plus size={18} />
@@ -59,79 +67,128 @@ export function Sidebar({ conversations, currentId, currentModel, onSelect, onNe
             onClick={() => setViewMode('list')}
             className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-[#B39DE5] text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D]' : 'text-[#2C194D]/60 hover:text-[#2C194D] border-[2px] border-transparent'}`}
           >
-            <List size={14} /> List
+            List
           </button>
           <button 
             onClick={() => setViewMode('nebula')}
             className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${viewMode === 'nebula' ? 'bg-[#B39DE5] text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D]' : 'text-[#2C194D]/60 hover:text-[#2C194D] border-[2px] border-transparent'}`}
           >
-            <Orbit size={14} /> Nebula
+            Nebula
           </button>
         </div>
-      </div>
-      
-      <div className="flex-1 overflow-hidden flex flex-col relative">
-        {viewMode === 'list' ? (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-3 border-b-[3px] border-[#2C194D] relative z-10 shrink-0">
-              <Search size={16} className="absolute left-6 top-1/2 -translate-y-1/2 text-[#2C194D]/50" strokeWidth={3} />
-              <input 
-                type="text" 
-                placeholder="Search sanctuaries..." 
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl pl-10 pr-4 py-2.5 text-base font-bold focus:outline-none focus:shadow-[2px_2px_0_#2C194D] text-[#2C194D] placeholder-[#2C194D]/40 transition-all"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-              <AnimatePresence>
-                {filtered.map(c => (
-                  <motion.div 
-                    key={c.id}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={listMotion}
-                    className={`group flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all ${currentId === c.id ? 'bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D]' : 'hover:bg-[#B39DE5] border-[3px] border-transparent hover:border-[#2C194D] hover:shadow-[2px_2px_0_#2C194D]'}`}
-                    onClick={() => onSelect(c.id)}
-                  >
-                  <div className="flex items-center gap-3 overflow-hidden flex-1">
-                    <MessageSquare size={16} className={`${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'} shrink-0`} strokeWidth={currentId === c.id ? 2.5 : 2} />
-                    {editingId === c.id ? (
-                      <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
-                        <input 
-                          autoFocus
-                          value={editTitle}
-                          onChange={e => setEditTitle(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                          className="bg-white border-[2px] border-[#2C194D] rounded-xl px-2 py-1 text-base w-full outline-none text-[#2C194D] font-bold"
-                        />
-                        <button onClick={saveEdit} className="p-1 hover:text-green-600 text-[#2C194D]"><Check size={14} /></button>
-                        <button onClick={() => setEditingId(null)} className="p-1 hover:text-red-600 text-[#2C194D]"><X size={14} /></button>
-                      </div>
-                    ) : (
-                      <span className={`truncate text-sm font-bold ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}>{c.title}</span>
-                    )}
-                  </div>
-                  
-                  {editingId !== c.id && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => startEdit(c)} className={`p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl transition-all ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}><Edit2 size={14} /></button>
-                      <button onClick={() => {
-                        if (window.confirm('Delete this sanctuary?')) onDelete(c.id);
-                      }} className={`p-1.5 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2C194D] rounded-xl transition-all ${currentId === c.id ? 'text-[#2C194D]' : 'text-[#B39DE5] group-hover:text-[#2C194D]'}`}><Trash2 size={14} /></button>
-                    </div>
-                  )}
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex overflow-hidden">
-            <NebulaArchive conversations={modelConversations} currentId={currentId} onSelect={onSelect} />
+
+        {viewMode === 'list' && (
+          <div className="relative">
+            <input 
+              type="text" 
+              placeholder="Filter sanctuary..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl px-4 py-2 text-sm text-[#2C194D] placeholder-[#2C194D]/50 focus:outline-none shadow-[inset_0_2px_0_rgba(0,0,0,0.05)] font-bold"
+            />
           </div>
         )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar z-10">
+        <AnimatePresence mode="wait">
+          {viewMode === 'list' ? (
+            <motion.div 
+              key="list-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={viewMotion}
+              className="space-y-2"
+            >
+              {filtered.map(c => {
+                const isSelected = c.id === store.currentId;
+                const isEditing = editingId === c.id;
+
+                return (
+                  <motion.div 
+                    key={c.id} 
+                    layout
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={listMotion}
+                    onClick={() => !isEditing && handleSelect(c.id)}
+                    className={`group relative flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all border-[3px] ${
+                      isSelected 
+                        ? 'bg-[#B39DE5] border-[#2C194D] shadow-[3px_3px_0_#2C194D]' 
+                        : 'bg-[#F5E1C8] border-[#2C194D] hover:bg-[#F5E1C8]/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden flex-1">
+                      <div className="flex-1 min-w-0">
+                        {isEditing ? (
+                          <input 
+                            type="text" 
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            onBlur={saveEdit}
+                            onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                            className="bg-transparent border-b-[2px] border-[#2C194D] text-sm text-[#2C194D] font-bold focus:outline-none w-full"
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span className="text-sm font-bold text-[#2C194D] truncate block">
+                            {c.title || 'Untitled Sanctuary'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isEditing ? (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); saveEdit(); }}
+                          className="p-1 hover:text-[#2C194D] text-[#2C194D]/70"
+                        >
+                          ✓
+                        </button>
+                      ) : (
+                        <>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); startEdit(c); }}
+                            className="p-1 hover:text-[#2C194D] text-[#2C194D]/70"
+                          >
+                            ✎
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); store.deleteConversation(c.id); }}
+                            className="p-1 hover:text-red-500 text-[#2C194D]/70"
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="nebula-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={viewMotion}
+              className="h-full"
+            >
+              <NebulaArchive 
+                conversations={store.conversations} 
+                currentId={store.currentId} 
+                onSelect={(id) => {
+                  store.setCurrentId(id);
+                  if (window.innerWidth < 1024) setSidebarOpen(false);
+                }} 
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

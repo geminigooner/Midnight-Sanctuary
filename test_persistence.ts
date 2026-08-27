@@ -1,4 +1,4 @@
-import { db } from './firebase';
+import { db } from './src/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
 export async function saveConversation(userId: string, conversations: any[]) {
