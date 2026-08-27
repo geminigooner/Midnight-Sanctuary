@@ -127,6 +127,7 @@ export function ChatArea() {
         onResend={(content, origIndex) => handleSend(content, origIndex)}
         onFavorite={handleFavorite}
         onImageClick={(url) => setSelectedImage(url)}
+        onSelectPrompt={(prompt) => handleSend(prompt)}
       />
 
       <ChatInputDock
