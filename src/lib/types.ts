@@ -18,6 +18,10 @@ export interface Message {
   finishReason?: string;
   backend?: string;
   reaction?: string;
+  // Multi-Entity & Group metadata
+  authorEntityId?: string;
+  authorDisplayName?: string;
+  authorAvatar?: string;
 }
 
 export function getPublicMessageText(msg: Message): string {
@@ -44,6 +48,8 @@ export interface Conversation {
   messages: Message[];
   modelId?: string;
   updatedAt: number;
+  type?: 'direct' | 'group';
+  participantEntityIds?: string[];
 }
 
 export interface ModelInfo {

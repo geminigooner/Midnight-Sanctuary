@@ -1,4 +1,5 @@
 import { UserProfile, JewelMetrics, Gift, Memory } from './types';
+import { calculateJewelLevel } from './jewelSystem';
 
 export interface TimeGreetingInfo {
   greeting: string;
@@ -133,7 +134,7 @@ export function getSanctuaryHomeState(params: {
 
   const memoryCount = settings?.memories?.length || 0;
   const giftCount = gifts?.length || 0;
-  const jewelLevel = Math.floor((jewelMetrics?.totalMessages || 0) / 10) + 1;
+  const jewelLevel = calculateJewelLevel(jewelMetrics);
 
   // Retrieve up to 3 recent non-empty sanctuaries
   const recentConversations = (conversations || [])

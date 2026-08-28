@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
+import { getModelEntity } from '../lib/entitySystem';
+import { calculateJewelLevel } from '../lib/jewelSystem';
 import { DEFAULT_SETTINGS } from '../lib/types';
 
 interface SanctuaryHomeHubProps {
@@ -61,8 +63,9 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
 
   const memoryCount = settings?.memories?.length || 0;
   const giftCount = gifts?.length || 0;
-  const activeModelName = availableModels.find(m => m.name === settings?.model)?.displayName || settings?.model?.split('/').pop() || 'Gemini Pro';
-  const jewelLevel = Math.floor((jewelMetrics?.totalMessages || 0) / 10) + 1;
+  const currentEntity = getModelEntity(settings?.model || 'gemini-2.5-flash');
+  const activeModelName = availableModels.find(m => m.name === settings?.model)?.displayName || currentEntity.displayName;
+  const jewelLevel = calculateJewelLevel(jewelMetrics);
 
   return (
     <motion.div 
