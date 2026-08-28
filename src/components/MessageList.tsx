@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Conversation, Message } from '../lib/types';
+import { Conversation, Message, DEFAULT_SETTINGS } from '../lib/types';
 import { MessageBubble } from './MessageBubble';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { motion } from 'motion/react';
@@ -28,6 +28,8 @@ export function MessageList({
   onSelectPrompt,
 }: MessageListProps) {
   const store = useStore();
+  const settings = store?.settings || DEFAULT_SETTINGS;
+  const availableModels = store?.availableModels || [];
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
@@ -41,8 +43,9 @@ export function MessageList({
     });
   }, [conversation?.messages, isGenerating]);
 
-  const modelsList = Array.isArray(store.availableModels) ? store.availableModels : [];
-  const modelName = modelsList.find(m => m.name === store.settings.model)?.displayName || resolveModelIdentity(store.settings.model)?.displayName || store.settings.model?.split('/').pop() || 'Model';
+  const modelsList = Array.isArray(availableModels) ? availableModels : [];
+  const activeModel = settings?.model || DEFAULT_SETTINGS.model;
+  const modelName = modelsList.find(m => m.name === activeModel)?.displayName || resolveModelIdentity(activeModel)?.displayName || activeModel?.split('/').pop() || 'Model';
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full">

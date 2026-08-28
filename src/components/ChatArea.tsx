@@ -112,7 +112,7 @@ export function ChatArea() {
   );
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#151234] relative overflow-hidden min-w-0 max-w-full">
+    <div className="flex-1 flex flex-col h-full bg-[#1a153b] relative overflow-hidden min-w-0 max-w-full">
       {conversation ? (
         <ChatHeader
           conversation={conversation}
@@ -121,19 +121,20 @@ export function ChatArea() {
           onExportMarkdown={handleExportMarkdown}
         />
       ) : (
-        <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2C194D] rounded-[32px] bg-[#9D7FE3] relative z-30 shrink-0 min-w-0 shadow-[4px_4px_0px_#2C194D]">
-          <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-1">
+        <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2d225c] rounded-2xl bg-[#f7e5cb] relative z-30 shrink-0 min-w-0 shadow-[0_4px_0_0_#2d225c]">
+          <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-2 py-1">
             <button 
               onClick={() => ui.setSidebarOpen(prev => !prev)} 
-              className="w-12 h-12 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 lg:hidden shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"
+              className="w-10 h-10 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2d225c] rounded-xl text-[#2d225c] shrink-0 lg:hidden shadow-[inset_0_-2px_0_rgba(0,0,0,0.15)] active:translate-y-0.5 transition-all"
+              title="Open Navigation"
             >
-              <Menu size={24} strokeWidth={2.5} />
+              <Menu size={20} strokeWidth={2.5} />
             </button>
             <div className="flex-1 flex items-center justify-center min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[#F5E1C8]">✨</span>
-                <span className="font-bold text-[#2C194D] text-lg sm:text-xl tracking-tight">Midnight Sanctuary</span>
-                <span className="text-[#F5E1C8]">✨</span>
+                <span className="text-base sm:text-lg">✨</span>
+                <span className="font-extrabold text-[#2d225c] text-lg sm:text-xl tracking-tight font-serif">Midnight Sanctuary</span>
+                <span className="text-base sm:text-lg">✨</span>
               </div>
             </div>
           </div>
@@ -141,34 +142,36 @@ export function ChatArea() {
       )}
 
       {conversation && visibleMessages.length > 0 ? (
-        <MessageList
-          conversation={conversation}
-          visibleMessages={visibleMessages}
-          isGenerating={isGenerating}
-          onCopy={handleCopy}
-          onResend={(content, origIndex) => handleSend(content, origIndex)}
-          onFavorite={handleFavorite}
-          onImageClick={(url) => setSelectedImage(url)}
-          onSelectPrompt={(prompt) => handleSend(prompt)}
-        />
+        <>
+          <MessageList
+            conversation={conversation}
+            visibleMessages={visibleMessages}
+            isGenerating={isGenerating}
+            onCopy={handleCopy}
+            onResend={(content, origIndex) => handleSend(content, origIndex)}
+            onFavorite={handleFavorite}
+            onImageClick={(url) => setSelectedImage(url)}
+            onSelectPrompt={(prompt) => handleSend(prompt)}
+          />
+
+          <ChatInputDock
+            conversation={conversation}
+            visibleMessages={visibleMessages}
+            isGenerating={isGenerating}
+            input={input}
+            setInput={setInput}
+            attachments={attachments}
+            setAttachments={setAttachments}
+            onSend={handleSend}
+            onStopGeneration={stopGeneration}
+            onRegenerate={regenerateMessage}
+          />
+        </>
       ) : (
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full flex items-center justify-center">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full flex items-start justify-center bg-[#1a153b]">
           <SanctuaryHomeHub onSelectPrompt={(prompt) => handleSend(prompt)} />
         </div>
       )}
-
-      <ChatInputDock
-        conversation={conversation}
-        visibleMessages={visibleMessages}
-        isGenerating={isGenerating}
-        input={input}
-        setInput={setInput}
-        attachments={attachments}
-        setAttachments={setAttachments}
-        onSend={handleSend}
-        onStopGeneration={stopGeneration}
-        onRegenerate={regenerateMessage}
-      />
 
       {/* Lightbox Modal */}
       <AnimatePresence>
