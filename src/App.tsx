@@ -8,6 +8,7 @@ import { LevinJewel } from './components/LevinJewel';
 import { GiftsArchive } from './components/GiftsArchive';
 import { MemoriesArchive } from './components/MemoriesArchive';
 import { ProfileModal } from './components/ProfileModal';
+import { EntityQuartersModal } from './components/EntityQuartersModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
 import { getMotion } from './lib/motion';
@@ -20,6 +21,7 @@ export function App() {
   const [giftsOpen, setGiftsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [memoriesOpen, setMemoriesOpen] = useState(false);
+  const [entityQuartersOpen, setEntityQuartersOpen] = useState(false);
 
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
@@ -37,6 +39,8 @@ export function App() {
     setProfileOpen,
     memoriesOpen,
     setMemoriesOpen,
+    entityQuartersOpen,
+    setEntityQuartersOpen,
   };
 
   return (
@@ -78,6 +82,8 @@ export function App() {
           {memoriesOpen && <MemoriesArchive key="memories-modal" />}
 
           {profileOpen && <ProfileModal key="profile-modal" />}
+
+          {entityQuartersOpen && <EntityQuartersModal key="entity-quarters-modal" />}
 
           {jewelOpen && (
             <motion.div

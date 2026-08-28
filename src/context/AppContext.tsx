@@ -16,6 +16,8 @@ export interface UIState {
   setProfileOpen: React.Dispatch<React.SetStateAction<boolean>>;
   memoriesOpen: boolean;
   setMemoriesOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  entityQuartersOpen: boolean;
+  setEntityQuartersOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface AppContextType {

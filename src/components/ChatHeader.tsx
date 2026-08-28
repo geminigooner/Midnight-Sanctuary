@@ -103,6 +103,11 @@ export function ChatHeader({
               className="absolute top-full right-0 mt-3 w-56 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-3 shadow-[6px_6px_0_#2C194D] z-50 text-base flex flex-col gap-2 max-w-[calc(100vw-1.5rem)]"
             >
               <div className="absolute -top-3 right-5 w-4 h-4 bg-[#F5E1C8] border-t-[3px] border-l-[3px] border-[#2C194D] rotate-45"></div>
+              <button onClick={() => { setShowMobileMenu(false); ui.setEntityQuartersOpen(true); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
+                <div className="w-10 h-10 bg-[#f7e5cb] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0 text-base">🏛️</div>
+                <span className="flex-1 font-bold">Quarters</span>
+              </button>
+              <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
               <button onClick={() => { setShowMobileMenu(false); setShowDevPanel(true); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
                 <div className="w-10 h-10 bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0"><Terminal size={18} strokeWidth={2.5} /></div>
                 <span className="flex-1 font-bold">Developer</span>
