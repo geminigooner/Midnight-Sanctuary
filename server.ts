@@ -43,24 +43,28 @@ app.post('/api/chat', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const model = req.body?.model || '';
-  const isGemma = model.toLowerCase().includes('gemma');
-  const isLegacyGemini = model.includes('gemini-2.5-pro') || model.includes('gemini-2.5-flash');
+  const modelLower = model.toLowerCase();
+  const isGemma = modelLower.includes('gemma');
+  const isGemini3Paid = modelLower.includes('gemini-3.1-pro') || modelLower.includes('gemini-3-flash') || modelLower.includes('3.1-pro') || modelLower.includes('3-flash');
   
   let apiKey;
   let keyName;
 
-  if (isGemma) {
-    apiKey = process.env.GEMINI_API_KEY;
-    keyName = 'GEMINI_API_KEY';
-  } else if (isLegacyGemini) {
-    apiKey = process.env.GEMINI_LEGACY_API_KEY;
+  if (isGemini3Paid) {
+    // Paid key dedicated for Flash 3 and Gemini Pro 3.1
+    apiKey = process.env.GEMINI_LEGACY_API_KEY || process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY;
     keyName = 'GEMINI_LEGACY_API_KEY';
+  } else if (isGemma) {
+    // Gemma fallback key (Cloudflare is handled first in chatHandler with CF_TOKEN)
+    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY;
+    keyName = 'GEMINI_API_KEY';
   } else {
-    apiKey = process.env.GENAI_API_KEY;
-    keyName = 'GENAI_API_KEY';
+    // Other Gemini models
+    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY;
+    keyName = 'GEMINI_API_KEY';
   }
   
-  if (!apiKey) {
+  if (!apiKey && !isGemma) {
     return res.status(500).json({ error: `${keyName} is not configured in the environment for model ${model}.` });
   }
 

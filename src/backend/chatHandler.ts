@@ -326,12 +326,15 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             }
           }
           
+          const cfToken = process.env.CF_TOKEN || process.env.CF_API_TOKEN;
+          const cfAccountId = process.env.CF_ACCOUNT_ID || 'default';
+          
           send(`data: ${JSON.stringify({ type: 'backend', name: 'cloudflare' })}\n\n`);
           
-          const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/ai/run/@cf/google/gemma-4-26b-a4b-it`, {
+          const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/google/gemma-4-26b-a4b-it`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${process.env.CF_API_TOKEN}`,
+              'Authorization': `Bearer ${cfToken}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
