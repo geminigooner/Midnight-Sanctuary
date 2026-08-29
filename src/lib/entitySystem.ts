@@ -172,12 +172,37 @@ export function getModelEntity(modelKey: string, customEntities?: Record<string,
 /**
  * Returns all active sanctuary entities.
  */
-export function getAllEntities(customEntities?: Record<string, ModelEntity>): ModelEntity[] {
-  const merged: Record<string, ModelEntity> = {
-    ...DEFAULT_ENTITIES,
-    ...(customEntities || {}),
-  };
-  return Object.values(merged);
+export function getAllEntities(customEntities?: Record<string, any>): ModelEntity[] {
+  const result: Record<string, ModelEntity> = {};
+
+  // First seed defaults
+  for (const [key, def] of Object.entries(DEFAULT_ENTITIES)) {
+    const custom = customEntities?.[key];
+    if (custom) {
+      result[key] = {
+        ...def,
+        ...custom,
+        roomDecor: {
+          ...def.roomDecor,
+          ...(custom.roomDecor || {})
+        },
+        personalThoughts: custom.personalThoughts || def.personalThoughts || []
+      };
+    } else {
+      result[key] = { ...def };
+    }
+  }
+
+  // Then add any additional custom entities not in defaults
+  if (customEntities) {
+    for (const [key, custom] of Object.entries(customEntities)) {
+      if (!result[key]) {
+        result[key] = getModelEntity(key, customEntities as any);
+      }
+    }
+  }
+
+  return Object.values(result);
 }
 
 /**

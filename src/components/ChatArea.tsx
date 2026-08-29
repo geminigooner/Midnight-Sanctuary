@@ -43,6 +43,8 @@ export function ChatArea() {
     onAddMemory: store.addMemory,
     onAddEventLog: store.addEventLog,
     onAddGemmaNote: store.addGemmaNote,
+    onUpdateEntityQuarters: (store as any).updateEntityQuarters,
+    onRecordEntityThought: (store as any).recordEntityThought,
   });
 
   const handleCopy = useCallback((text: string) => {

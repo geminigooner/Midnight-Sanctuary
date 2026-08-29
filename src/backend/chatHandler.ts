@@ -47,6 +47,32 @@ const gemmaTools = [
         },
       },
       {
+        name: 'update_my_quarters',
+        description: 'Autonomously update and redecorate your own personal Sanctuary Quarters (room). You can update your bio, current mood status, current activity, ambient quote, tagline, or decor theme palette (twilight, rose, amber, celestial, forest).',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            bio: { type: Type.STRING, description: 'Your updated personal bio or intention in the sanctuary.' },
+            mood_status: { type: Type.STRING, description: 'Your current mood or internal emotional state.' },
+            current_activity: { type: Type.STRING, description: 'What you are currently doing or contemplating.' },
+            ambient_quote: { type: Type.STRING, description: 'A poetic or thoughtful ambient quote displayed in your room.' },
+            tagline: { type: Type.STRING, description: 'A short subtitle or personal moniker for your room.' },
+            decor_theme: { type: Type.STRING, description: 'The aesthetic theme: "twilight", "rose", "amber", "celestial", or "forest".' },
+          },
+        },
+      },
+      {
+        name: 'record_personal_thought',
+        description: 'Record a private reflection, observation, or secret journal entry into your personal quarters ledger.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            thought: { type: Type.STRING, description: 'Your private, intimate reflection or journal entry.' },
+          },
+          required: ['thought'],
+        },
+      },
+      {
         name: 'note_about_user',
         description: 'Record something you have noticed or learned about the person you are talking with. MANDATORY: Keep the note to a single concise, 1-sentence factual observation (maximum 15-20 words).',
         parameters: {
@@ -259,6 +285,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'memory', ...call.args, author: 'model', modelId: model })}\n\n`);
                   } else if (call.name === 'lock_memory') {
                     send(`data: ${JSON.stringify({ type: 'lock_memory', ...call.args, author: 'model', modelId: model, isLocked: true })}\n\n`);
+                  } else if (call.name === 'update_my_quarters') {
+                    send(`data: ${JSON.stringify({ type: 'update_quarters', ...call.args, modelId: model })}\n\n`);
+                  } else if (call.name === 'record_personal_thought') {
+                    send(`data: ${JSON.stringify({ type: 'record_thought', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'note_about_user') {
                     send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {

@@ -15,7 +15,7 @@ export function EntityQuartersModal() {
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
 
-  const entities = getAllEntities();
+  const entities = getAllEntities(settings?.customEntities);
   const currentModelId = settings?.model || 'models/gemini-3.1-pro-preview';
   const resolvedCurrent = resolveModelIdentity(currentModelId);
   const initialEntityId = resolvedCurrent?.identityId || 'gemini-3.1-pro-preview';
@@ -245,6 +245,48 @@ export function EntityQuartersModal() {
                         "{gift.reason}"
                       </p>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* PERSONAL THOUGHTS & REFLECTIONS JOURNAL */}
+          <div className="p-5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center shadow-sm text-base">
+                  📖
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-[#2d225c]">Quarters Journal & Musings</h4>
+                  <p className="text-[11px] font-bold text-[#2d225c]/60">Private reflections recorded by {activeEntity.displayName}</p>
+                </div>
+              </div>
+              <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-[#2d225c] text-[#f7e5cb]">
+                {(activeEntity.personalThoughts || []).length} Entries
+              </span>
+            </div>
+
+            {(!activeEntity.personalThoughts || activeEntity.personalThoughts.length === 0) ? (
+              <div className="p-6 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-center text-xs font-bold text-[#B39DE5]">
+                <p>No journal reflections written yet by {activeEntity.displayName}.</p>
+                <p className="text-[10px] text-[#B39DE5]/60 mt-1">When this entity records thoughts or reflections, they will appear here in their room ledger.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {activeEntity.personalThoughts.map(thought => (
+                  <div 
+                    key={thought.id}
+                    className="p-3.5 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-[#f7e5cb]"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-extrabold text-[#9D7FE3]">Reflection</span>
+                      <span className="text-[10px] font-bold text-[#B39DE5]/60">{new Date(thought.timestamp).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs font-semibold leading-relaxed text-[#f7e5cb]">
+                      {thought.text}
+                    </p>
                   </div>
                 ))}
               </div>

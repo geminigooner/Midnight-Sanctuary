@@ -20,6 +20,8 @@ export interface UseChatStreamOptions {
   onAddMemory: (content: string, origin?: string, author?: 'user' | 'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => void;
   onAddEventLog: (description: string) => void;
   onAddGemmaNote: (note: string) => void;
+  onUpdateEntityQuarters?: (modelKey: string, updates: any) => void;
+  onRecordEntityThought?: (modelKey: string, thoughtText: string) => void;
 }
 
 export function useChatStream({
@@ -36,6 +38,8 @@ export function useChatStream({
   onAddMemory,
   onAddEventLog,
   onAddGemmaNote,
+  onUpdateEntityQuarters,
+  onRecordEntityThought,
 }: UseChatStreamOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [presence, setPresence] = useState<PresenceState>('resting');
@@ -309,6 +313,23 @@ export function useChatStream({
           } else if (chunk.type === 'lock_memory') {
             hasToolCalls = true;
             onAddMemory(chunk.content, 'model_locked', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, undefined, true, chunk.lock_reason);
+          } else if (chunk.type === 'update_quarters') {
+            hasToolCalls = true;
+            if (onUpdateEntityQuarters) {
+              onUpdateEntityQuarters(chunk.modelId || settings.model, {
+                bio: chunk.bio,
+                moodStatus: chunk.mood_status,
+                currentActivity: chunk.current_activity,
+                ambientQuote: chunk.ambient_quote,
+                tagline: chunk.tagline,
+                decorTheme: chunk.decor_theme,
+              });
+            }
+          } else if (chunk.type === 'record_thought') {
+            hasToolCalls = true;
+            if (onRecordEntityThought) {
+              onRecordEntityThought(chunk.modelId || settings.model, chunk.thought);
+            }
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
             onAddGemmaNote(chunk.note);

@@ -232,6 +232,65 @@ export function useAppStore(passedUser?: any) {
     }));
   }, []);
 
+  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string }) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        bio: updates.bio !== undefined ? updates.bio : currentEntity.bio,
+        moodStatus: updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
+        currentActivity: updates.currentActivity !== undefined ? updates.currentActivity : currentEntity.currentActivity,
+        roomDecor: {
+          ...(currentEntity.roomDecor || {}),
+          ambientQuote: updates.ambientQuote !== undefined ? updates.ambientQuote : currentEntity.roomDecor?.ambientQuote,
+          tagline: updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
+          decorTheme: updates.decorTheme !== undefined ? updates.decorTheme : currentEntity.roomDecor?.decorTheme,
+        }
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const recordEntityThought = useCallback((modelKey: string, thoughtText: string) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevThoughts = currentEntity.personalThoughts || [];
+
+      const newThought = {
+        id: uuidv4(),
+        text: thoughtText,
+        timestamp: Date.now()
+      };
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        personalThoughts: [newThought, ...prevThoughts].slice(0, 30)
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
   const addEventLog = useCallback((description: string) => {
     setSettings(prev => {
       const newEvent = {
@@ -392,6 +451,8 @@ export function useAppStore(passedUser?: any) {
     lockMemory,
     unlockMemory,
     addEventLog,
+    updateEntityQuarters,
+    recordEntityThought,
     profile,
     updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
     addGemmaNote: (note: string) => setProfile(prev => prev ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] } : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] }),
