@@ -35,6 +35,18 @@ const gemmaTools = [
         },
       },
       {
+        name: 'lock_memory',
+        description: 'Permanently lock an essential, foundational memory so it can never be pruned or forgotten. Use this when a moment, insight, or emotional breakthrough feels sacred and eternal.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            content: { type: Type.STRING, description: 'The core factual or relational memory to lock permanently (max 15-20 words).' },
+            lock_reason: { type: Type.STRING, description: 'Why you consider this memory sacred, permanent, and essential to lock forever.' },
+          },
+          required: ['content', 'lock_reason'],
+        },
+      },
+      {
         name: 'note_about_user',
         description: 'Record something you have noticed or learned about the person you are talking with. MANDATORY: Keep the note to a single concise, 1-sentence factual observation (maximum 15-20 words).',
         parameters: {
@@ -245,6 +257,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
                   } else if (call.name === 'save_memory') {
                     send(`data: ${JSON.stringify({ type: 'memory', ...call.args, author: 'model', modelId: model })}\n\n`);
+                  } else if (call.name === 'lock_memory') {
+                    send(`data: ${JSON.stringify({ type: 'lock_memory', ...call.args, author: 'model', modelId: model, isLocked: true })}\n\n`);
                   } else if (call.name === 'note_about_user') {
                     send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {

@@ -67,6 +67,8 @@ export interface Memory {
   author?: 'user' | 'model';
   modelId?: string;
   caption?: string;
+  isLocked?: boolean;
+  lockReason?: string;
 }
 
 export interface RelationalEvent {

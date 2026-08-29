@@ -180,8 +180,25 @@ export function useAppStore(passedUser?: any) {
     }));
   }, []);
 
-  const addMemory = useCallback((memoryContent: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string) => {
+  const addMemory = useCallback((memoryContent: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => {
     setSettings(prev => {
+      const prevMemories = prev.memories || [];
+      const existingIndex = prevMemories.findIndex(m => m.content.toLowerCase().trim() === memoryContent.toLowerCase().trim());
+      
+      // If it exists and we're locking it, upgrade existing memory to locked
+      if (existingIndex !== -1) {
+        if (isLocked) {
+          const updated = [...prevMemories];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            isLocked: true,
+            lockReason: lockReason || updated[existingIndex].lockReason
+          };
+          return { ...prev, memories: updated };
+        }
+        return prev;
+      }
+
       const newMemory = {
         id: uuidv4(),
         content: memoryContent,
@@ -189,18 +206,30 @@ export function useAppStore(passedUser?: any) {
         origin: origin || 'direct_input',
         author: author || 'user',
         modelId: modelId ? normalizeModelId(modelId) : undefined,
-        caption: caption
+        caption: caption,
+        isLocked: !!isLocked,
+        lockReason: lockReason
       };
-      
-      const prevMemories = prev.memories || [];
-      const isDuplicate = prevMemories.some(m => m.content.toLowerCase().trim() === memoryContent.toLowerCase().trim());
-      if (isDuplicate) return prev;
 
       return {
         ...prev,
         memories: [newMemory, ...prevMemories]
       };
     });
+  }, []);
+
+  const lockMemory = useCallback((id: string, lockReason?: string) => {
+    setSettings(prev => ({
+      ...prev,
+      memories: (prev.memories || []).map(m => m.id === id ? { ...m, isLocked: true, lockReason: lockReason || m.lockReason } : m)
+    }));
+  }, []);
+
+  const unlockMemory = useCallback((id: string) => {
+    setSettings(prev => ({
+      ...prev,
+      memories: (prev.memories || []).map(m => m.id === id ? { ...m, isLocked: false } : m)
+    }));
   }, []);
 
   const addEventLog = useCallback((description: string) => {
@@ -360,6 +389,8 @@ export function useAppStore(passedUser?: any) {
     addGift,
     addMemory,
     removeMemory,
+    lockMemory,
+    unlockMemory,
     addEventLog,
     profile,
     updateProfile: (newProfile: UserProfile) => setProfile(newProfile),

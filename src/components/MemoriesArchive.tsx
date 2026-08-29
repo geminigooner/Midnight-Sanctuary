@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Bookmark, Trash2 } from 'lucide-react';
+import { X, Bookmark, Trash2, Lock, Unlock } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { normalizeMemoryNamespace } from '../lib/memorySystem';
@@ -119,21 +119,48 @@ export function MemoriesArchive() {
             activeList.map((mem) => (
               <div
                 key={mem.id}
-                className="p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex items-center justify-between shadow-[3px_3px_0_#2C194D] gap-4"
+                className={`p-4 bg-[#F5E1C8] border-[3px] ${mem.isLocked ? 'border-[#9D7FE3] shadow-[4px_4px_0_#9D7FE3]' : 'border-[#2C194D] shadow-[3px_3px_0_#2C194D]'} rounded-2xl flex items-center justify-between gap-4`}
               >
                 <div className="flex-1 min-w-0">
-                  {mem.caption && (
-                    <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] mb-1 inline-block">
-                      {mem.caption}
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                    {mem.isLocked && (
+                      <span className="text-[11px] font-extrabold px-2 py-0.5 bg-[#9D7FE3] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] inline-flex items-center gap-1 shadow-[1px_1px_0_#2C194D]">
+                        <Lock size={10} strokeWidth={3} /> Locked Anchor
+                      </span>
+                    )}
+                    {mem.caption && (
+                      <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] inline-block">
+                        {mem.caption}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{mem.content}</p>
+                  {mem.lockReason && (
+                    <p className="text-xs font-semibold text-[#2C194D]/80 italic mt-1 bg-[#2C194D]/5 p-1.5 rounded-lg border border-[#2C194D]/15">
+                      🔒 &ldquo;{mem.lockReason}&rdquo;
+                    </p>
+                  )}
                   <span className="text-[10px] font-bold text-[#2C194D]/60 mt-1 block">
                     {new Date(mem.createdAt).toLocaleString()}
                   </span>
                 </div>
 
-                <div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (mem.isLocked) {
+                        store.unlockMemory(mem.id);
+                      } else {
+                        store.lockMemory(mem.id, 'User locked anchor');
+                      }
+                    }}
+                    className={`p-2 rounded-xl border-[2px] border-transparent hover:border-[#2C194D] transition-colors ${mem.isLocked ? 'text-[#9D7FE3] hover:bg-[#9D7FE3]/20' : 'text-[#2C194D]/50 hover:text-[#2C194D]'}`}
+                    title={mem.isLocked ? "Unlock Memory" : "Lock Memory as Anchor"}
+                  >
+                    {mem.isLocked ? <Lock size={16} strokeWidth={2.5} /> : <Unlock size={16} />}
+                  </button>
+
                   {confirmDeleteId === mem.id ? (
                     <button
                       onClick={(e) => {

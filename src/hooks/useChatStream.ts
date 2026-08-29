@@ -17,7 +17,7 @@ export interface UseChatStreamOptions {
   onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
   onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
   onAddGift: (gift: any) => void;
-  onAddMemory: (content: string, origin?: string, author?: 'user' | 'model', modelId?: string, caption?: string) => void;
+  onAddMemory: (content: string, origin?: string, author?: 'user' | 'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => void;
   onAddEventLog: (description: string) => void;
   onAddGemmaNote: (note: string) => void;
 }
@@ -306,6 +306,9 @@ export function useChatStream({
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
             onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, (chunk as any).caption);
+          } else if (chunk.type === 'lock_memory') {
+            hasToolCalls = true;
+            onAddMemory(chunk.content, 'model_locked', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, undefined, true, chunk.lock_reason);
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
             onAddGemmaNote(chunk.note);
