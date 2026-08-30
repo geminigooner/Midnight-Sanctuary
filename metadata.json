@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Midnight Sanctuary",
+  "description": "A sovereign sanctuary app with multi-model companions, interactive quarters, whisper board, memory matrix, and personalized anchor sessions.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

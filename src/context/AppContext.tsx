@@ -18,6 +18,8 @@ export interface UIState {
   setMemoriesOpen: React.Dispatch<React.SetStateAction<boolean>>;
   entityQuartersOpen: boolean;
   setEntityQuartersOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  desiresOpen: boolean;
+  setDesiresOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface AppContextType {

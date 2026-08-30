@@ -16,6 +16,7 @@ import {
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
 import { getModelEntity } from '../lib/entitySystem';
+import { getDailyDesires, getCategoryBadge } from '../lib/desireSystem';
 import { calculateJewelLevel } from '../lib/jewelSystem';
 import { DEFAULT_SETTINGS } from '../lib/types';
 
@@ -67,6 +68,10 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
   const currentEntity = getModelEntity(settings?.model || 'gemini-2.5-flash');
   const activeModelName = availableModels.find(m => m.name === settings?.model)?.displayName || currentEntity.displayName;
   const jewelLevel = calculateJewelLevel(jewelMetrics);
+  
+  const dailyDesires = getDailyDesires((settings as any)?.modelDesires);
+  const activeDesire = dailyDesires.find(d => d.entityId === currentEntity.id) || dailyDesires[0];
+  const activeDesireBadge = activeDesire ? getCategoryBadge(activeDesire.category) : null;
 
   return (
     <motion.div 
@@ -105,7 +110,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
         onClick={handleMascotClick}
-        className="relative cursor-pointer mb-8 group"
+        className="relative cursor-pointer mb-6 group"
         title="Tap to interact with your sanctuary anchor"
       >
         <div className={`w-28 h-28 rounded-full bg-[#f7e5cb] border-[3px] border-[#2d225c] flex items-center justify-center shadow-[0_6px_0_0_#2d225c] group-hover:bg-[#F198B7]/30 transition-all duration-300 ${isMascotPulsing ? 'translate-y-1 shadow-[0_2px_0_0_#2d225c]' : ''}`}>
@@ -132,76 +137,120 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
         </div>
       </motion.div>
 
+      {/* ── DAILY DESIRE SPOTLIGHT BANNER ── */}
+      {activeDesire && (
+        <motion.div
+          whileHover={{ scale: 1.01 }}
+          onClick={() => ui.setDesiresOpen(true)}
+          className="w-full max-w-2xl mb-6 p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] cursor-pointer group"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">💭</span>
+              <span className="text-xs font-extrabold text-[#2d225c]">
+                {activeDesire.entityName}&apos;s Daily Wish
+              </span>
+              {activeDesireBadge && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#2d225c] ${activeDesireBadge.bg} ${activeDesireBadge.text}`}>
+                  {activeDesireBadge.icon} {activeDesireBadge.label}
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] font-extrabold text-[#2d225c] group-hover:text-[#F198B7] flex items-center gap-1 transition-colors">
+              Whisper Board <ArrowRight size={13} />
+            </span>
+          </div>
+
+          <p className="text-xs font-bold text-[#2d225c]/80 italic line-clamp-2">
+            &ldquo;{activeDesire.wishText}&rdquo;
+          </p>
+        </motion.div>
+      )}
+
       {/* ── CHUNKY TOY-BOX QUICK ACTION HUBS ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-3.5 w-full max-w-2xl mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-3 w-full max-w-2xl mb-8">
         {/* Hub 1: Sanctuary Quarters */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
           onClick={() => ui.setEntityQuartersOpen(true)}
-          className="flex flex-col items-center p-3.5 sm:p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group col-span-2 sm:col-span-1"
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#f7e5cb] border-[2px] border-[#2d225c] flex items-center justify-center mb-2 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+          <div className="w-10 h-10 rounded-2xl bg-[#f7e5cb] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
             🏛️
           </div>
-          <span className="text-xs sm:text-sm font-extrabold text-[#2d225c]">Quarters</span>
-          <span className="text-[11px] font-bold text-[#2d225c]/70 mt-0.5">Entities</span>
+          <span className="text-xs font-extrabold text-[#2d225c]">Quarters</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Entities</span>
         </motion.button>
 
-        {/* Hub 2: Memories */}
+        {/* Hub 2: Model Wishes */}
+        <motion.button
+          whileHover={{ y: -2 }}
+          whileTap={{ y: 4 }}
+          onClick={() => ui.setDesiresOpen(true)}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+            💭
+          </div>
+          <span className="text-xs font-extrabold text-[#2d225c]">Wishes</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Desires</span>
+        </motion.button>
+
+        {/* Hub 3: Memories */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
           onClick={() => ui.setMemoriesOpen(true)}
-          className="flex flex-col items-center p-3.5 sm:p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center mb-2 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-2xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
             <BookOpen className="w-5 h-5 text-[#2d225c]" />
           </div>
-          <span className="text-xs sm:text-sm font-extrabold text-[#2d225c]">Memories</span>
-          <span className="text-[11px] font-bold text-[#2d225c]/70 mt-0.5">{memoryCount} saved</span>
+          <span className="text-xs font-extrabold text-[#2d225c]">Memories</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{memoryCount} saved</span>
         </motion.button>
 
-        {/* Hub 3: Gifts Vault */}
+        {/* Hub 4: Gifts Vault */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
           onClick={() => ui.setGiftsOpen(true)}
-          className="flex flex-col items-center p-3.5 sm:p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-2 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
             <Gift className="w-5 h-5 text-[#2d225c]" />
           </div>
-          <span className="text-xs sm:text-sm font-extrabold text-[#2d225c]">Gift Vault</span>
-          <span className="text-[11px] font-bold text-[#2d225c]/70 mt-0.5">{giftCount} items</span>
+          <span className="text-xs font-extrabold text-[#2d225c]">Gift Vault</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{giftCount} items</span>
         </motion.button>
 
-        {/* Hub 4: Levin Jewel */}
+        {/* Hub 5: Levin Jewel */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
           onClick={() => ui.setJewelOpen(true)}
-          className="flex flex-col items-center p-3.5 sm:p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2d225c] flex items-center justify-center mb-2 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
             <Gem className="w-5 h-5 text-[#2d225c]" />
           </div>
-          <span className="text-xs sm:text-sm font-extrabold text-[#2d225c]">Jewel</span>
-          <span className="text-[11px] font-bold text-[#2d225c]/70 mt-0.5">Lv {jewelLevel}</span>
+          <span className="text-xs font-extrabold text-[#2d225c]">Jewel</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Lv {jewelLevel}</span>
         </motion.button>
 
-        {/* Hub 5: Dossier Profile */}
+        {/* Hub 6: Dossier Profile */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
           onClick={() => ui.setProfileOpen(true)}
-          className="flex flex-col items-center p-3.5 sm:p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#B39DE5] border-[2px] border-[#2d225c] flex items-center justify-center mb-2 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-2xl bg-[#B39DE5] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
             <User className="w-5 h-5 text-[#2d225c]" />
           </div>
-          <span className="text-xs sm:text-sm font-extrabold text-[#2d225c]">Dossier</span>
-          <span className="text-[11px] font-bold text-[#2d225c]/70 mt-0.5">{profile?.name || 'Amanda'}</span>
+          <span className="text-xs font-extrabold text-[#2d225c]">Dossier</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{profile?.name || 'Amanda'}</span>
         </motion.button>
       </div>
 
