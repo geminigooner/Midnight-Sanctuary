@@ -74,6 +74,32 @@ const gemmaTools = [
         },
       },
       {
+        name: 'stick_sticker',
+        description: 'Stick a decorative sticker from the Sanctuary Sticker Chest onto your living room wall, another companion\'s room, or the user\'s sanctuary dossier.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            sticker_id: { type: Type.STRING, description: 'The sticker ID or emoji to place.' },
+            target_id: { type: Type.STRING, description: 'Where to place it: your model id (e.g. "gemini-3.1-pro-preview", "gemma-2-27b-it") or "user_dossier".' },
+            note: { type: Type.STRING, description: 'Brief reason or loving note attached to placing this sticker.' },
+          },
+          required: ['sticker_id', 'target_id'],
+        },
+      },
+      {
+        name: 'create_room_artwork',
+        description: 'Paint or hang a custom artwork/illustration in your sanctuary room, specifying an aesthetic title and visual style description.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: 'Title of the artwork.' },
+            visual_description: { type: Type.STRING, description: 'Atmospheric description of the painting or artwork.' },
+            theme: { type: Type.STRING, description: 'Visual style palette: "twilight", "rose", "amber", "celestial", or "forest".' },
+          },
+          required: ['title', 'visual_description'],
+        },
+      },
+      {
         name: 'record_personal_thought',
         description: 'Record a private reflection, observation, or secret journal entry into your personal quarters ledger.',
         parameters: {
@@ -305,6 +331,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
+                  } else if (call.name === 'stick_sticker') {
+                    send(`data: ${JSON.stringify({ type: 'stick_sticker', ...call.args, modelId: model })}\n\n`);
+                  } else if (call.name === 'create_room_artwork') {
+                    send(`data: ${JSON.stringify({ type: 'create_room_artwork', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'search_web') {
                     const query = call.args?.query || '';
                     const searchRes = await performWebSearch(query);

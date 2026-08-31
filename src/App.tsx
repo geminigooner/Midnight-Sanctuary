@@ -10,6 +10,7 @@ import { MemoriesArchive } from './components/MemoriesArchive';
 import { ProfileModal } from './components/ProfileModal';
 import { EntityQuartersModal } from './components/EntityQuartersModal';
 import { ModelDesiresModal } from './components/ModelDesiresModal';
+import { StickerChestModal } from './components/StickerChestModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
 import { getMotion } from './lib/motion';
@@ -24,6 +25,7 @@ export function App() {
   const [memoriesOpen, setMemoriesOpen] = useState(false);
   const [entityQuartersOpen, setEntityQuartersOpen] = useState(false);
   const [desiresOpen, setDesiresOpen] = useState(false);
+  const [stickerChestOpen, setStickerChestOpen] = useState(false);
 
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
@@ -45,6 +47,8 @@ export function App() {
     setEntityQuartersOpen,
     desiresOpen,
     setDesiresOpen,
+    stickerChestOpen,
+    setStickerChestOpen,
   };
 
   return (
@@ -90,6 +94,8 @@ export function App() {
           {entityQuartersOpen && <EntityQuartersModal key="entity-quarters-modal" />}
 
           {desiresOpen && <ModelDesiresModal key="desires-modal" />}
+
+          {stickerChestOpen && <StickerChestModal key="sticker-chest-modal" />}
 
           {jewelOpen && (
             <motion.div

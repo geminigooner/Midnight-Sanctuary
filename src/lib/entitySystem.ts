@@ -7,6 +7,8 @@ export interface EntityRoomDecor {
   decorTheme: 'twilight' | 'rose' | 'amber' | 'celestial' | 'forest';
   ambientQuote: string;
   tagline: string;
+  wallArtUrl?: string;
+  customArtwork?: { title: string; prompt: string; imageUrl: string; timestamp: number }[];
 }
 
 export interface ModelEntity {

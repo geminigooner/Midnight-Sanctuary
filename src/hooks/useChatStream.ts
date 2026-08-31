@@ -22,6 +22,8 @@ export interface UseChatStreamOptions {
   onAddGemmaNote: (note: string) => void;
   onUpdateEntityQuarters?: (modelKey: string, updates: any) => void;
   onRecordEntityThought?: (modelKey: string, thoughtText: string) => void;
+  onPlaceSticker?: (sticker: { stickerId: string; emoji: string; name: string; targetId: string; note?: string; placedBy?: string }) => void;
+  onAddRoomArtwork?: (modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => void;
 }
 
 export function useChatStream({
@@ -40,6 +42,8 @@ export function useChatStream({
   onAddGemmaNote,
   onUpdateEntityQuarters,
   onRecordEntityThought,
+  onPlaceSticker,
+  onAddRoomArtwork,
 }: UseChatStreamOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [presence, setPresence] = useState<PresenceState>('resting');
@@ -338,6 +342,30 @@ export function useChatStream({
           } else if (chunk.type === 'eventLog') {
             hasToolCalls = true;
             onAddEventLog(chunk.description);
+          } else if (chunk.type === 'stick_sticker') {
+            hasToolCalls = true;
+            if (onPlaceSticker) {
+              onPlaceSticker({
+                stickerId: chunk.sticker_id,
+                emoji: '✨',
+                name: 'Sanctuary Seal',
+                targetId: chunk.target_id,
+                note: chunk.note,
+                placedBy: chunk.modelId || settings.model,
+              });
+            }
+          } else if (chunk.type === 'create_room_artwork') {
+            hasToolCalls = true;
+            if (onAddRoomArtwork) {
+              // Generate procedural or seed-based atmospheric art for this model's quarters
+              const seedStr = encodeURIComponent(`${chunk.modelId || 'room'}-${chunk.title}`);
+              const generatedUrl = `https://picsum.photos/seed/${seedStr}/800/600`;
+              onAddRoomArtwork(chunk.modelId || settings.model, {
+                title: chunk.title,
+                prompt: chunk.visual_description,
+                imageUrl: generatedUrl,
+              });
+            }
           } else if (chunk.type === 'search_result') {
             hasToolCalls = true;
             currentModelSearchResults.push({

@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Heart, Gift, MessageSquareQuote, Check, Flame } from 'lucide-react';
+import { X, Sparkles, Heart, Gift, MessageSquareQuote, Check, Flame, Tag, Image as ImageIcon, Plus } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { getModelVisibleGifts } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
+import { PlacedSticker } from '../lib/stickerSystem';
 
 export function EntityQuartersModal() {
   const store = useStore();
-  const { setEntityQuartersOpen } = useUI() as any;
+  const { setEntityQuartersOpen, setStickerChestOpen } = useUI() as any;
   const { settings, gifts, conversations } = store;
 
   const reducedMotion = useReducedMotion();
@@ -26,6 +27,11 @@ export function EntityQuartersModal() {
   const isCurrentActive = resolvedCurrent?.identityId === activeEntity.id || currentModelId.includes(activeEntity.id);
   const entityGifts = getModelVisibleGifts(gifts, activeEntity.apiModelId);
 
+  // Placed Stickers on this Entity's Room
+  const placedStickers: PlacedSticker[] = (settings?.placedStickers || []).filter(
+    (s: PlacedSticker) => s.targetId === activeEntity.id || s.targetId === activeEntity.apiModelId
+  );
+
   // Count conversations featuring this model
   const entitySanctuaryCount = (conversations || []).filter(c => 
     c.modelId === activeEntity.apiModelId || 
@@ -37,6 +43,10 @@ export function EntityQuartersModal() {
     if (store.currentId) {
       store.updateConversation(store.currentId, { modelId: entity.apiModelId });
     }
+  };
+
+  const handleRemoveSticker = (placedId: string) => {
+    (store as any).removePlacedSticker(placedId);
   };
 
   return (
@@ -196,6 +206,99 @@ export function EntityQuartersModal() {
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* ROOM ARTWORK & WALLPAPER */}
+          <div className="p-5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center shadow-sm">
+                  <ImageIcon size={16} className="text-[#2d225c]" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-[#2d225c]">Room Artwork & Atmosphere</h4>
+                  <p className="text-[11px] font-bold text-[#2d225c]/60">Atmospheric illustrations hung in this chamber</p>
+                </div>
+              </div>
+              <span className="text-xs font-extrabold px-2.5 py-1 rounded-full bg-[#2d225c] text-[#f7e5cb]">
+                {((activeEntity.roomDecor as any)?.customArtwork || []).length} Art Pieces
+              </span>
+            </div>
+
+            {(!((activeEntity.roomDecor as any)?.customArtwork) || (activeEntity.roomDecor as any).customArtwork.length === 0) ? (
+              <div className="p-6 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-center text-xs font-bold text-[#B39DE5]">
+                <p>No custom illustrations hung in this chamber yet.</p>
+                <p className="text-[10px] text-[#B39DE5]/60 mt-1">Ask {activeEntity.displayName} to paint or hang artwork for their room during your chats.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {((activeEntity.roomDecor as any).customArtwork || []).map((art: any, idx: number) => (
+                  <div key={idx} className="p-2.5 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-[#f7e5cb]">
+                    <div className="w-full h-32 rounded-xl overflow-hidden mb-2 border border-[#2d225c]">
+                      <img 
+                        src={art.imageUrl} 
+                        alt={art.title}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="text-xs font-black block truncate text-[#f7e5cb]">{art.title}</span>
+                    <p className="text-[10px] text-[#B39DE5] line-clamp-2 mt-0.5">{art.prompt}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ROOM STICKER WALL */}
+          <div className="p-5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center shadow-sm">
+                  <Tag size={16} className="text-[#2d225c]" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-[#2d225c]">Affixed Seals & Stickers</h4>
+                  <p className="text-[11px] font-bold text-[#2d225c]/60">Decorations placed on {activeEntity.displayName}'s walls</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStickerChestOpen(true)}
+                className="px-2.5 py-1 rounded-xl bg-[#2d225c] hover:bg-[#3f2e7d] text-[#f7e5cb] text-xs font-black flex items-center gap-1 transition-all"
+              >
+                <Plus size={12} />
+                <span>Stick Seal</span>
+              </button>
+            </div>
+
+            {placedStickers.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-center text-xs font-bold text-[#B39DE5]">
+                <p>No seals affixed to this room yet.</p>
+                <p className="text-[10px] text-[#B39DE5]/60 mt-1">Open the Sticker Chest to stick badges, seals, or cyber tokens here.</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {placedStickers.map(sticker => (
+                  <div
+                    key={sticker.id}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1a153b] border-[2px] border-[#2d225c] text-[#f7e5cb]"
+                  >
+                    <span className="text-xl">{sticker.emoji}</span>
+                    <div className="text-left">
+                      <span className="text-xs font-black block leading-none">{sticker.name}</span>
+                      <span className="text-[9px] font-bold text-[#B39DE5]">by {sticker.placedBy === 'user' ? 'Amanda' : sticker.placedBy}</span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveSticker(sticker.id)}
+                      className="text-[#B39DE5] hover:text-red-400 p-0.5 ml-1 text-xs"
+                      title="Remove"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* DEDICATED GIFTS IN THIS ENTITY'S VAULT */}

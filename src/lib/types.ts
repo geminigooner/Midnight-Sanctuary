@@ -107,6 +107,8 @@ export interface AppSettings {
   memoriesEnabled: boolean;
   eventLog: RelationalEvent[];
   customEntities?: Record<string, any>;
+  stickers?: any[];
+  placedStickers?: any[];
 }
 
 export type JewelStage = 'seed' | 'stance' | 'formation' | 'incorporation' | 'archival';

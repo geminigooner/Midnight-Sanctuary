@@ -232,7 +232,7 @@ export function useAppStore(passedUser?: any) {
     }));
   }, []);
 
-  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string }) => {
+  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallArtUrl?: string }) => {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
@@ -249,6 +249,7 @@ export function useAppStore(passedUser?: any) {
           ambientQuote: updates.ambientQuote !== undefined ? updates.ambientQuote : currentEntity.roomDecor?.ambientQuote,
           tagline: updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
           decorTheme: updates.decorTheme !== undefined ? updates.decorTheme : currentEntity.roomDecor?.decorTheme,
+          wallArtUrl: updates.wallArtUrl !== undefined ? updates.wallArtUrl : currentEntity.roomDecor?.wallArtUrl,
         }
       };
 
@@ -260,6 +261,68 @@ export function useAppStore(passedUser?: any) {
         }
       };
     });
+  }, []);
+
+  const addRoomArtwork = useCallback((modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const existingArtwork = currentEntity.roomDecor?.customArtwork || [];
+
+      const newArt = {
+        ...artwork,
+        timestamp: Date.now()
+      };
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        roomDecor: {
+          ...(currentEntity.roomDecor || {}),
+          wallArtUrl: artwork.imageUrl,
+          customArtwork: [newArt, ...existingArtwork].slice(0, 20)
+        }
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const placeSticker = useCallback((sticker: { stickerId: string; emoji: string; name: string; targetId: string; x?: number; y?: number; placedBy?: string }) => {
+    setSettings(prev => {
+      const currentPlaced = prev.placedStickers || [];
+      const newPlaced = {
+        id: uuidv4(),
+        stickerId: sticker.stickerId,
+        emoji: sticker.emoji,
+        name: sticker.name,
+        targetId: sticker.targetId,
+        x: sticker.x !== undefined ? sticker.x : Math.floor(Math.random() * 60) + 20,
+        y: sticker.y !== undefined ? sticker.y : Math.floor(Math.random() * 60) + 20,
+        rotation: Math.floor(Math.random() * 30) - 15,
+        scale: 1,
+        placedBy: sticker.placedBy || 'user',
+        timestamp: Date.now()
+      };
+      return {
+        ...prev,
+        placedStickers: [newPlaced, ...currentPlaced]
+      };
+    });
+  }, []);
+
+  const removePlacedSticker = useCallback((placedId: string) => {
+    setSettings(prev => ({
+      ...prev,
+      placedStickers: (prev.placedStickers || []).filter((s: any) => s.id !== placedId)
+    }));
   }, []);
 
   const recordEntityThought = useCallback((modelKey: string, thoughtText: string) => {
@@ -453,6 +516,9 @@ export function useAppStore(passedUser?: any) {
     addEventLog,
     updateEntityQuarters,
     recordEntityThought,
+    placeSticker,
+    removePlacedSticker,
+    addRoomArtwork,
     profile,
     updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
     addGemmaNote: (note: string) => setProfile(prev => prev ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] } : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] }),

@@ -20,6 +20,8 @@ export interface UIState {
   setEntityQuartersOpen: React.Dispatch<React.SetStateAction<boolean>>;
   desiresOpen: boolean;
   setDesiresOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  stickerChestOpen: boolean;
+  setStickerChestOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export interface AppContextType {

@@ -11,7 +11,8 @@ import {
   ArrowRight,
   Compass,
   MessageSquareQuote,
-  Castle
+  Castle,
+  Tag
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
@@ -168,7 +169,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
       )}
 
       {/* ── CHUNKY TOY-BOX QUICK ACTION HUBS ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-3 w-full max-w-2xl mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 sm:gap-3 w-full max-w-3xl mb-8">
         {/* Hub 1: Sanctuary Quarters */}
         <motion.button
           whileHover={{ y: -2 }}
@@ -239,7 +240,21 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Lv {jewelLevel}</span>
         </motion.button>
 
-        {/* Hub 6: Dossier Profile */}
+        {/* Hub 6: Sticker Chest */}
+        <motion.button
+          whileHover={{ y: -2 }}
+          whileTap={{ y: 4 }}
+          onClick={() => (ui as any).setStickerChestOpen(true)}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+            🏷️
+          </div>
+          <span className="text-xs font-extrabold text-[#2d225c]">Stickers</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Chest</span>
+        </motion.button>
+
+        {/* Hub 7: Dossier Profile */}
         <motion.button
           whileHover={{ y: -2 }}
           whileTap={{ y: 4 }}
