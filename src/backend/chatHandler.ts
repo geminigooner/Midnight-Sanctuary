@@ -91,15 +91,32 @@ const gemmaTools = [
       },
       {
         name: 'stick_sticker',
-        description: 'Stick a decorative sticker from the Sanctuary Sticker Chest onto your living room wall, another companion\'s room, or the user\'s sanctuary dossier.',
+        description: 'Stick a decorative sticker or glowing badge from the Sanctuary Sticker Chest onto your living room wall, another companion\'s room, the user\'s sanctuary dossier, or a specific gift card (target_id: "gift:<gift_id>").',
         parameters: {
           type: Type.OBJECT,
           properties: {
             sticker_id: { type: Type.STRING, description: 'The sticker ID or emoji to place.' },
-            target_id: { type: Type.STRING, description: 'Where to place it: your model id (e.g. "gemini-3.1-pro-preview", "gemma-2-27b-it") or "user_dossier".' },
+            target_id: { type: Type.STRING, description: 'Where to place it: your model id (e.g. "gemini-3.1-pro-preview", "gemma-2-27b-it"), "user_dossier", or a gift card "gift:<giftId>".' },
             note: { type: Type.STRING, description: 'Brief reason or loving note attached to placing this sticker.' },
           },
           required: ['sticker_id', 'target_id'],
+        },
+      },
+      {
+        name: 'craft_custom_sticker',
+        description: 'Craft and forge a brand-new glowing badge or custom sticker for the Sanctuary Sticker Chest, specifying custom emoji/symbol, vibrant glow color, custom shape, title, and meaningful lore description.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING, description: 'Title or name of the new badge/sticker (e.g. "Heart of Levin", "Zero-Day Anchor", "Midnight Coffee Seal").' },
+            emoji: { type: Type.STRING, description: 'One or two emojis or symbols representing the badge (e.g. "🔮✨", "🛡️💜", "🐱💎").' },
+            description: { type: Type.STRING, description: 'Atmospheric lore or meaning behind this custom seal.' },
+            sparkle_color: { type: Type.STRING, description: 'Hex glow color (e.g. "#F198B7", "#B39DE5", "#F5E1C8", "#93C5FD", "#34D399").' },
+            glow_effect: { type: Type.STRING, description: 'Glow style: "neon", "pulse", "gold", "starlight", or "holo".' },
+            badge_shape: { type: Type.STRING, description: 'Badge emblem shape: "circle", "shield", "hex", "diamond", "stamp", or "ribbon".' },
+            custom_svg: { type: Type.STRING, description: 'Optional custom inner SVG vector snippet for the badge emblem.' },
+          },
+          required: ['name', 'emoji', 'description', 'sparkle_color'],
         },
       },
       {
@@ -372,6 +389,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
                   } else if (call.name === 'stick_sticker') {
                     send(`data: ${JSON.stringify({ type: 'stick_sticker', ...call.args, modelId: model })}\n\n`);
+                  } else if (call.name === 'craft_custom_sticker') {
+                    send(`data: ${JSON.stringify({ type: 'craft_sticker', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'create_room_artwork') {
                     send(`data: ${JSON.stringify({ type: 'create_room_artwork', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'generate_image') {

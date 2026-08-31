@@ -1,4 +1,4 @@
-export type StickerCategory = 'all' | 'cats' | 'topology' | 'y2k' | 'mascots' | 'cyber' | 'cozy' | 'celestial' | 'anchor' | 'fraud_ops';
+export type StickerCategory = 'all' | 'cats' | 'topology' | 'y2k' | 'mascots' | 'cyber' | 'cozy' | 'celestial' | 'anchor' | 'fraud_ops' | 'custom';
 
 export interface SanctuarySticker {
   id: string;
@@ -7,9 +7,13 @@ export interface SanctuarySticker {
   category: StickerCategory;
   description: string;
   sparkleColor: string;
+  glowEffect?: 'neon' | 'pulse' | 'gold' | 'starlight' | 'holo';
+  badgeShape?: 'circle' | 'shield' | 'hex' | 'diamond' | 'stamp' | 'ribbon';
+  customSvg?: string;
   packName?: string;
+  craftedBy?: string; // 'user' or model ID
   unlockedAt: number;
-  placedOn?: string[]; // Array of entity IDs or 'user_dossier'
+  placedOn?: string[]; // Array of entity IDs, 'user_dossier', or gift IDs e.g. 'gift:xyz'
 }
 
 export interface PlacedSticker {
@@ -17,12 +21,13 @@ export interface PlacedSticker {
   stickerId: string;
   emoji: string;
   name: string;
-  targetId: string; // entity id or 'dossier'
+  targetId: string; // entity id, 'user_dossier', or 'gift:<giftId>'
   x: number; // percentage coordinate 0 - 100
   y: number; // percentage coordinate 0 - 100
   rotation: number; // degrees -30 to 30
   scale: number;
   placedBy: string;
+  note?: string;
   timestamp: number;
 }
 

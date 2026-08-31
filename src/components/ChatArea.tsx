@@ -46,6 +46,7 @@ export function ChatArea() {
     onUpdateEntityQuarters: (store as any).updateEntityQuarters,
     onRecordEntityThought: (store as any).recordEntityThought,
     onPlaceSticker: (store as any).placeSticker,
+    onCraftSticker: (store as any).craftSticker,
     onAddRoomArtwork: (store as any).addRoomArtwork,
   });
 

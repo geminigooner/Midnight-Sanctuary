@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { X, Gift, Sparkles } from 'lucide-react';
+import { X, Gift, Sparkles, Tag, Plus } from 'lucide-react';
 import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { getModelVisibleGifts, getLegacyOrOtherModelGifts, normalizeModelNamespace } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { useStore, useUI } from '../context/AppContext';
 import { ScribbleCard } from './ScribbleCard';
+import { PlacedSticker } from '../lib/stickerSystem';
+import { StickerBadge } from './CraftStickerModal';
 
 export function GiftsArchive() {
   const store = useStore();
-  const { setGiftsOpen } = useUI();
+  const { setGiftsOpen, setStickerChestOpen } = useUI();
   const { gifts, settings } = store;
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -25,6 +27,8 @@ export function GiftsArchive() {
   const otherGifts = getLegacyOrOtherModelGifts(gifts, activeModelId);
 
   const displayGifts = activeTab === 'current' ? currentModelGifts : otherGifts;
+  const placedStickers: PlacedSticker[] = settings.placedStickers || [];
+  const stickersList = settings.stickers || [];
 
   return (
     <>
@@ -107,11 +111,41 @@ export function GiftsArchive() {
                     );
                   }
 
+                  const giftStickers = placedStickers.filter(p => p.targetId === `gift:${gift.id}`);
+
                   return (
                     <div
                       key={gift.id}
-                      className="p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex flex-col justify-between shadow-[3px_3px_0_#2C194D]"
+                      className="relative p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex flex-col justify-between shadow-[3px_3px_0_#2C194D] overflow-hidden"
                     >
+                      {/* Affixed Stickers / Badges on Gift Card */}
+                      {giftStickers.length > 0 && (
+                        <div className="absolute top-2 right-12 flex items-center gap-1 z-10">
+                          {giftStickers.map(gs => {
+                            const stickerDef = stickersList.find((s: any) => s.id === gs.stickerId);
+                            if (stickerDef) {
+                              return (
+                                <StickerBadge
+                                  key={gs.id}
+                                  sticker={stickerDef}
+                                  size="sm"
+                                  isGlowing={true}
+                                />
+                              );
+                            }
+                            return (
+                              <span
+                                key={gs.id}
+                                className="text-base p-1 rounded-lg bg-[#20153B] border border-[#2C194D] shadow-sm animate-pulse"
+                                title={`${gs.name} placed by ${gs.placedBy}`}
+                              >
+                                {gs.emoji}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
                       <div>
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D]">
@@ -134,11 +168,22 @@ export function GiftsArchive() {
                         <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{gift.content}</p>
                       </div>
 
-                      {gift.reason && (
-                        <p className="text-xs text-[#2C194D]/70 italic mt-3 border-t border-[#2C194D]/20 pt-2 font-bold">
-                          "{gift.reason}"
-                        </p>
-                      )}
+                      <div className="mt-3 border-t border-[#2C194D]/20 pt-2 flex items-center justify-between">
+                        {gift.reason ? (
+                          <p className="text-xs text-[#2C194D]/70 italic font-bold">
+                            &quot;{gift.reason}&quot;
+                          </p>
+                        ) : <div />}
+
+                        <button
+                          onClick={() => setStickerChestOpen(true)}
+                          className="px-2 py-1 rounded-lg bg-[#2C194D]/10 hover:bg-[#2C194D] text-[#2C194D] hover:text-[#F5E1C8] text-[10px] font-black flex items-center gap-1 transition-colors"
+                          title="Stick seal onto this gift"
+                        >
+                          <Tag size={10} />
+                          <span>Stick Badge</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

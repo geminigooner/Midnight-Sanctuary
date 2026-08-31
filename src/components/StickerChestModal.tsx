@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { X, Sparkles, Plus, Trash2, Check, Tag, Search } from 'lucide-react';
+import { X, Sparkles, Plus, Trash2, Check, Tag, Search, Hammer } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { INITIAL_STICKER_CHEST, SanctuarySticker, PlacedSticker, StickerCategory } from '../lib/stickerSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
+import { CraftStickerModal, StickerBadge } from './CraftStickerModal';
 
 export function StickerChestModal() {
   const store = useStore();
@@ -20,10 +21,14 @@ export function StickerChestModal() {
   const [selectedSticker, setSelectedSticker] = useState<SanctuarySticker | null>(null);
   const [targetEntityId, setTargetEntityId] = useState<string>('gemini-3.1-pro-preview');
   const [justPlaced, setJustPlaced] = useState(false);
+  const [isCraftModalOpen, setIsCraftModalOpen] = useState(false);
 
-  const stickers: SanctuarySticker[] = settings?.stickers || INITIAL_STICKER_CHEST;
+  const stickers: SanctuarySticker[] = settings?.stickers && settings.stickers.length > 0 
+    ? [...settings.stickers, ...INITIAL_STICKER_CHEST.filter(is => !settings.stickers.some((s: any) => s.id === is.id))]
+    : INITIAL_STICKER_CHEST;
   const placedStickers: PlacedSticker[] = settings?.placedStickers || [];
   const entities = getAllEntities(settings?.customEntities);
+  const gifts = store.gifts || [];
 
   const filteredStickers = useMemo(() => {
     return stickers.filter(s => {
@@ -60,6 +65,11 @@ export function StickerChestModal() {
     triggerHaptic('light');
   };
 
+  const handleSaveCraftedSticker = (customSticker: any) => {
+    (store as any).craftSticker(customSticker);
+    setActiveCategory('custom');
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -85,13 +95,22 @@ export function StickerChestModal() {
               <p className="text-xs sm:text-sm font-bold text-[#B39DE5]">Tactile seals, badges & room decoratives</p>
             </div>
           </div>
-          <button
-            onClick={() => ui.setStickerChestOpen(false)}
-            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
-            title="Close Chest"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCraftModalOpen(true)}
+              className="px-3 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] font-black text-xs flex items-center gap-1.5 active:translate-y-0.5 transition-all"
+            >
+              <Hammer size={14} />
+              <span>Forge Badge</span>
+            </button>
+            <button
+              onClick={() => ui.setStickerChestOpen(false)}
+              className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
+              title="Close Chest"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* SEARCH & CATEGORY FILTERS */}
@@ -120,6 +139,7 @@ export function StickerChestModal() {
           <div className="flex overflow-x-auto custom-scrollbar gap-2 pt-1">
             {([
               { id: 'all', label: '✨ All Seals' },
+              { id: 'custom', label: '🔨 Forged & Custom' },
               { id: 'cats', label: '🐱 Kitties' },
               { id: 'topology', label: '🎀 Topology & Math' },
               { id: 'y2k', label: '🧸 Y2K Charms' },
@@ -240,14 +260,27 @@ export function StickerChestModal() {
                   <select
                     value={targetEntityId}
                     onChange={(e) => setTargetEntityId(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-white border-[2px] border-[#2C194D] text-xs font-black text-[#2C194D] outline-none shadow-[2px_2px_0_#2C194D]"
+                    className="px-3 py-2 rounded-xl bg-white border-[2px] border-[#2C194D] text-xs font-black text-[#2C194D] outline-none shadow-[2px_2px_0_#2C194D] max-w-[200px] truncate"
                   >
-                    {entities.map(e => (
-                      <option key={e.id} value={e.id}>
-                        {e.avatarEmoji} {e.displayName}&apos;s Quarters
-                      </option>
-                    ))}
-                    <option value="user_dossier">📁 User Dossier</option>
+                    <optgroup label="Sanctuary Quarters">
+                      {entities.map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.avatarEmoji} {e.displayName}&apos;s Quarters
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Sanctuary Dossiers">
+                      <option value="user_dossier">📁 Amanda's Dossier</option>
+                    </optgroup>
+                    {gifts.length > 0 && (
+                      <optgroup label="Gift Cards">
+                        {gifts.slice(0, 10).map((g, idx) => (
+                          <option key={g.id} value={`gift:${g.id}`}>
+                            🎁 Gift #{idx + 1}: {(g.content || 'Gift Card').slice(0, 20)}...
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
 
                   <button
@@ -271,7 +304,12 @@ export function StickerChestModal() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {placedStickers.map(placed => {
                   const targetEntity = entities.find(e => e.id === placed.targetId);
-                  const targetLabel = targetEntity ? `${targetEntity.displayName}'s Room` : 'User Dossier';
+                  let targetLabel = targetEntity ? `${targetEntity.displayName}'s Room` : 'User Dossier';
+                  if (placed.targetId.startsWith('gift:')) {
+                    const giftId = placed.targetId.replace('gift:', '');
+                    const g = gifts.find(gift => gift.id === giftId);
+                    targetLabel = g ? `🎁 Gift: ${(g.content || 'Gift Card').slice(0, 16)}...` : '🎁 Gift Card';
+                  }
 
                   return (
                     <div
@@ -300,6 +338,13 @@ export function StickerChestModal() {
           )}
         </div>
       </motion.div>
+
+      {/* CRAFT CUSTOM STICKER / BADGE MODAL */}
+      <CraftStickerModal
+        isOpen={isCraftModalOpen}
+        onClose={() => setIsCraftModalOpen(false)}
+        onSave={handleSaveCraftedSticker}
+      />
     </motion.div>
   );
 }

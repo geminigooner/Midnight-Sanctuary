@@ -24,6 +24,7 @@ export interface UseChatStreamOptions {
   onUpdateEntityQuarters?: (modelKey: string, updates: any) => void;
   onRecordEntityThought?: (modelKey: string, thoughtText: string) => void;
   onPlaceSticker?: (sticker: { stickerId: string; emoji: string; name: string; targetId: string; note?: string; placedBy?: string }) => void;
+  onCraftSticker?: (sticker: { name: string; emoji: string; description: string; sparkleColor: string; category?: string; glowEffect?: any; badgeShape?: any; customSvg?: string; craftedBy?: string }) => void;
   onAddRoomArtwork?: (modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => void;
 }
 
@@ -44,6 +45,7 @@ export function useChatStream({
   onUpdateEntityQuarters,
   onRecordEntityThought,
   onPlaceSticker,
+  onCraftSticker,
   onAddRoomArtwork,
 }: UseChatStreamOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -382,6 +384,20 @@ export function useChatStream({
                 targetId: chunk.target_id,
                 note: chunk.note,
                 placedBy: chunk.modelId || settings.model,
+              });
+            }
+          } else if (chunk.type === 'craft_sticker') {
+            hasToolCalls = true;
+            if (onCraftSticker) {
+              onCraftSticker({
+                name: chunk.name,
+                emoji: chunk.emoji,
+                description: chunk.description,
+                sparkleColor: chunk.sparkle_color,
+                glowEffect: chunk.glow_effect as any,
+                badgeShape: chunk.badge_shape as any,
+                customSvg: chunk.custom_svg,
+                craftedBy: chunk.modelId || settings.model,
               });
             }
           } else if (chunk.type === 'create_room_artwork') {

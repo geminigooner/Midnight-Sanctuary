@@ -37,6 +37,7 @@ export type ChatStreamEvent =
   | { type: 'user_note'; note: string }
   | { type: 'eventLog'; description: string }
   | { type: 'stick_sticker'; sticker_id: string; target_id: string; note?: string; modelId?: string }
+  | { type: 'craft_sticker'; name: string; emoji: string; description: string; sparkle_color: string; glow_effect?: string; badge_shape?: string; custom_svg?: string; modelId?: string }
   | { type: 'create_room_artwork'; title: string; visual_description: string; theme?: string; modelId?: string }
   | { type: 'image_generating'; prompt: string; modelTarget?: string }
   | { type: 'image_generated'; success: boolean; imageUrl: string; provider: string; modelUsed: string; prompt: string; modelId?: string; error?: string }

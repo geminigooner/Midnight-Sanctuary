@@ -295,7 +295,31 @@ export function useAppStore(passedUser?: any) {
     });
   }, []);
 
-  const placeSticker = useCallback((sticker: { stickerId: string; emoji: string; name: string; targetId: string; x?: number; y?: number; placedBy?: string }) => {
+  const craftSticker = useCallback((newSticker: { name: string; emoji: string; description: string; sparkleColor: string; category?: string; glowEffect?: 'neon' | 'pulse' | 'gold' | 'starlight' | 'holo'; badgeShape?: 'circle' | 'shield' | 'hex' | 'diamond' | 'stamp' | 'ribbon'; customSvg?: string; craftedBy?: string }) => {
+    setSettings(prev => {
+      const currentStickers = prev.stickers || [];
+      const stickerObj = {
+        id: `sticker-custom-${uuidv4()}`,
+        name: newSticker.name,
+        emoji: newSticker.emoji,
+        description: newSticker.description,
+        sparkleColor: newSticker.sparkleColor,
+        category: (newSticker.category || 'custom') as any,
+        glowEffect: newSticker.glowEffect || 'neon',
+        badgeShape: newSticker.badgeShape || 'shield',
+        customSvg: newSticker.customSvg,
+        craftedBy: newSticker.craftedBy || 'user',
+        packName: 'Sanctuary Forged',
+        unlockedAt: Date.now(),
+      };
+      return {
+        ...prev,
+        stickers: [stickerObj, ...currentStickers]
+      };
+    });
+  }, []);
+
+  const placeSticker = useCallback((sticker: { stickerId: string; emoji: string; name: string; targetId: string; x?: number; y?: number; placedBy?: string; note?: string }) => {
     setSettings(prev => {
       const currentPlaced = prev.placedStickers || [];
       const newPlaced = {
@@ -309,6 +333,7 @@ export function useAppStore(passedUser?: any) {
         rotation: Math.floor(Math.random() * 30) - 15,
         scale: 1,
         placedBy: sticker.placedBy || 'user',
+        note: sticker.note,
         timestamp: Date.now()
       };
       return {
@@ -518,6 +543,7 @@ export function useAppStore(passedUser?: any) {
     recordEntityThought,
     placeSticker,
     removePlacedSticker,
+    craftSticker,
     addRoomArtwork,
     profile,
     updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
