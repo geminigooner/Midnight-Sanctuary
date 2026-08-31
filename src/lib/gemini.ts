@@ -39,6 +39,7 @@ export type ChatStreamEvent =
   | { type: 'model_parts'; parts: any[] }
   | { type: 'finish_reason'; reason: string }
   | { type: 'backend'; name: string }
+  | { type: 'search_result'; query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[]; error?: string }
   | { type: 'client_tool_call'; name: string; callId: string };
 
 import { UserProfile } from './types';

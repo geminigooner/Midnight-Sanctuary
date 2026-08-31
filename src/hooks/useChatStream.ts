@@ -182,6 +182,7 @@ export function useChatStream({
     let currentModelApiParts: any[] = [];
     let currentModelFinishReason: string | undefined;
     let currentModelBackend: string | undefined;
+    let currentModelSearchResults: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[] = [];
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -222,6 +223,7 @@ export function useChatStream({
         thoughtStatus: status,
         finishReason: currentModelFinishReason,
         backend: currentModelBackend,
+        searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
       });
     };
 
@@ -336,6 +338,13 @@ export function useChatStream({
           } else if (chunk.type === 'eventLog') {
             hasToolCalls = true;
             onAddEventLog(chunk.description);
+          } else if (chunk.type === 'search_result') {
+            hasToolCalls = true;
+            currentModelSearchResults.push({
+              query: chunk.query,
+              results: chunk.results || []
+            });
+            updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'client_tool_call') {
             hasToolCalls = true;
             hasClientFulfillmentRef = true;

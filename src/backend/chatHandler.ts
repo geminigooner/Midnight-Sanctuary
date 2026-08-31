@@ -1,10 +1,22 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { modelRegistry, assembleModelContext } from '../lib/modelRegistry';
+import { performWebSearch } from './searchService';
 import { Memory, Gift } from '../lib/types';
 
 const gemmaTools = [
   {
     functionDeclarations: [
+      {
+        name: 'search_web',
+        description: 'Search the live web for recent news, fraud intelligence, articles, security alerts, technical documentation, or factual verification. Use this whenever the user asks for current information or verification.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            query: { type: Type.STRING, description: 'The search query or keywords to look up on Google.' },
+          },
+          required: ['query'],
+        },
+      },
       {
         name: 'view_user_profile',
         description: 'Look at the visual presentation of the user\'s profile (image, background, layout, decorations, etc). Use this when the user asks you to look at their profile or asks about how they decorated it.',
@@ -293,6 +305,19 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'user_note', ...call.args })}\n\n`);
                   } else if (call.name === 'log_event') {
                     send(`data: ${JSON.stringify({ type: 'eventLog', ...call.args })}\n\n`);
+                  } else if (call.name === 'search_web') {
+                    const query = call.args?.query || '';
+                    const searchRes = await performWebSearch(query);
+                    send(`data: ${JSON.stringify({ type: 'search_result', query, results: searchRes.items, error: searchRes.error })}\n\n`);
+                    const fr: any = {
+                      name: call.name,
+                      response: {
+                        result: searchRes.error ? `Search error: ${searchRes.error}` : JSON.stringify(searchRes.items)
+                      }
+                    };
+                    if (call.id) fr.id = call.id;
+                    functionResponses.push({ functionResponse: fr });
+                    requireClientFulfillment = true; // Handled directly on server
                   }
                   
                   if (!requireClientFulfillment) {

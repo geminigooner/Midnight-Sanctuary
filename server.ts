@@ -2,6 +2,7 @@ import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { performWebSearch } from './src/backend/searchService';
 import { createChatStream } from './src/backend/chatHandler';
 import { verifyRequest } from './src/backend/verifyAuth';
 
@@ -35,6 +36,22 @@ app.get('/api/models', async (req, res) => {
     res.json(models);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Unknown API Error' });
+  }
+});
+
+app.post('/api/search', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const query = req.body?.query || '';
+  if (!query) {
+    return res.status(400).json({ error: 'Search query is required' });
+  }
+  try {
+    const result = await performWebSearch(query);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Search execution failed' });
   }
 });
 

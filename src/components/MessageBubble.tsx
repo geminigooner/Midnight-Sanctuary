@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, getPublicMessageText, getThoughtMessageText } from '../lib/types';
-import { Copy, Edit3, X, Smile } from 'lucide-react';
+import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -35,6 +35,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const [settled, setSettled] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   
   const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
   
@@ -144,6 +145,73 @@ export const MessageBubble = React.memo(function MessageBubble({
             {msg.backend === 'cloudflare' && (
               <div className="text-xs text-[#B39DE5]/50 mt-2 italic">
                 via Cloudflare
+              </div>
+            )}
+
+            {msg.searchResults && msg.searchResults.length > 0 && (
+              <div className="mt-3 pt-2 border-t-[2px] border-[#2C194D]/20">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSources(!showSources);
+                    triggerHaptic('light');
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#2C194D]/10 hover:bg-[#2C194D]/20 text-[#2C194D] text-xs font-extrabold transition-all"
+                >
+                  <Globe size={13} className="text-[#2C194D]" />
+                  <span>{msg.searchResults.reduce((acc, s) => acc + s.results.length, 0)} Web Source{msg.searchResults.reduce((acc, s) => acc + s.results.length, 0) === 1 ? '' : 's'} Consulted</span>
+                  {showSources ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+
+                <AnimatePresence>
+                  {showSources && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden mt-2 space-y-2"
+                    >
+                      {msg.searchResults.map((search, sIdx) => (
+                        <div key={sIdx} className="bg-[#2C194D]/5 p-2 rounded-xl border border-[#2C194D]/15 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#2C194D]/80">
+                            <Search size={11} />
+                            <span>Query: <strong className="text-[#2C194D]">"{search.query}"</strong></span>
+                          </div>
+                          {search.results.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-1.5 pt-1">
+                              {search.results.map((res, rIdx) => (
+                                <a
+                                  key={rIdx}
+                                  href={res.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block p-1.5 rounded-lg bg-[#f7e5cb] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:translate-x-0.5 transition-transform group/link"
+                                >
+                                  <div className="flex items-center justify-between text-xs font-black text-[#2C194D] truncate">
+                                    <span className="truncate">{res.title}</span>
+                                    <ExternalLink size={11} className="shrink-0 opacity-70 group-hover/link:opacity-100 ml-1" />
+                                  </div>
+                                  {res.snippet && (
+                                    <p className="text-[11px] text-[#2C194D]/80 line-clamp-2 mt-0.5 leading-snug">
+                                      {res.snippet}
+                                    </p>
+                                  )}
+                                  {res.displayLink && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#2C194D]/60 mt-1 block">
+                                      {res.displayLink}
+                                    </span>
+                                  )}
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] italic text-[#2C194D]/60">No web results returned for this query.</p>
+                          )}
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
 

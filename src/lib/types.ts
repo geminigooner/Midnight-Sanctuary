@@ -18,6 +18,7 @@ export interface Message {
   finishReason?: string;
   backend?: string;
   reaction?: string;
+  searchResults?: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[];
   // Multi-Entity & Group metadata
   authorEntityId?: string;
   authorDisplayName?: string;

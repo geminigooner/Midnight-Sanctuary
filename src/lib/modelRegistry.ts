@@ -241,6 +241,9 @@ export function assembleModelContext(
   // 6. Memory Rules
   sections.push(`## Memory & Note Saving Rules:\nWhen saving a memory via save_memory or noting an observation via note_about_user, you MUST summarize the insight into a single concise, 1-sentence factual statement (maximum 15-20 words). Never save lengthy paragraphs, conversational transcripts, or multi-sentence descriptions.`);
 
+  // 7. Live Web Search Capability
+  sections.push(`## Live Web Search & Grounding:\nYou have access to the \`search_web\` tool powered by Google Search. Whenever the user asks for current information, fraud analysis intelligence, security alerts, documentation, or factual verification, call \`search_web\` with a targeted query to look up live web sources.`);
+
   return {
     userMemories: userMems,
     modelMemories: modelMems,
