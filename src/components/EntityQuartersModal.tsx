@@ -7,6 +7,7 @@ import { getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { getModelVisibleGifts } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { PlacedSticker } from '../lib/stickerSystem';
+import { ScribbleCard } from './ScribbleCard';
 
 export function EntityQuartersModal() {
   const store = useStore();
@@ -325,31 +326,52 @@ export function EntityQuartersModal() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {entityGifts.map(gift => (
-                  <div 
-                    key={gift.id}
-                    className="p-3.5 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-[#f7e5cb] flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#F198B7] text-[#2d225c]">
-                          {gift.from === 'user' ? 'From Amanda' : 'From Entity'}
-                        </span>
-                        <span className="text-[10px] text-[#B39DE5]/70">
-                          {new Date(gift.timestamp).toLocaleDateString()}
-                        </span>
+                {entityGifts.map(gift => {
+                  if (gift.gift_type === 'svg_scribble' || gift.scribble) {
+                    const scribbleData = gift.scribble || {
+                      id: gift.id,
+                      title: gift.content || 'Hand-Drawn Scribble',
+                      description: gift.content,
+                      svgMarkup: gift.content.startsWith('<svg') ? gift.content : '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="#2C194D" stroke-width="4" fill="none"/></svg>',
+                      reason: gift.reason,
+                      authorModelId: gift.modelId,
+                      timestamp: gift.timestamp
+                    };
+                    return (
+                      <ScribbleCard 
+                        key={gift.id} 
+                        scribble={scribbleData} 
+                        isCompact={true}
+                      />
+                    );
+                  }
+
+                  return (
+                    <div 
+                      key={gift.id}
+                      className="p-3.5 rounded-2xl bg-[#1a153b] border-[2px] border-[#2d225c] text-[#f7e5cb] flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#F198B7] text-[#2d225c]">
+                            {gift.from === 'user' ? 'From Amanda' : 'From Entity'}
+                          </span>
+                          <span className="text-[10px] text-[#B39DE5]/70">
+                            {new Date(gift.timestamp).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-[#f7e5cb] line-clamp-3">
+                          {gift.content}
+                        </p>
                       </div>
-                      <p className="text-xs font-semibold text-[#f7e5cb] line-clamp-3">
-                        {gift.content}
-                      </p>
+                      {gift.reason && (
+                        <p className="text-[10px] italic font-bold text-[#F198B7] mt-2 pt-1 border-t border-[#f7e5cb]/10">
+                          "{gift.reason}"
+                        </p>
+                      )}
                     </div>
-                    {gift.reason && (
-                      <p className="text-[10px] italic font-bold text-[#F198B7] mt-2 pt-1 border-t border-[#f7e5cb]/10">
-                        "{gift.reason}"
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

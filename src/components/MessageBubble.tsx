@@ -3,6 +3,7 @@ import { Message, getPublicMessageText, getThoughtMessageText } from '../lib/typ
 import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp, Sparkles, Download } from 'lucide-react';
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
+import { ScribbleCard } from './ScribbleCard';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
@@ -224,6 +225,17 @@ export const MessageBubble = React.memo(function MessageBubble({
                     onClick={() => onImageClick?.(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`)}
                   />
                 ) : null)}
+
+            {msg.scribbles && msg.scribbles.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {msg.scribbles.map((scribble) => (
+                  <ScribbleCard 
+                    key={scribble.id} 
+                    scribble={scribble} 
+                  />
+                ))}
+              </div>
+            )}
 
             {msg.generatedImages && msg.generatedImages.length > 0 && (
               <div className="mt-3 space-y-3">

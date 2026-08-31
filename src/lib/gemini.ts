@@ -29,6 +29,7 @@ export type ChatStreamEvent =
   | { type: 'thought'; text: string }
   | { type: 'text'; text: string }
   | { type: 'gift'; content: string; gift_type: string; reason?: string }
+  | { type: 'scribble_gift'; title: string; description?: string; mood_style?: string; svg_markup: string; reason?: string; modelId?: string }
   | { type: 'memory'; content: string; why_it_matters?: string }
   | { type: 'lock_memory'; content: string; lock_reason: string; isLocked?: boolean }
   | { type: 'update_quarters'; bio?: string; mood_status?: string; current_activity?: string; ambient_quote?: string; tagline?: string; decor_theme?: string; modelId?: string }
@@ -326,7 +327,7 @@ export async function* streamChat(
           if (data.error) {
             throw new APIError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
           }
-          if (data.type === 'gift' || data.type === 'memory' || data.type === 'lock_memory' || data.type === 'update_quarters' || data.type === 'record_thought' || data.type === 'eventLog' || data.type === 'thought' || data.type === 'history_append' || data.type === 'model_parts') {
+          if (data.type === 'gift' || data.type === 'scribble_gift' || data.type === 'memory' || data.type === 'lock_memory' || data.type === 'update_quarters' || data.type === 'record_thought' || data.type === 'eventLog' || data.type === 'thought' || data.type === 'history_append' || data.type === 'model_parts') {
             yield data as ChatStreamEvent;
           } else if (data.text) {
             fullText += data.text;

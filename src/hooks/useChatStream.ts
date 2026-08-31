@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import html2canvas from 'html2canvas';
-import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText } from '../lib/types';
+import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, SvgScribbleData } from '../lib/types';
 import { streamChat } from '../lib/gemini';
+import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
 import { triggerHaptic } from '../lib/haptics';
 
@@ -188,6 +189,7 @@ export function useChatStream({
     let currentModelBackend: string | undefined;
     let currentModelSearchResults: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[] = [];
     let currentModelGeneratedImages: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[] = [];
+    let currentModelScribbles: SvgScribbleData[] = [];
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -230,6 +232,7 @@ export function useChatStream({
         backend: currentModelBackend,
         searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
         generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
+        scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
       });
     };
 
@@ -315,6 +318,31 @@ export function useChatStream({
               gift_type: chunk.gift_type,
               reason: chunk.reason
             });
+          } else if (chunk.type === 'scribble_gift') {
+            hasToolCalls = true;
+            const sanitized = sanitizeSvg(chunk.svg_markup);
+            const scribbleObj: SvgScribbleData = {
+              id: uuidv4(),
+              title: chunk.title || 'A Little Scribble',
+              description: chunk.description,
+              moodStyle: chunk.mood_style || 'crayon',
+              svgMarkup: sanitized,
+              reason: chunk.reason,
+              authorModelId: chunk.modelId || settings.model,
+              timestamp: Date.now(),
+            };
+
+            onAddGift({
+              from: 'model',
+              modelId: chunk.modelId || settings.model,
+              content: chunk.description || chunk.title || 'Hand-Drawn Doodle',
+              gift_type: 'svg_scribble',
+              reason: chunk.reason || 'I drew this for you.',
+              scribble: scribbleObj,
+            });
+
+            currentModelScribbles.push(scribbleObj);
+            updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
             onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, (chunk as any).caption);
@@ -459,6 +487,7 @@ export function useChatStream({
               backend: currentModelBackend,
               searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
               generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
+              scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
             });
             if (msgs.length > 1 && msgs[1]) {
               onAddMessage(requestConversationId, {
@@ -474,6 +503,7 @@ export function useChatStream({
             currentModelApiParts = [];
             currentModelSearchResults = [];
             currentModelGeneratedImages = [];
+            currentModelScribbles = [];
             rawTextAccumulator = '';
             apiThoughtAccumulator = '';
             isFirstChunk = true;

@@ -5,6 +5,7 @@ import { getMotion } from '../lib/motion';
 import { getModelVisibleGifts, getLegacyOrOtherModelGifts, normalizeModelNamespace } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { useStore, useUI } from '../context/AppContext';
+import { ScribbleCard } from './ScribbleCard';
 
 export function GiftsArchive() {
   const store = useStore();
@@ -86,40 +87,61 @@ export function GiftsArchive() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {displayGifts.map((gift) => (
-                  <div
-                    key={gift.id}
-                    className="p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex flex-col justify-between shadow-[3px_3px_0_#2C194D]"
-                  >
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D]">
-                          {gift.from === 'user' ? 'From You' : 'From Companion'}
-                        </span>
-                        <span className="text-[10px] font-bold text-[#2C194D]/60">
-                          {new Date(gift.timestamp).toLocaleDateString()}
-                        </span>
+                {displayGifts.map((gift) => {
+                  if (gift.gift_type === 'svg_scribble' || gift.scribble) {
+                    const scribbleData = gift.scribble || {
+                      id: gift.id,
+                      title: gift.content || 'Hand-Drawn Scribble',
+                      description: gift.content,
+                      svgMarkup: gift.content.startsWith('<svg') ? gift.content : '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="#2C194D" stroke-width="4" fill="none"/></svg>',
+                      reason: gift.reason,
+                      authorModelId: gift.modelId,
+                      timestamp: gift.timestamp
+                    };
+                    return (
+                      <ScribbleCard 
+                        key={gift.id} 
+                        scribble={scribbleData} 
+                        isCompact={true}
+                      />
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={gift.id}
+                      className="p-4 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl flex flex-col justify-between shadow-[3px_3px_0_#2C194D]"
+                    >
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D]">
+                            {gift.from === 'user' ? 'From You' : 'From Companion'}
+                          </span>
+                          <span className="text-[10px] font-bold text-[#2C194D]/60">
+                            {new Date(gift.timestamp).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        {gift.inlineData && (
+                          <img
+                            src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`}
+                            alt="Gift attachment"
+                            onClick={() => setSelectedImage(`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`)}
+                            className="w-full h-36 object-cover rounded-xl border-[2px] border-[#2C194D] mb-2 cursor-pointer hover:opacity-95 transition-opacity"
+                          />
+                        )}
+
+                        <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{gift.content}</p>
                       </div>
 
-                      {gift.inlineData && (
-                        <img
-                          src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`}
-                          alt="Gift attachment"
-                          onClick={() => setSelectedImage(`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`)}
-                          className="w-full h-36 object-cover rounded-xl border-[2px] border-[#2C194D] mb-2 cursor-pointer hover:opacity-95 transition-opacity"
-                        />
+                      {gift.reason && (
+                        <p className="text-xs text-[#2C194D]/70 italic mt-3 border-t border-[#2C194D]/20 pt-2 font-bold">
+                          "{gift.reason}"
+                        </p>
                       )}
-
-                      <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{gift.content}</p>
                     </div>
-
-                    {gift.reason && (
-                      <p className="text-xs text-[#2C194D]/70 italic mt-3 border-t border-[#2C194D]/20 pt-2 font-bold">
-                        "{gift.reason}"
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

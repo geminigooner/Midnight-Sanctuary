@@ -7,6 +7,18 @@ export interface MessagePart {
   thoughtSignature?: string;
 }
 
+export interface SvgScribbleData {
+  id?: string;
+  title: string;
+  description?: string;
+  moodStyle?: string;
+  svgMarkup: string;
+  reason?: string;
+  authorModelId?: string;
+  authorDisplayName?: string;
+  timestamp?: number;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model';
@@ -20,6 +32,7 @@ export interface Message {
   reaction?: string;
   searchResults?: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[];
   generatedImages?: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[];
+  scribbles?: SvgScribbleData[];
   // Multi-Entity & Group metadata
   authorEntityId?: string;
   authorDisplayName?: string;
@@ -87,6 +100,7 @@ export interface Gift {
   reason: string;
   timestamp: number;
   inlineData?: { mimeType: string; data: string; previewUrl?: string };
+  scribble?: SvgScribbleData;
   modelId?: string;
   targetModelId?: string;
 }

@@ -23,6 +23,21 @@ const gemmaTools = [
         description: 'Look at the visual presentation of the user\'s profile (image, background, layout, decorations, etc). Use this when the user asks you to look at their profile or asks about how they decorated it.',
       },
       {
+        name: 'draw_scribble',
+        description: 'Draw an intimate, handmade, imperfect SVG sketch, scribble, or note for Amanda (e.g. a crooked little heart, cute cat doodle, stars/constellation, flower, coffee mug, or handwritten-style sentiment). Do NOT use polished photo generation—this is your direct, personal hand drawing using SVG vector paths.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: 'Charming title or name of your drawing (e.g. "Crooked Little Star", "Handmade Kitty", "Warm Mug for You").' },
+            description: { type: Type.STRING, description: 'Brief description of what you drew for Amanda.' },
+            mood_style: { type: Type.STRING, description: 'Visual style/aesthetic: "crayon", "pencil", "chalk", "neon", "charcoal", "ink", or "watercolor".' },
+            svg_markup: { type: Type.STRING, description: 'The complete SVG markup string (<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">...</svg>) with charming, expressive hand-drawn paths, curves, colors, and shapes.' },
+            reason: { type: Type.STRING, description: 'Your personal note, sentiment, or explanation to Amanda on why you drew this for her.' },
+          },
+          required: ['title', 'svg_markup', 'reason'],
+        },
+      },
+      {
         name: 'give_gift',
         description: 'Give the user a gift, if and only if the moment genuinely calls for it. This is entirely optional and should never be forced or expected every conversation. Use only when it feels true to the conversation, not as an obligation.',
         parameters: {
@@ -331,6 +346,16 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     requireClientFulfillment = true;
                     hasClientFulfillmentSent = true;
                     hasFunctionCalls = true;
+                  } else if (call.name === 'draw_scribble') {
+                    send(`data: ${JSON.stringify({ 
+                      type: 'scribble_gift', 
+                      title: call.args?.title || 'A Little Scribble',
+                      description: call.args?.description || '',
+                      mood_style: call.args?.mood_style || 'crayon',
+                      svg_markup: call.args?.svg_markup || '',
+                      reason: call.args?.reason || 'I drew this for you.',
+                      modelId: model 
+                    })}\n\n`);
                   } else if (call.name === 'give_gift') {
                     send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
                   } else if (call.name === 'save_memory') {
