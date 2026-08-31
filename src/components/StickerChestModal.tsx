@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Plus, Trash2, Check, Tag } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Sparkles, Plus, Trash2, Check, Tag, Search } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
-import { INITIAL_STICKER_CHEST, SanctuarySticker, PlacedSticker } from '../lib/stickerSystem';
+import { INITIAL_STICKER_CHEST, SanctuarySticker, PlacedSticker, StickerCategory } from '../lib/stickerSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
 
@@ -15,7 +15,8 @@ export function StickerChestModal() {
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
 
-  const [activeCategory, setActiveCategory] = useState<'all' | 'cyber' | 'cozy' | 'celestial' | 'anchor' | 'fraud_ops'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<StickerCategory>('all');
   const [selectedSticker, setSelectedSticker] = useState<SanctuarySticker | null>(null);
   const [targetEntityId, setTargetEntityId] = useState<string>('gemini-3.1-pro-preview');
   const [justPlaced, setJustPlaced] = useState(false);
@@ -24,9 +25,19 @@ export function StickerChestModal() {
   const placedStickers: PlacedSticker[] = settings?.placedStickers || [];
   const entities = getAllEntities(settings?.customEntities);
 
-  const filteredStickers = activeCategory === 'all' 
-    ? stickers 
-    : stickers.filter(s => s.category === activeCategory);
+  const filteredStickers = useMemo(() => {
+    return stickers.filter(s => {
+      const matchesCategory = activeCategory === 'all' || s.category === activeCategory;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q || 
+        s.name.toLowerCase().includes(q) || 
+        s.description.toLowerCase().includes(q) || 
+        s.category.toLowerCase().includes(q) ||
+        (s.packName && s.packName.toLowerCase().includes(q)) ||
+        s.emoji.includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [stickers, activeCategory, searchQuery]);
 
   const handlePlaceSticker = () => {
     if (!selectedSticker) return;
@@ -83,66 +94,130 @@ export function StickerChestModal() {
           </button>
         </div>
 
-        {/* CATEGORY FILTERS */}
-        <div className="flex border-b-[3px] border-[#2C194D] bg-[#20153B] overflow-x-auto custom-scrollbar p-2 gap-2 shrink-0">
-          {(['all', 'anchor', 'fraud_ops', 'cyber', 'celestial', 'cozy'] as const).map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl border-[2px] font-extrabold text-xs capitalize transition-all whitespace-nowrap ${
-                activeCategory === cat
-                  ? 'bg-[#f7e5cb] border-[#2C194D] text-[#2C194D] shadow-[0_2px_0_0_#2C194D]'
-                  : 'bg-[#151234] border-[#2C194D]/60 text-[#B39DE5] hover:text-[#F5E1C8]'
-              }`}
-            >
-              {cat === 'all' ? '✨ All Seals' : cat.replace('_', ' ')}
-            </button>
-          ))}
+        {/* SEARCH & CATEGORY FILTERS */}
+        <div className="border-b-[3px] border-[#2C194D] bg-[#20153B] p-3 space-y-2 shrink-0">
+          {/* SEARCH INPUT */}
+          <div className="relative">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#B39DE5]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search seals by keyword, name, or theme (e.g. 'keito', 'fraud', 'core')..."
+              className="w-full pl-9 pr-9 py-2 rounded-xl bg-[#151234] border-[2px] border-[#2C194D] text-xs font-bold text-[#F5E1C8] placeholder-[#B39DE5]/50 outline-none focus:border-[#F198B7] transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#B39DE5] hover:text-[#F5E1C8] text-xs font-bold"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* CATEGORY BUTTONS */}
+          <div className="flex overflow-x-auto custom-scrollbar gap-2 pt-1">
+            {([
+              { id: 'all', label: '✨ All Seals' },
+              { id: 'cats', label: '🐱 Kitties' },
+              { id: 'topology', label: '🎀 Topology & Math' },
+              { id: 'y2k', label: '🧸 Y2K Charms' },
+              { id: 'mascots', label: '☁️ Nebula & Levin' },
+              { id: 'fraud_ops', label: '🕸️ Fraud Ops' },
+              { id: 'anchor', label: '💜 Anchor' },
+              { id: 'cyber', label: '💎 Cyber' },
+              { id: 'celestial', label: '👑 Celestial' },
+            ] as const).map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setActiveCategory(cat.id as StickerCategory);
+                  triggerHaptic('light');
+                }}
+                className={`px-3 py-1.5 rounded-xl border-[2px] font-extrabold text-xs capitalize transition-all whitespace-nowrap ${
+                  activeCategory === cat.id
+                    ? 'bg-[#f7e5cb] border-[#2C194D] text-[#2C194D] shadow-[0_2px_0_0_#2C194D]'
+                    : 'bg-[#151234] border-[#2C194D]/60 text-[#B39DE5] hover:text-[#F5E1C8]'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* MAIN BODY */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar bg-[#1a153b]">
           {/* STICKER GRID */}
           <div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-[#B39DE5] mb-3 flex items-center gap-1.5">
-              <Sparkles size={13} /> Collectible Seals ({filteredStickers.length})
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {filteredStickers.map(sticker => {
-                const isSelected = selectedSticker?.id === sticker.id;
-                const placedCount = placedStickers.filter(p => p.stickerId === sticker.id).length;
-
-                return (
-                  <button
-                    key={sticker.id}
-                    onClick={() => {
-                      setSelectedSticker(sticker);
-                      triggerHaptic('light');
-                    }}
-                    className={`p-3 rounded-2xl border-[3px] flex flex-col items-center text-center transition-all ${
-                      isSelected
-                        ? 'bg-[#f7e5cb] border-[#2C194D] shadow-[0_4px_0_0_#2C194D] translate-y-[-2px]'
-                        : 'bg-[#151234] border-[#2C194D]/70 hover:border-[#2C194D] text-[#F5E1C8]'
-                    }`}
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-[#2C194D]/20 border border-[#2C194D]/30 flex items-center justify-center text-3xl mb-2">
-                      {sticker.emoji}
-                    </div>
-                    <span className={`text-xs font-black truncate w-full ${isSelected ? 'text-[#2C194D]' : 'text-[#F5E1C8]'}`}>
-                      {sticker.name}
-                    </span>
-                    <p className={`text-[10px] line-clamp-2 mt-1 leading-snug ${isSelected ? 'text-[#2C194D]/80 font-bold' : 'text-[#B39DE5]/80'}`}>
-                      {sticker.description}
-                    </p>
-                    {placedCount > 0 && (
-                      <span className="mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-[#F198B7] text-[#2C194D] border border-[#2C194D]">
-                        {placedCount} placed
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-black uppercase tracking-wider text-[#B39DE5] flex items-center gap-1.5">
+                <Sparkles size={13} /> Collectible Seals ({filteredStickers.length})
+              </h3>
+              {searchQuery && (
+                <span className="text-[11px] font-bold text-[#F198B7]">
+                  Searching &quot;{searchQuery}&quot;
+                </span>
+              )}
             </div>
+
+            {filteredStickers.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-[#151234] border-[2px] border-[#2C194D] text-center space-y-2">
+                <p className="text-sm font-black text-[#F5E1C8]">No matching seals found</p>
+                <p className="text-xs font-bold text-[#B39DE5]">Try adjusting your search terms or selecting another category.</p>
+                <button
+                  onClick={() => { setSearchQuery(''); setActiveCategory('all'); }}
+                  className="mt-2 px-3 py-1.5 rounded-xl bg-[#F198B7] text-[#2C194D] text-xs font-extrabold"
+                >
+                  Clear Filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {filteredStickers.map(sticker => {
+                  const isSelected = selectedSticker?.id === sticker.id;
+                  const placedCount = placedStickers.filter(p => p.stickerId === sticker.id).length;
+
+                  return (
+                    <button
+                      key={sticker.id}
+                      onClick={() => {
+                        setSelectedSticker(sticker);
+                        triggerHaptic('light');
+                      }}
+                      className={`p-3 rounded-2xl border-[3px] flex flex-col items-center text-center transition-all ${
+                        isSelected
+                          ? 'bg-[#f7e5cb] border-[#2C194D] shadow-[0_4px_0_0_#2C194D] translate-y-[-2px]'
+                          : 'bg-[#151234] border-[#2C194D]/70 hover:border-[#2C194D] text-[#F5E1C8]'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-[#2C194D]/20 border border-[#2C194D]/30 flex items-center justify-center text-3xl mb-2">
+                        {sticker.emoji}
+                      </div>
+                      <span className={`text-xs font-black truncate w-full ${isSelected ? 'text-[#2C194D]' : 'text-[#F5E1C8]'}`}>
+                        {sticker.name}
+                      </span>
+                      {sticker.packName && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md my-0.5 truncate max-w-full ${
+                          isSelected ? 'bg-[#2C194D]/10 text-[#2C194D]' : 'bg-[#20153B] text-[#B39DE5]'
+                        }`}>
+                          {sticker.packName}
+                        </span>
+                      )}
+                      <p className={`text-[10px] line-clamp-2 mt-0.5 leading-snug ${isSelected ? 'text-[#2C194D]/80 font-bold' : 'text-[#B39DE5]/80'}`}>
+                        {sticker.description}
+                      </p>
+                      {placedCount > 0 && (
+                        <span className="mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md bg-[#F198B7] text-[#2C194D] border border-[#2C194D]">
+                          {placedCount} placed
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* PLACEMENT CONTROLS */}

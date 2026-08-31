@@ -19,6 +19,7 @@ export interface Message {
   backend?: string;
   reaction?: string;
   searchResults?: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[];
+  generatedImages?: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[];
   // Multi-Entity & Group metadata
   authorEntityId?: string;
   authorDisplayName?: string;

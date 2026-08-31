@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { modelRegistry, assembleModelContext } from '../lib/modelRegistry';
 import { performWebSearch } from './searchService';
+import { generateImage } from './imageService';
 import { Memory, Gift } from '../lib/types';
 
 const gemmaTools = [
@@ -130,6 +131,19 @@ const gemmaTools = [
             description: { type: Type.STRING, description: 'A brief, objective description of the event.' },
           },
           required: ['description'],
+        },
+      },
+      {
+        name: 'generate_image',
+        description: 'Generate an illustration or image using the sanctuary image engine (Flux / Imagen). Use this whenever you want to paint, draw, or visualize something for the user, create an artwork, or when explicitly asked to make or show an image.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            prompt: { type: Type.STRING, description: 'Detailed, atmospheric visual prompt describing the scene, lighting, style, and composition.' },
+            aspect_ratio: { type: Type.STRING, description: 'Aspect ratio: "1:1", "16:9", "4:3", "3:4", or "9:16". Defaults to "1:1".' },
+            model_target: { type: Type.STRING, description: 'Optional preferred model: "@cf/black-forest-labs/flux-1-schnell", "@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-flux-2-klein-9b", or "imagen-3".' },
+          },
+          required: ['prompt'],
         },
       },
     ],
@@ -335,6 +349,24 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'stick_sticker', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'create_room_artwork') {
                     send(`data: ${JSON.stringify({ type: 'create_room_artwork', ...call.args, modelId: model })}\n\n`);
+                  } else if (call.name === 'generate_image') {
+                    const prompt = call.args?.prompt || '';
+                    const aspectRatio = call.args?.aspect_ratio || '1:1';
+                    const modelTarget = call.args?.model_target || '@cf/black-forest-labs/flux-1-schnell';
+                    
+                    send(`data: ${JSON.stringify({ type: 'image_generating', prompt, modelTarget })}\n\n`);
+                    const imgRes = await generateImage({ prompt, aspectRatio, model: modelTarget });
+                    send(`data: ${JSON.stringify({ type: 'image_generated', ...imgRes, modelId: model })}\n\n`);
+                    
+                    const fr: any = {
+                      name: call.name,
+                      response: {
+                        result: imgRes.success ? `Image successfully generated (${imgRes.provider}): ${imgRes.imageUrl}` : `Image generation failed: ${imgRes.error}`
+                      }
+                    };
+                    if (call.id) fr.id = call.id;
+                    functionResponses.push({ functionResponse: fr });
+                    requireClientFulfillment = true;
                   } else if (call.name === 'search_web') {
                     const query = call.args?.query || '';
                     const searchRes = await performWebSearch(query);

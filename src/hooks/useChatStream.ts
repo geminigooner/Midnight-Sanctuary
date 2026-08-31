@@ -187,6 +187,7 @@ export function useChatStream({
     let currentModelFinishReason: string | undefined;
     let currentModelBackend: string | undefined;
     let currentModelSearchResults: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[] = [];
+    let currentModelGeneratedImages: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[] = [];
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -228,6 +229,7 @@ export function useChatStream({
         finishReason: currentModelFinishReason,
         backend: currentModelBackend,
         searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
+        generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
       });
     };
 
@@ -366,6 +368,17 @@ export function useChatStream({
                 imageUrl: generatedUrl,
               });
             }
+          } else if (chunk.type === 'image_generated') {
+            hasToolCalls = true;
+            if (chunk.imageUrl) {
+              currentModelGeneratedImages.push({
+                prompt: chunk.prompt,
+                imageUrl: chunk.imageUrl,
+                provider: chunk.provider,
+                modelUsed: chunk.modelUsed,
+              });
+              updateModelMessage(currentModelText, currentModelThought, 'thinking');
+            }
           } else if (chunk.type === 'search_result') {
             hasToolCalls = true;
             currentModelSearchResults.push({
@@ -444,6 +457,8 @@ export function useChatStream({
               thoughtStatus: 'complete',
               finishReason: currentModelFinishReason,
               backend: currentModelBackend,
+              searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
+              generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
             });
             if (msgs.length > 1 && msgs[1]) {
               onAddMessage(requestConversationId, {
@@ -457,6 +472,8 @@ export function useChatStream({
             currentModelText = '';
             currentModelThought = '';
             currentModelApiParts = [];
+            currentModelSearchResults = [];
+            currentModelGeneratedImages = [];
             rawTextAccumulator = '';
             apiThoughtAccumulator = '';
             isFirstChunk = true;

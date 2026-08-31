@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, getPublicMessageText, getThoughtMessageText } from '../lib/types';
-import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp, Sparkles, Download } from 'lucide-react';
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -224,6 +224,49 @@ export const MessageBubble = React.memo(function MessageBubble({
                     onClick={() => onImageClick?.(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`)}
                   />
                 ) : null)}
+
+            {msg.generatedImages && msg.generatedImages.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {msg.generatedImages.map((genImg, gIdx) => (
+                  <div key={gIdx} className="bg-[#151234] border-[3px] border-[#2C194D] rounded-2xl p-2.5 shadow-[4px_4px_0_#2C194D] overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-[#F5E1C8]">
+                        <Sparkles size={13} className="text-[#F198B7]" />
+                        <span>Visual Output</span>
+                      </div>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#B39DE5]/20 text-[#B39DE5] border border-[#B39DE5]/30 uppercase tracking-wider">
+                        {genImg.modelUsed.includes('flux') ? '⚡ Flux' : genImg.provider}
+                      </span>
+                    </div>
+
+                    <div className="relative group/img overflow-hidden rounded-xl border-[2px] border-[#2C194D] bg-[#0A0818]">
+                      <img 
+                        src={genImg.imageUrl} 
+                        alt={genImg.prompt} 
+                        className="w-full h-auto max-h-[380px] object-cover cursor-pointer hover:scale-[1.02] transition-transform duration-300"
+                        onClick={() => onImageClick?.(genImg.imageUrl)}
+                      />
+                      <div className="absolute top-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                        <a
+                          href={genImg.imageUrl}
+                          download={`sanctuary-artwork-${Date.now()}.png`}
+                          className="p-1.5 bg-[#F5E1C8] hover:bg-[#F198B7] text-[#2C194D] rounded-xl border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] inline-flex items-center gap-1 text-xs font-extrabold"
+                          title="Download Image"
+                        >
+                          <Download size={13} />
+                        </a>
+                      </div>
+                    </div>
+
+                    {genImg.prompt && (
+                      <p className="text-[11px] font-bold text-[#F5E1C8]/80 italic mt-2 px-1 leading-snug">
+                        "{genImg.prompt}"
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         

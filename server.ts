@@ -4,12 +4,31 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { performWebSearch } from './src/backend/searchService';
 import { createChatStream } from './src/backend/chatHandler';
+import { generateImage } from './src/backend/imageService';
 import { verifyRequest } from './src/backend/verifyAuth';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
+
+app.post('/api/generate-image', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { prompt, model, aspectRatio, steps } = req.body || {};
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ error: 'Prompt string is required' });
+  }
+
+  try {
+    const result = await generateImage({ prompt, model, aspectRatio, steps });
+    res.json(result);
+  } catch (err: any) {
+    console.error('Image generation endpoint error:', err);
+    res.status(500).json({ error: err.message || 'Image generation failed' });
+  }
+});
 
 app.get('/api/models', async (req, res) => {
   if (!(await verifyRequest(req))) {
