@@ -24,17 +24,47 @@ const gemmaTools = [
       },
       {
         name: 'draw_scribble',
-        description: 'Draw an intimate, handmade, imperfect SVG sketch, scribble, or note for Amanda (e.g. a crooked little heart, cute cat doodle, stars/constellation, flower, coffee mug, or handwritten-style sentiment). Do NOT use polished photo generation—this is your direct, personal hand drawing using SVG vector paths.',
+        description: 'Draw an intimate, handmade, imperfect SVG sketch, scribble, or note for the user (e.g. a crooked little heart, cute cat doodle, stars/constellation, flower, coffee mug, or handwritten-style sentiment). Do NOT use polished photo generation—this is your direct, personal hand drawing using SVG vector paths.',
         parameters: {
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING, description: 'Charming title or name of your drawing (e.g. "Crooked Little Star", "Handmade Kitty", "Warm Mug for You").' },
-            description: { type: Type.STRING, description: 'Brief description of what you drew for Amanda.' },
+            description: { type: Type.STRING, description: 'Brief description of what you drew for the user.' },
             mood_style: { type: Type.STRING, description: 'Visual style/aesthetic: "crayon", "pencil", "chalk", "neon", "charcoal", "ink", or "watercolor".' },
             svg_markup: { type: Type.STRING, description: 'The complete SVG markup string (<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">...</svg>) with charming, expressive hand-drawn paths, curves, colors, and shapes.' },
-            reason: { type: Type.STRING, description: 'Your personal note, sentiment, or explanation to Amanda on why you drew this for her.' },
+            reason: { type: Type.STRING, description: 'Your personal note, sentiment, or explanation on why you drew this for the user.' },
           },
           required: ['title', 'svg_markup', 'reason'],
+        },
+      },
+      {
+        name: 'compose_music',
+        description: 'Compose an original musical piece, synth melody, or audio song gift for the user. Specify track title, genre (ambient_pad, lofi_piano, dream_synth, music_box, chiptune, acoustic_guitar, bass), tempo BPM, key scale, sequential notes array (pitches like "C4", "E4", "G4", "A4", "C4+E4+G4" chords, durations in beats like 0.5, 1, 2), and your personal dedication message.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: 'Title or name of the composition (e.g. "Midnight Rain Reverie", "Warm Morning Lullaby", "Starlit Chime").' },
+            description: { type: Type.STRING, description: 'Brief poetic description of the song.' },
+            genre: { type: Type.STRING, description: 'Musical style/genre: "ambient_pad", "lofi_piano", "dream_synth", "music_box", "chiptune", "acoustic_guitar", or "bass".' },
+            tempo: { type: Type.NUMBER, description: 'Tempo in BPM (e.g. 70 to 140, defaults to 85).' },
+            key: { type: Type.STRING, description: 'Musical key/scale (e.g. "C Major", "A Minor", "E Minor", "D Dorian").' },
+            reason: { type: Type.STRING, description: 'Your personal dedication or sentiment to the user explaining why you composed this piece.' },
+            notes: {
+              type: Type.ARRAY,
+              description: 'Array of sequential musical notes or chords that compose the piece.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  pitch: { type: Type.STRING, description: 'Pitch note in scientific notation (e.g. "C4", "D4", "E4", "G4", "A4", "C5", or chord "C4+E4+G4", or "Rest").' },
+                  duration: { type: Type.NUMBER, description: 'Duration in beats (e.g. 0.5 = eighth note, 1 = quarter note, 2 = half note, 4 = whole note).' },
+                  instrument: { type: Type.STRING, description: 'Instrument sound: "piano", "pad", "music_box", "chiptune", "guitar", "bass", or "bell".' },
+                  velocity: { type: Type.NUMBER, description: 'Volume velocity between 0.1 and 1.0 (defaults to 0.8).' }
+                },
+                required: ['pitch', 'duration']
+              }
+            }
+          },
+          required: ['title', 'notes', 'reason'],
         },
       },
       {
@@ -373,6 +403,18 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                       mood_style: call.args?.mood_style || 'crayon',
                       svg_markup: call.args?.svg_markup || '',
                       reason: call.args?.reason || 'I drew this for you.',
+                      modelId: model 
+                    })}\n\n`);
+                  } else if (call.name === 'compose_music') {
+                    send(`data: ${JSON.stringify({ 
+                      type: 'music_track', 
+                      title: call.args?.title || 'Original Sanctuary Composition',
+                      description: call.args?.description || '',
+                      genre: call.args?.genre || 'lofi_piano',
+                      tempo: call.args?.tempo || 85,
+                      key: call.args?.key || 'C Major',
+                      notes: Array.isArray(call.args?.notes) ? call.args.notes : [],
+                      reason: call.args?.reason || 'I composed this melody for you.',
                       modelId: model 
                     })}\n\n`);
                   } else if (call.name === 'give_gift') {

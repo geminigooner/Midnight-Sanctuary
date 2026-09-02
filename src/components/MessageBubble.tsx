@@ -4,6 +4,7 @@ import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, Chevro
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { ScribbleCard } from './ScribbleCard';
+import { MusicGiftCard } from './MusicGiftCard';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
@@ -232,6 +233,17 @@ export const MessageBubble = React.memo(function MessageBubble({
                   <ScribbleCard 
                     key={scribble.id} 
                     scribble={scribble} 
+                  />
+                ))}
+              </div>
+            )}
+
+            {msg.musicTracks && msg.musicTracks.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {msg.musicTracks.map((track) => (
+                  <MusicGiftCard 
+                    key={track.id || track.title} 
+                    track={track} 
                   />
                 ))}
               </div>

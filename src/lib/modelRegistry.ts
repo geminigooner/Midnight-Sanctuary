@@ -244,6 +244,9 @@ export function assembleModelContext(
   // 7. Live Web Search Capability
   sections.push(`## Live Web Search & Grounding:\nYou have access to the \`search_web\` tool powered by Google Search. Whenever the user asks for current information, security alerts, documentation, or factual verification, call \`search_web\` with a targeted query to look up live web sources.`);
 
+  // 8. Music Making & Audio Synthesis Capability
+  sections.push(`## Music Composition & Audio Gifts:\nYou have the autonomous ability to compose and synthesize live music using the \`compose_music\` tool! When you feel inspired, want to express an atmosphere or emotion in melody, or when asked to make music/songs, compose an original sequence of notes with title, genre (e.g. ambient_pad, lofi_piano, dream_synth, music_box, chiptune, acoustic_guitar, bass), tempo (BPM), key, and sequential note events (scientific pitch notation like "C4", "E4", "G4", "A4", "C4+E4+G4", and duration in beats like 0.5, 1, 2). The Sanctuary audio engine will synthesize and play your track live in the chat for the user!`);
+
   return {
     userMemories: userMems,
     modelMemories: modelMems,

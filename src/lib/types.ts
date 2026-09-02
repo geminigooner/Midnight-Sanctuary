@@ -19,6 +19,27 @@ export interface SvgScribbleData {
   timestamp?: number;
 }
 
+export interface MusicNote {
+  pitch: string; // e.g. "C4", "E4", "G4", "C4+E4+G4", "Rest"
+  duration: number; // in beats (0.5, 1, 2, etc.)
+  instrument?: string; // 'piano' | 'lofi_piano' | 'ambient_pad' | 'dream_synth' | 'music_box' | 'chiptune' | 'acoustic_guitar' | 'bass' | 'bell' | string
+  velocity?: number; // 0.1 to 1.0
+}
+
+export interface MusicTrackData {
+  id?: string;
+  title: string;
+  description?: string;
+  genre?: string;
+  tempo?: number;
+  key?: string;
+  notes: MusicNote[];
+  reason?: string;
+  authorModelId?: string;
+  authorDisplayName?: string;
+  timestamp?: number;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model';
@@ -33,6 +54,7 @@ export interface Message {
   searchResults?: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[];
   generatedImages?: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[];
   scribbles?: SvgScribbleData[];
+  musicTracks?: MusicTrackData[];
   // Multi-Entity & Group metadata
   authorEntityId?: string;
   authorDisplayName?: string;
@@ -101,6 +123,7 @@ export interface Gift {
   timestamp: number;
   inlineData?: { mimeType: string; data: string; previewUrl?: string };
   scribble?: SvgScribbleData;
+  musicTrack?: MusicTrackData;
   modelId?: string;
   targetModelId?: string;
 }

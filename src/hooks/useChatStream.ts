@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import html2canvas from 'html2canvas';
-import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, SvgScribbleData } from '../lib/types';
+import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, SvgScribbleData, MusicTrackData } from '../lib/types';
 import { streamChat } from '../lib/gemini';
 import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
@@ -192,6 +192,7 @@ export function useChatStream({
     let currentModelSearchResults: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[] = [];
     let currentModelGeneratedImages: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[] = [];
     let currentModelScribbles: SvgScribbleData[] = [];
+    let currentModelMusicTracks: MusicTrackData[] = [];
     let isFirstChunk = true;
 
     const resetIdleTimeout = () => {
@@ -235,6 +236,7 @@ export function useChatStream({
         searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
         generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
         scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
+        musicTracks: currentModelMusicTracks.length > 0 ? currentModelMusicTracks : undefined,
       });
     };
 
@@ -344,6 +346,32 @@ export function useChatStream({
             });
 
             currentModelScribbles.push(scribbleObj);
+            updateModelMessage(currentModelText, currentModelThought, 'thinking');
+          } else if (chunk.type === 'music_track') {
+            hasToolCalls = true;
+            const musicTrackObj: MusicTrackData = {
+              id: uuidv4(),
+              title: chunk.title || 'Original Composition',
+              description: chunk.description,
+              genre: chunk.genre || 'lofi_piano',
+              tempo: chunk.tempo || 85,
+              key: chunk.key || 'C Major',
+              notes: Array.isArray(chunk.notes) ? chunk.notes : [],
+              reason: chunk.reason,
+              authorModelId: chunk.modelId || settings.model,
+              timestamp: Date.now(),
+            };
+
+            onAddGift({
+              from: 'model',
+              modelId: chunk.modelId || settings.model,
+              content: chunk.description || chunk.title || 'Original Music Composition',
+              gift_type: 'music_track',
+              reason: chunk.reason || 'I composed this melody for you.',
+              musicTrack: musicTrackObj,
+            });
+
+            currentModelMusicTracks.push(musicTrackObj);
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;

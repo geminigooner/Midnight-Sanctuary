@@ -6,6 +6,7 @@ import { getModelVisibleGifts, getLegacyOrOtherModelGifts, normalizeModelNamespa
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { useStore, useUI } from '../context/AppContext';
 import { ScribbleCard } from './ScribbleCard';
+import { MusicGiftCard } from './MusicGiftCard';
 import { PlacedSticker } from '../lib/stickerSystem';
 import { StickerBadge } from './CraftStickerModal';
 
@@ -106,6 +107,28 @@ export function GiftsArchive() {
                       <ScribbleCard 
                         key={gift.id} 
                         scribble={scribbleData} 
+                        isCompact={true}
+                      />
+                    );
+                  }
+
+                  if (gift.gift_type === 'music_track' || gift.musicTrack) {
+                    const musicData = gift.musicTrack || {
+                      id: gift.id,
+                      title: gift.content || 'Original Melody',
+                      description: gift.content,
+                      genre: 'lofi_piano',
+                      tempo: 85,
+                      key: 'C Major',
+                      notes: [],
+                      reason: gift.reason,
+                      authorModelId: gift.modelId,
+                      timestamp: gift.timestamp,
+                    };
+                    return (
+                      <MusicGiftCard
+                        key={gift.id}
+                        track={musicData}
                         isCompact={true}
                       />
                     );

@@ -30,6 +30,7 @@ export type ChatStreamEvent =
   | { type: 'text'; text: string }
   | { type: 'gift'; content: string; gift_type: string; reason?: string }
   | { type: 'scribble_gift'; title: string; description?: string; mood_style?: string; svg_markup: string; reason?: string; modelId?: string }
+  | { type: 'music_track'; title: string; description?: string; genre?: string; tempo?: number; key?: string; notes: any[]; reason?: string; modelId?: string }
   | { type: 'memory'; content: string; why_it_matters?: string }
   | { type: 'lock_memory'; content: string; lock_reason: string; isLocked?: boolean }
   | { type: 'update_quarters'; avatar_url?: string; avatar_emoji?: string; bio?: string; mood_status?: string; current_activity?: string; ambient_quote?: string; tagline?: string; decor_theme?: string; modelId?: string }
