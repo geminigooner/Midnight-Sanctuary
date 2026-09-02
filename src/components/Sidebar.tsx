@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Conversation } from '../lib/types';
-import { Plus } from 'lucide-react';
+import { Plus, ShieldCheck, LogIn, LogOut, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
 import { getMotion } from '../lib/motion';
@@ -10,7 +10,7 @@ import { CompanionAvatar } from './CompanionAvatar';
 
 export function Sidebar() {
   const store = useStore();
-  const { setSidebarOpen, setCompanionRosterOpen } = useUI();
+  const { setSidebarOpen, setCompanionRosterOpen, setAuthModalOpen } = useUI();
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -204,6 +204,50 @@ export function Sidebar() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Sanctuary Auth Badge & Profile Bottom Bar */}
+      <div className="p-3 border-t-[3px] border-[#2C194D] bg-[#1a1640] shrink-0 z-10">
+        {store.user ? (
+          <div 
+            onClick={() => setAuthModalOpen(true)}
+            className="flex items-center gap-2.5 p-2 rounded-2xl bg-[#9D7FE3]/20 hover:bg-[#9D7FE3]/30 border-[2px] border-[#2C194D] cursor-pointer transition-all shadow-[2px_2px_0_#2C194D]"
+          >
+            {store.user.photoURL ? (
+              <img
+                src={store.user.photoURL}
+                alt={store.user.displayName || 'User'}
+                className="w-9 h-9 rounded-full border-[2px] border-[#2C194D] object-cover shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center font-bold text-xs text-[#2C194D] shrink-0">
+                {store.user.displayName?.[0] || store.user.email?.[0] || 'U'}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-extrabold text-[#F5E1C8] truncate">{store.user.displayName || 'Sanctuary Owner'}</span>
+                {store.user.email === 'ahatley094@gmail.com' && (
+                  <CheckCircle2 size={13} className="text-emerald-400 shrink-0" strokeWidth={2.5} />
+                )}
+              </div>
+              <p className="text-[10px] font-semibold text-[#B39DE5] truncate">{store.user.email}</p>
+            </div>
+            <div className="w-7 h-7 rounded-xl bg-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shrink-0 shadow-[1px_1px_0_#2C194D]">
+              <ShieldCheck size={14} strokeWidth={2.5} />
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAuthModalOpen(true)}
+            className="w-full py-2.5 px-3 rounded-2xl bg-[#F198B7] hover:bg-[#eb86aa] border-[2.5px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <LogIn size={15} strokeWidth={2.5} />
+            <span>Sign In to Sanctuary</span>
+          </button>
+        )}
       </div>
     </div>
   );

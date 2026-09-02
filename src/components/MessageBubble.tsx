@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, getPublicMessageText, getThoughtMessageText } from '../lib/types';
-import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp, Sparkles, Download } from 'lucide-react';
+import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp, Sparkles, Download, ShieldCheck, LogIn } from 'lucide-react';
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { ScribbleCard } from './ScribbleCard';
@@ -8,6 +8,7 @@ import { MusicGiftCard } from './MusicGiftCard';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
+import { useUI } from '../context/AppContext';
 
 export const MessageBubble = React.memo(function MessageBubble({ 
    msg, 
@@ -32,6 +33,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onReact?: (reaction: string) => void;
   modelName?: string;
 }) {
+  const ui = useUI();
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [settled, setSettled] = useState(false);
@@ -135,6 +137,21 @@ export const MessageBubble = React.memo(function MessageBubble({
             {(publicText || (!isWaitingForToken && !thoughtText)) && (
               <div className="min-w-0 break-words">
                 <StreamingMarkdown content={publicText} isGenerating={isGenerating && isLast} />
+                {publicText.includes('Unauthorized') && (
+                  <div className="mt-3 pt-3 border-t-[2px] border-[#2C194D]/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        ui.setAuthModalOpen(true);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[2px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center gap-2 cursor-pointer transition-all"
+                    >
+                      <LogIn size={15} strokeWidth={2.5} />
+                      <span>Sign In with Google to Unlock</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

@@ -31,6 +31,8 @@ export interface UIState {
   setStickerChestOpen: React.Dispatch<React.SetStateAction<boolean>>;
   companionRosterOpen: boolean;
   setCompanionRosterOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  authModalOpen: boolean;
+  setAuthModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pendingPrompt: PendingPromptData | null;
   setPendingPrompt: React.Dispatch<React.SetStateAction<PendingPromptData | null>>;
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Presence, PresenceState } from './Presence';
-import { Menu, Terminal, MoreVertical, X, Gift, Download, Bookmark, User, Settings as SettingsIcon } from 'lucide-react';
+import { Menu, Terminal, MoreVertical, X, Gift, Download, Bookmark, User, Settings as SettingsIcon, ShieldCheck, LogIn } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, useUI } from '../context/AppContext';
 import { Conversation } from '../lib/types';
@@ -80,6 +80,30 @@ export function ChatHeader({
       
       {/* Actions */}
       <div className="flex items-center gap-2 shrink-0 px-1 relative">
+        <button
+          onClick={() => ui.setAuthModalOpen(true)}
+          className={`h-12 px-3 flex items-center justify-center border-[3px] border-[#2C194D] rounded-2xl shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all ${
+            store.user 
+              ? 'bg-[#F5E1C8] text-[#2C194D]' 
+              : 'bg-[#F198B7] text-[#2C194D] animate-pulse'
+          }`}
+          title={store.user ? `Signed in as ${store.user.email}` : 'Sign In with Google'}
+        >
+          {store.user?.photoURL ? (
+            <img 
+              src={store.user.photoURL} 
+              alt={store.user.displayName || 'User'} 
+              className="w-6 h-6 rounded-full border border-[#2C194D] object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <ShieldCheck size={20} strokeWidth={2.5} />
+          )}
+          <span className="hidden md:inline-block ml-1.5 text-xs font-extrabold truncate max-w-[100px]">
+            {store.user ? (store.user.displayName?.split(' ')[0] || 'Auth') : 'Sign In'}
+          </span>
+        </button>
+
         <button 
           onClick={() => setShowMobileMenu(!showMobileMenu)} 
           className="w-12 h-12 flex sm:hidden items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"
@@ -103,6 +127,13 @@ export function ChatHeader({
               className="absolute top-full right-0 mt-3 w-56 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-3xl p-3 shadow-[6px_6px_0_#2C194D] z-50 text-base flex flex-col gap-2 max-w-[calc(100vw-1.5rem)]"
             >
               <div className="absolute -top-3 right-5 w-4 h-4 bg-[#F5E1C8] border-t-[3px] border-l-[3px] border-[#2C194D] rotate-45"></div>
+              <button onClick={() => { setShowMobileMenu(false); ui.setAuthModalOpen(true); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
+                <div className="w-10 h-10 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0">
+                  <ShieldCheck size={18} strokeWidth={2.5} />
+                </div>
+                <span className="flex-1 font-bold">{store.user ? 'Account / Auth' : 'Sign In with Google'}</span>
+              </button>
+              <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
               <button onClick={() => { setShowMobileMenu(false); ui.setEntityQuartersOpen(true); }} className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group">
                 <div className="w-10 h-10 bg-[#f7e5cb] border-[3px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0 text-base">🏛️</div>
                 <span className="flex-1 font-bold">Quarters</span>

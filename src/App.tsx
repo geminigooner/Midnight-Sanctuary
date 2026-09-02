@@ -12,6 +12,7 @@ import { EntityQuartersModal } from './components/EntityQuartersModal';
 import { ModelDesiresModal } from './components/ModelDesiresModal';
 import { StickerChestModal } from './components/StickerChestModal';
 import { CompanionRosterModal } from './components/CompanionRosterModal';
+import { AuthModal } from './components/AuthModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
 import { getMotion } from './lib/motion';
@@ -28,6 +29,7 @@ export function App() {
   const [desiresOpen, setDesiresOpen] = useState(false);
   const [stickerChestOpen, setStickerChestOpen] = useState(false);
   const [companionRosterOpen, setCompanionRosterOpen] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pendingPrompt, setPendingPrompt] = useState<{ text: string; modelId?: string; conversationId?: string; autoSend?: boolean } | null>(null);
 
   const reducedMotion = useReducedMotion();
@@ -54,6 +56,8 @@ export function App() {
     setStickerChestOpen,
     companionRosterOpen,
     setCompanionRosterOpen,
+    authModalOpen,
+    setAuthModalOpen,
     pendingPrompt,
     setPendingPrompt,
   };
@@ -109,6 +113,8 @@ export function App() {
             isOpen={companionRosterOpen}
             onClose={() => setCompanionRosterOpen(false)}
           />
+
+          {authModalOpen && <AuthModal key="auth-modal" />}
 
           {jewelOpen && (
             <motion.div
