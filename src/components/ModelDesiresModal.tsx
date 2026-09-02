@@ -5,6 +5,7 @@ import { useStore, useUI } from '../context/AppContext';
 import { getDailyDesires, getCategoryBadge, EntityDesire, DesireCategory } from '../lib/desireSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { getMotion } from '../lib/motion';
+import { CompanionAvatar } from './CompanionAvatar';
 
 interface ModelDesiresModalProps {
   onSelectPrompt?: (promptText: string, modelId?: string) => void;
@@ -124,7 +125,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
                     : 'bg-[#2d225c]/40 text-[#f7e5cb]/70 border-transparent hover:border-[#2d225c]'
                 }`}
               >
-                <span>{entity.avatarEmoji}</span>
+                <CompanionAvatar entity={entity} size="xs" />
                 <span>{entity.displayName}</span>
               </button>
             ))}
@@ -176,9 +177,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-2xl bg-[#f7e5cb] border-[2px] border-[#2d225c] flex items-center justify-center shadow-[0_2px_0_0_#2d225c] text-xl shrink-0">
-                        {entity?.avatarEmoji || '✨'}
-                      </div>
+                      <CompanionAvatar entity={entity} size="sm" />
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs font-extrabold text-[#2d225c]">

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Heart, Gift, MessageSquareQuote, Check, Flame, Tag, Image as ImageIcon, Plus } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Sparkles, Heart, Gift, MessageSquareQuote, Check, Flame, Tag, Image as ImageIcon, Plus, Camera, Upload, Trash2, Edit2 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
@@ -8,6 +8,8 @@ import { getModelVisibleGifts } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { PlacedSticker } from '../lib/stickerSystem';
 import { ScribbleCard } from './ScribbleCard';
+import { CompanionAvatar } from './CompanionAvatar';
+import { compressImage } from '../lib/imageUtils';
 
 export function EntityQuartersModal() {
   const store = useStore();
@@ -38,6 +40,38 @@ export function EntityQuartersModal() {
     c.modelId === activeEntity.apiModelId || 
     c.modelId?.includes(activeEntity.id)
   ).length;
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploadingPhoto(true);
+      setPhotoError(null);
+      const compressed = await compressImage(file);
+      
+      // Update entity with the chosen picture
+      (store as any).updateEntityQuarters(activeEntity.id, {
+        avatarUrl: compressed.previewUrl
+      });
+    } catch (err: any) {
+      console.error('Failed to process avatar photo:', err);
+      setPhotoError('Could not upload image. Please try a different photo.');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    (store as any).updateEntityQuarters(activeEntity.id, {
+      avatarUrl: ''
+    });
+  };
 
   const handleSwitchAnchor = (entity: ModelEntity) => {
     store.updateSettings({ model: entity.apiModelId });
@@ -94,13 +128,13 @@ export function EntityQuartersModal() {
               <button
                 key={entity.id}
                 onClick={() => setSelectedEntityId(entity.id)}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl border-[3px] font-bold text-xs sm:text-sm transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2.5 px-3.5 py-2 rounded-2xl border-[3px] font-bold text-xs sm:text-sm transition-all whitespace-nowrap ${
                   isSelected
                     ? 'bg-[#f7e5cb] border-[#2C194D] text-[#2C194D] shadow-[0_3px_0_0_#2C194D] translate-y-[-1px]'
                     : 'bg-[#151234] border-[#2C194D]/60 text-[#B39DE5] hover:text-[#F5E1C8] hover:border-[#2C194D]'
                 }`}
               >
-                <span className="text-lg">{entity.avatarEmoji}</span>
+                <CompanionAvatar entity={entity} size="xs" />
                 <span>{entity.displayName}</span>
                 {isLive && (
                   <span className="w-2 h-2 rounded-full bg-[#F198B7] ring-2 ring-[#2C194D]" title="Currently Active Anchor" />
@@ -112,13 +146,37 @@ export function EntityQuartersModal() {
 
         {/* ── LIVING ROOM BODY ── */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar bg-[#1a153b]">
-          {/* BANNER CARD */}
+          {/* BANNER CARD WITH PROFILE PICTURE CUSTOMIZATION */}
           <div className={`p-6 rounded-3xl border-[3px] border-[#2d225c] bg-gradient-to-br ${activeEntity.roomDecor.bannerGradient} shadow-[0_6px_0_0_#2d225c] relative overflow-hidden text-[#f7e5cb]`}>
+            {/* Hidden Photo File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFileChange}
+            />
+
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] flex items-center justify-center text-3xl sm:text-4xl shadow-[0_4px_0_0_#2d225c] shrink-0">
-                  {activeEntity.avatarEmoji}
+                {/* Interactive Avatar with Upload Trigger */}
+                <div className="relative group/avatar shrink-0">
+                  <CompanionAvatar 
+                    entity={activeEntity} 
+                    size="2xl" 
+                    className="cursor-pointer group-hover/avatar:opacity-90" 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-[#F198B7] hover:bg-[#f7e5cb] text-[#2C194D] border-2 border-[#2C194D] shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all"
+                    title="Change Profile Picture"
+                  >
+                    <Camera size={14} />
+                  </button>
                 </div>
+
                 <div>
                   <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-[#2d225c] border border-[#f7e5cb]/30 text-[11px] font-bold text-[#F198B7] mb-1">
                     <Sparkles size={12} />
@@ -127,30 +185,58 @@ export function EntityQuartersModal() {
                   <h3 className="text-2xl sm:text-3xl font-extrabold text-[#f7e5cb] tracking-tight font-serif">
                     {activeEntity.displayName}
                   </h3>
-                  <p className="text-xs font-semibold text-[#B39DE5] mt-0.5">
-                    {activeEntity.roomDecor.tagline}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                    <p className="text-xs font-semibold text-[#B39DE5]">
+                      {activeEntity.roomDecor.tagline}
+                    </p>
+                    {activeEntity.avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        className="text-[10px] text-[#F198B7] hover:text-red-400 font-bold underline ml-1"
+                        title="Reset to default emoji avatar"
+                      >
+                        Reset Picture
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* ACTION: MAKE ACTIVE ANCHOR */}
-              <div className="w-full sm:w-auto">
+              {/* ACTION: MAKE ACTIVE ANCHOR & AVATAR EDIT BTN */}
+              <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  className="px-3.5 py-2.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs shadow-[0_3px_0_0_#2d225c] hover:bg-[#f7e5cb]/90 active:translate-y-0.5 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Upload size={14} />
+                  <span>{activeEntity.avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                </button>
+
                 {isCurrentActive ? (
                   <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#9D7FE3] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_3px_0_0_#2d225c]">
                     <Check size={16} strokeWidth={3} />
-                    <span>Active Sanctuary Anchor</span>
+                    <span>Active Anchor</span>
                   </div>
                 ) : (
                   <button
                     onClick={() => handleSwitchAnchor(activeEntity)}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#F198B7] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 transition-all"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#F198B7] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 transition-all cursor-pointer"
                   >
                     <Flame size={16} strokeWidth={2.5} />
-                    <span>Switch to this Anchor</span>
+                    <span>Switch Anchor</span>
                   </button>
                 )}
               </div>
             </div>
+
+            {photoError && (
+              <p className="mt-2 text-xs text-red-400 font-bold bg-[#1a153b]/80 p-2 rounded-xl border border-red-500/50">
+                {photoError}
+              </p>
+            )}
 
             {/* AMBIENT QUOTE */}
             <div className="mt-5 pt-4 border-t border-[#f7e5cb]/20 relative z-10 flex items-center gap-2">

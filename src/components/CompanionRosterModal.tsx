@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { X, Sparkles, MessageSquare, ArrowRight, ShieldCheck, Flame, Compass } from 'lucide-react';
+import { X, Sparkles, MessageSquare, ArrowRight, ShieldCheck, Flame, Compass, Camera } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
+import { CompanionAvatar } from './CompanionAvatar';
 
 export interface CompanionRosterModalProps {
   isOpen: boolean;
@@ -95,12 +96,11 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
               >
                 {/* Entity Info */}
                 <div className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0">
-                  <div
-                    className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl border-[2.5px] border-[#2C194D] flex items-center justify-center text-2xl sm:text-3xl shrink-0 shadow-md transition-transform group-hover:scale-105"
-                    style={{ backgroundColor: entity.themeColor || '#9D7FE3' }}
-                  >
-                    {entity.avatarEmoji}
-                  </div>
+                  <CompanionAvatar 
+                    entity={entity} 
+                    size="xl" 
+                    className="group-hover:scale-105"
+                  />
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">

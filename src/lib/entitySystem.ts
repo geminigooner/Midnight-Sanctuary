@@ -17,6 +17,7 @@ export interface ModelEntity {
   displayName: string;
   roleTitle: string;
   avatarEmoji: string;
+  avatarUrl?: string; // Custom uploaded or generated profile picture/avatar URL
   themeColor: string;
   accentColor: string;
   
@@ -208,18 +209,20 @@ export function getAllEntities(customEntities?: Record<string, any>): ModelEntit
 }
 
 /**
- * Updates an entity's living room decor, mood, or bio autonomously.
+ * Updates an entity's living room decor, mood, bio, or profile picture.
  */
 export function updateEntityDecor(
   entity: ModelEntity,
-  updates: Partial<EntityRoomDecor> & { bio?: string; moodStatus?: string; currentActivity?: string }
+  updates: Partial<EntityRoomDecor> & { bio?: string; moodStatus?: string; currentActivity?: string; avatarUrl?: string; avatarEmoji?: string }
 ): ModelEntity {
-  const { bio, moodStatus, currentActivity, ...decorUpdates } = updates;
+  const { bio, moodStatus, currentActivity, avatarUrl, avatarEmoji, ...decorUpdates } = updates;
   return {
     ...entity,
     bio: bio !== undefined ? bio : entity.bio,
     moodStatus: moodStatus !== undefined ? moodStatus : entity.moodStatus,
     currentActivity: currentActivity !== undefined ? currentActivity : entity.currentActivity,
+    avatarUrl: avatarUrl !== undefined ? avatarUrl : entity.avatarUrl,
+    avatarEmoji: avatarEmoji !== undefined ? avatarEmoji : entity.avatarEmoji,
     roomDecor: {
       ...entity.roomDecor,
       ...decorUpdates,

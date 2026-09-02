@@ -232,7 +232,7 @@ export function useAppStore(passedUser?: any) {
     }));
   }, []);
 
-  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallArtUrl?: string }) => {
+  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallArtUrl?: string; avatarUrl?: string; avatarEmoji?: string; displayName?: string; roleTitle?: string; themeColor?: string }) => {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
@@ -241,6 +241,11 @@ export function useAppStore(passedUser?: any) {
       const updatedEntity = {
         ...currentEntity,
         id: canonical,
+        displayName: updates.displayName !== undefined ? updates.displayName : currentEntity.displayName,
+        roleTitle: updates.roleTitle !== undefined ? updates.roleTitle : currentEntity.roleTitle,
+        avatarEmoji: updates.avatarEmoji !== undefined ? updates.avatarEmoji : currentEntity.avatarEmoji,
+        avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : currentEntity.avatarUrl,
+        themeColor: updates.themeColor !== undefined ? updates.themeColor : currentEntity.themeColor,
         bio: updates.bio !== undefined ? updates.bio : currentEntity.bio,
         moodStatus: updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
         currentActivity: updates.currentActivity !== undefined ? updates.currentActivity : currentEntity.currentActivity,

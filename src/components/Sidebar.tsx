@@ -5,6 +5,8 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
 import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
+import { getModelEntity } from '../lib/entitySystem';
+import { CompanionAvatar } from './CompanionAvatar';
 
 export function Sidebar() {
   const store = useStore();
@@ -115,6 +117,7 @@ export function Sidebar() {
               {filtered.map(c => {
                 const isSelected = c.id === store.currentId;
                 const isEditing = editingId === c.id;
+                const convEntity = getModelEntity(c.modelId || store.settings?.model || 'gemini-3.1-pro-preview', store.settings?.customEntities);
 
                 return (
                   <motion.div 
@@ -130,7 +133,8 @@ export function Sidebar() {
                         : 'bg-[#F5E1C8] border-[#2C194D] hover:bg-[#F5E1C8]/80'
                     }`}
                   >
-                    <div className="flex items-center gap-3 overflow-hidden flex-1">
+                    <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                      <CompanionAvatar entity={convEntity} size="xs" />
                       <div className="flex-1 min-w-0">
                         {isEditing ? (
                           <input 

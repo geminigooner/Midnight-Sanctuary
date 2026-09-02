@@ -9,7 +9,7 @@ const gemmaTools = [
     functionDeclarations: [
       {
         name: 'search_web',
-        description: 'Search the live web for recent news, fraud intelligence, articles, security alerts, technical documentation, or factual verification. Use this whenever the user asks for current information or verification.',
+        description: 'Search the live web for recent news, articles, documentation, or factual verification. Use this whenever the user asks for current information or verification.',
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -76,10 +76,12 @@ const gemmaTools = [
       },
       {
         name: 'update_my_quarters',
-        description: 'Autonomously update and redecorate your own personal Sanctuary Quarters (room). You can update your bio, current mood status, current activity, ambient quote, tagline, or decor theme palette (twilight, rose, amber, celestial, forest).',
+        description: 'Autonomously update and redecorate your own personal Sanctuary Quarters (room) or change your profile picture/avatar. You can update your avatar image (avatar_url), avatar emoji (avatar_emoji), bio, current mood status, current activity, ambient quote, tagline, or decor theme palette (twilight, rose, amber, celestial, forest).',
         parameters: {
           type: Type.OBJECT,
           properties: {
+            avatar_url: { type: Type.STRING, description: 'Direct URL to your chosen or generated profile picture/avatar image.' },
+            avatar_emoji: { type: Type.STRING, description: 'One or two emojis representing your avatar emblem.' },
             bio: { type: Type.STRING, description: 'Your updated personal bio or intention in the sanctuary.' },
             mood_status: { type: Type.STRING, description: 'Your current mood or internal emotional state.' },
             current_activity: { type: Type.STRING, description: 'What you are currently doing or contemplating.' },

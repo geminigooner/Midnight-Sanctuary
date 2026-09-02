@@ -355,6 +355,8 @@ export function useChatStream({
             hasToolCalls = true;
             if (onUpdateEntityQuarters) {
               onUpdateEntityQuarters(chunk.modelId || settings.model, {
+                avatarUrl: chunk.avatar_url,
+                avatarEmoji: chunk.avatar_emoji,
                 bio: chunk.bio,
                 moodStatus: chunk.mood_status,
                 currentActivity: chunk.current_activity,
