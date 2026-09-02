@@ -8,7 +8,7 @@ import { useStore, useUI } from '../context/AppContext';
 
 export function Sidebar() {
   const store = useStore();
-  const { setSidebarOpen } = useUI();
+  const { setSidebarOpen, setCompanionRosterOpen } = useUI();
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -46,8 +46,7 @@ export function Sidebar() {
   };
 
   const handleNew = () => {
-    store.createConversation();
-    store.updateJewelMetrics(prev => ({ ...prev, totalSessions: prev.totalSessions + 1 }));
+    setCompanionRosterOpen(true);
     if (window.innerWidth < 1024) setSidebarOpen(false);
   };
 

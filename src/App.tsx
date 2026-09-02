@@ -11,6 +11,7 @@ import { ProfileModal } from './components/ProfileModal';
 import { EntityQuartersModal } from './components/EntityQuartersModal';
 import { ModelDesiresModal } from './components/ModelDesiresModal';
 import { StickerChestModal } from './components/StickerChestModal';
+import { CompanionRosterModal } from './components/CompanionRosterModal';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
 import { getMotion } from './lib/motion';
@@ -26,6 +27,7 @@ export function App() {
   const [entityQuartersOpen, setEntityQuartersOpen] = useState(false);
   const [desiresOpen, setDesiresOpen] = useState(false);
   const [stickerChestOpen, setStickerChestOpen] = useState(false);
+  const [companionRosterOpen, setCompanionRosterOpen] = useState(false);
 
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
@@ -49,6 +51,8 @@ export function App() {
     setDesiresOpen,
     stickerChestOpen,
     setStickerChestOpen,
+    companionRosterOpen,
+    setCompanionRosterOpen,
   };
 
   return (
@@ -96,6 +100,12 @@ export function App() {
           {desiresOpen && <ModelDesiresModal key="desires-modal" />}
 
           {stickerChestOpen && <StickerChestModal key="sticker-chest-modal" />}
+          
+          <CompanionRosterModal
+            key="companion-roster-modal"
+            isOpen={companionRosterOpen}
+            onClose={() => setCompanionRosterOpen(false)}
+          />
 
           {jewelOpen && (
             <motion.div

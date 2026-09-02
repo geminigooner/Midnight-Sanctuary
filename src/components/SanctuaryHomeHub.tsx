@@ -12,14 +12,17 @@ import {
   Compass,
   MessageSquareQuote,
   Castle,
-  Tag
+  Tag,
+  Users,
+  MessageSquare
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
-import { getModelEntity } from '../lib/entitySystem';
+import { getAllEntities } from '../lib/entitySystem';
 import { getDailyDesires, getCategoryBadge } from '../lib/desireSystem';
 import { calculateJewelLevel } from '../lib/jewelSystem';
 import { DEFAULT_SETTINGS } from '../lib/types';
+import { triggerHaptic } from '../lib/haptics';
 
 interface SanctuaryHomeHubProps {
   onSelectPrompt: (promptText: string) => void;
@@ -30,7 +33,6 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
   const ui = useUI();
   const settings = store?.settings || DEFAULT_SETTINGS;
   const profile = store?.profile || null;
-  const availableModels = store?.availableModels || [];
   const conversations = store?.conversations || [];
   const gifts = store?.gifts || [];
   const jewelMetrics = store?.jewelMetrics || null;
@@ -66,13 +68,17 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
 
   const memoryCount = settings?.memories?.length || 0;
   const giftCount = gifts?.length || 0;
-  const currentEntity = getModelEntity(settings?.model || 'gemini-2.5-flash');
-  const activeModelName = availableModels.find(m => m.name === settings?.model)?.displayName || currentEntity.displayName;
+  const allEntities = getAllEntities(settings?.customEntities);
   const jewelLevel = calculateJewelLevel(jewelMetrics);
   
   const dailyDesires = getDailyDesires((settings as any)?.modelDesires);
-  const activeDesire = dailyDesires.find(d => d.entityId === currentEntity.id) || dailyDesires[0];
+  const activeDesire = dailyDesires[0];
   const activeDesireBadge = activeDesire ? getCategoryBadge(activeDesire.category) : null;
+
+  const handleOpenCompanionChooser = () => {
+    triggerHaptic('medium');
+    ui.setCompanionRosterOpen(true);
+  };
 
   return (
     <motion.div 
@@ -81,7 +87,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="flex flex-col items-center justify-start w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 select-none bg-[#1a153b]"
     >
-      {/* ── TIME-SENSITIVE TOP CARD (CHUNKY TAN) ── */}
+      {/* ── TIME-SENSITIVE TOP CARD (NEUTRAL SANCTUARY THRESHOLD) ── */}
       <div className="w-full max-w-2xl mb-6">
         <motion.div 
           initial={{ scale: 0.98, opacity: 0 }}
@@ -91,18 +97,37 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
         >
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#2d225c] text-xs text-[#f7e5cb] font-bold mb-3 shadow-sm">
             <span>{greetingInfo.icon}</span>
-            <span className="tracking-wide uppercase text-[10px] text-[#B39DE5]">Anchor Session</span>
+            <span className="tracking-wide uppercase text-[10px] text-[#B39DE5]">Sanctuary Threshold</span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#F198B7]"></span>
-            <span className="text-[#F198B7] font-semibold">{activeModelName}</span>
+            <span className="text-[#F198B7] font-semibold">{allEntities.length} Companions Present</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#2d225c] tracking-tight mb-2 font-serif">
             {greetingInfo.greeting}
           </h1>
 
-          <p className="text-sm sm:text-base font-semibold text-[#2d225c]/80 max-w-md mx-auto leading-relaxed">
+          <p className="text-sm sm:text-base font-semibold text-[#2d225c]/80 max-w-md mx-auto leading-relaxed mb-4">
             {greetingInfo.subtext}
           </p>
+
+          {/* CHOOSE COMPANION PORTAL BUTTON */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+            <button
+              onClick={handleOpenCompanionChooser}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Users className="w-5 h-5 text-[#2d225c]" />
+              <span>Choose Who to Talk To</span>
+              <ArrowRight className="w-4 h-4 text-[#2d225c]" />
+            </button>
+
+            <button
+              onClick={() => ui.setEntityQuartersOpen(true)}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#f7e5cb] hover:bg-[#2d225c]/10 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span>🏛️ Step Into Quarters</span>
+            </button>
+          </div>
         </motion.div>
       </div>
 
