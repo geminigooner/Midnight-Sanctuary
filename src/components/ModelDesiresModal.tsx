@@ -5,6 +5,7 @@ import { useStore, useUI } from '../context/AppContext';
 import { getDailyDesires, getCategoryBadge, EntityDesire, DesireCategory } from '../lib/desireSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { getMotion } from '../lib/motion';
+import { triggerHaptic } from '../lib/haptics';
 import { CompanionAvatar } from './CompanionAvatar';
 
 interface ModelDesiresModalProps {
@@ -29,6 +30,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
 
   const handleFulfill = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    triggerHaptic('medium');
     setDesires(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, status: 'fulfilled' as const, fulfilledAt: Date.now() } : d);
       store.updateSettings({
@@ -39,17 +41,42 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
   };
 
   const handleLaunchSession = (desire: EntityDesire) => {
-    // Switch active model to the desiring entity
+    triggerHaptic('heavy');
+    // Normalize target model ID
     const targetModel = desire.entityId.startsWith('models/') ? desire.entityId : `models/${desire.entityId}`;
+    
+    // 1. Mark desire as fulfilled
+    const updated = desires.map(d => d.id === desire.id ? { ...d, status: 'fulfilled' as const, fulfilledAt: Date.now() } : d);
+    setDesires(updated);
+
+    // 2. Update store settings with new active model and updated desires
     store.updateSettings({
-      model: targetModel
+      model: targetModel,
+      modelDesires: updated,
+    } as any);
+
+    // 3. Create a fresh dedicated conversation for exploring this desire
+    const convTitle = `✨ ${desire.title} · ${desire.entityName}`;
+    const promptToSend = desire.suggestedPrompt || desire.wishText || `I want to explore your wish: "${desire.title}" with you!`;
+    
+    const newConv = store.createConversation(targetModel, convTitle);
+    store.setCurrentId(newConv.id);
+
+    // 4. Request auto-send via pendingPrompt
+    ui.setPendingPrompt({
+      text: promptToSend,
+      modelId: targetModel,
+      conversationId: newConv.id,
+      autoSend: true,
     });
 
-    if (onSelectPrompt) {
-      onSelectPrompt(desire.suggestedPrompt, targetModel);
-    }
-
+    // 5. Close desires modal and mobile sidebar
     ui.setDesiresOpen(false);
+    ui.setSidebarOpen(false);
+
+    if (onSelectPrompt) {
+      onSelectPrompt(promptToSend, targetModel);
+    }
   };
 
   const filteredDesires = desires.filter(d => {

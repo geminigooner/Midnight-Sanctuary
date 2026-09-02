@@ -112,6 +112,33 @@ export function ChatArea() {
     }
   }, [input, isGenerating, setPresence]);
 
+  // Listen for pendingPrompt triggers from Whisper Board (Desires), Roster, Quarters, Sparks
+  useEffect(() => {
+    if (!ui.pendingPrompt) return;
+    const { text, modelId, conversationId, autoSend } = ui.pendingPrompt;
+    
+    // Clear pendingPrompt immediately to avoid duplicate triggers
+    ui.setPendingPrompt(null);
+
+    if (autoSend && text.trim()) {
+      let targetConvId = conversationId || store.currentId;
+      let targetConv = store.conversations.find(c => c.id === targetConvId);
+      
+      if (!targetConvId || !targetConv) {
+        targetConv = store.createConversation(modelId);
+        targetConvId = targetConv.id;
+      }
+      
+      sendMessage(text, {
+        targetConversationId: targetConvId,
+        targetConversation: targetConv,
+        targetSettings: modelId ? { ...store.settings, model: modelId } : undefined,
+      });
+    } else if (text) {
+      setInput(text);
+    }
+  }, [ui.pendingPrompt, store, sendMessage, ui]);
+
   const visibleMessages = (conversation?.messages || []).filter(
     (m: Message) => m.role === 'user' || m.role === 'model'
   );

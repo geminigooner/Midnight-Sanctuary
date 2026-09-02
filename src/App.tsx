@@ -28,6 +28,7 @@ export function App() {
   const [desiresOpen, setDesiresOpen] = useState(false);
   const [stickerChestOpen, setStickerChestOpen] = useState(false);
   const [companionRosterOpen, setCompanionRosterOpen] = useState(false);
+  const [pendingPrompt, setPendingPrompt] = useState<{ text: string; modelId?: string; conversationId?: string; autoSend?: boolean } | null>(null);
 
   const reducedMotion = useReducedMotion();
   const modalMotion = getMotion('heavy', reducedMotion);
@@ -53,6 +54,8 @@ export function App() {
     setStickerChestOpen,
     companionRosterOpen,
     setCompanionRosterOpen,
+    pendingPrompt,
+    setPendingPrompt,
   };
 
   return (

@@ -398,13 +398,13 @@ export function useAppStore(passedUser?: any) {
     });
   }, []);
 
-  const createConversation = useCallback(() => {
+  const createConversation = useCallback((customModelId?: string, customTitle?: string, initialMessages?: Message[]) => {
     const newId = uuidv4();
     const newConv: Conversation = {
       id: newId,
-      title: 'New Sanctuary',
-      messages: [],
-      modelId: settings.model,
+      title: customTitle || 'New Sanctuary',
+      messages: initialMessages || [],
+      modelId: customModelId || settings.model,
       updatedAt: Date.now()
     };
     setConversations(prev => [newConv, ...prev]);

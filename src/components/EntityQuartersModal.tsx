@@ -80,6 +80,13 @@ export function EntityQuartersModal() {
     }
   };
 
+  const handleChatNow = (entity: ModelEntity) => {
+    store.updateSettings({ model: entity.apiModelId });
+    const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName}`);
+    store.setCurrentId(newConv.id);
+    setEntityQuartersOpen(false);
+  };
+
   const handleRemoveSticker = (placedId: string) => {
     (store as any).removePlacedSticker(placedId);
   };
@@ -215,8 +222,17 @@ export function EntityQuartersModal() {
                   <span>{activeEntity.avatarUrl ? 'Change Photo' : 'Upload Photo'}</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => handleChatNow(activeEntity)}
+                  className="px-3.5 py-2.5 rounded-2xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_3px_0_0_#2d225c] active:translate-y-0.5 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <MessageSquareQuote size={16} strokeWidth={2.5} />
+                  <span>Chat</span>
+                </button>
+
                 {isCurrentActive ? (
-                  <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#9D7FE3] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_3px_0_0_#2d225c]">
+                  <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] text-[#2d225c] font-extrabold text-xs sm:text-sm shadow-[0_3px_0_0_#2d225c]">
                     <Check size={16} strokeWidth={3} />
                     <span>Active Anchor</span>
                   </div>

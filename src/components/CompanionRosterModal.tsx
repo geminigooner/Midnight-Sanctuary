@@ -30,11 +30,7 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
       onSelectCompanion(entity);
     } else {
       // Create a fresh conversation with this selected model
-      const newConv = store.createConversation();
-      store.updateConversation(newConv.id, { 
-        modelId: entity.apiModelId,
-        title: `Sanctuary with ${entity.displayName}`
-      });
+      const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName}`);
       store.setCurrentId(newConv.id);
     }
     onClose();

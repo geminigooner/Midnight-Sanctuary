@@ -3,6 +3,13 @@ import { useAppStore } from '../lib/store';
 
 export type AppStore = ReturnType<typeof useAppStore>;
 
+export interface PendingPromptData {
+  text: string;
+  modelId?: string;
+  conversationId?: string;
+  autoSend?: boolean;
+}
+
 export interface UIState {
   sidebarOpen: boolean;
   setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -24,6 +31,8 @@ export interface UIState {
   setStickerChestOpen: React.Dispatch<React.SetStateAction<boolean>>;
   companionRosterOpen: boolean;
   setCompanionRosterOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  pendingPrompt: PendingPromptData | null;
+  setPendingPrompt: React.Dispatch<React.SetStateAction<PendingPromptData | null>>;
 }
 
 export interface AppContextType {

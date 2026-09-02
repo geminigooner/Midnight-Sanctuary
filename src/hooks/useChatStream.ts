@@ -102,16 +102,21 @@ export function useChatStream({
       replaceIndex?: number;
       additionalMessages?: Message[];
       attachments?: { mimeType: string; data: string; previewUrl?: string }[];
+      targetConversationId?: string;
+      targetConversation?: Conversation;
+      targetSettings?: AppSettings;
     }
   ) => {
-    const requestConversationId = conversationRef.current?.id;
+    const { replaceIndex, additionalMessages, attachments = [], targetConversationId, targetConversation, targetSettings } = options || {};
+
+    const requestConversationId = targetConversationId || conversationRef.current?.id;
 
     if (!requestConversationId) {
       console.warn("sendMessage blocked: No active conversation.");
       return;
     }
 
-    const { replaceIndex, additionalMessages, attachments = [] } = options || {};
+    const effectiveSettings = targetSettings || (targetConversation?.modelId ? { ...settings, model: targetConversation.modelId } : settings);
 
     if ((isGenerating || isGeneratingRef.current) && (!additionalMessages || additionalMessages.length === 0)) {
       console.warn("sendMessage blocked: Generation already in progress.");
@@ -153,7 +158,7 @@ export function useChatStream({
       };
     });
 
-    let currentMessages = [...(conversationRef.current?.messages || [])];
+    let currentMessages = [...((targetConversation || conversationRef.current)?.messages || [])];
     
     if (replaceIndex !== undefined && replaceIndex > 0) {
       currentMessages = currentMessages.slice(0, replaceIndex);
@@ -197,7 +202,7 @@ export function useChatStream({
 
     const resetIdleTimeout = () => {
       if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      const isGemini3 = settings.model.includes('gemini-3');
+      const isGemini3 = effectiveSettings.model.includes('gemini-3');
       const timeoutMs = isGemini3 ? 240000 : 90000;
       watchdogTimeoutRef.current = setTimeout(() => {
         console.warn("Idle timeout triggered. Aborting stuck stream.");
@@ -242,7 +247,7 @@ export function useChatStream({
 
     try {
       let hasToolCalls = false;
-      const generator = streamChat(currentMessages, settings, gifts, profile, abortControllerRef.current.signal);
+      const generator = streamChat(currentMessages, effectiveSettings, gifts, profile, abortControllerRef.current.signal);
       
       onAddMessage(requestConversationId, { 
         id: modelMsgId, 
@@ -250,7 +255,7 @@ export function useChatStream({
         parts: [{ text: '' }],
         publicText: '',
         thoughtText: '',
-        thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
+        thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
         timestamp: Date.now() 
       });
 
