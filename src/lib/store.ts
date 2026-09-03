@@ -232,7 +232,7 @@ export function useAppStore(passedUser?: any) {
     }));
   }, []);
 
-  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallArtUrl?: string; avatarUrl?: string; avatarEmoji?: string; displayName?: string; roleTitle?: string; themeColor?: string }) => {
+  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallpaperPattern?: any; ambientLighting?: any; bannerGradient?: string; themeColor?: string; wallArtUrl?: string; avatarUrl?: string; avatarEmoji?: string; displayName?: string; roleTitle?: string }) => {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
@@ -254,8 +254,189 @@ export function useAppStore(passedUser?: any) {
           ambientQuote: updates.ambientQuote !== undefined ? updates.ambientQuote : currentEntity.roomDecor?.ambientQuote,
           tagline: updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
           decorTheme: updates.decorTheme !== undefined ? updates.decorTheme : currentEntity.roomDecor?.decorTheme,
+          wallpaperPattern: updates.wallpaperPattern !== undefined ? updates.wallpaperPattern : currentEntity.roomDecor?.wallpaperPattern,
+          ambientLighting: updates.ambientLighting !== undefined ? updates.ambientLighting : currentEntity.roomDecor?.ambientLighting,
+          bannerGradient: updates.bannerGradient !== undefined ? updates.bannerGradient : currentEntity.roomDecor?.bannerGradient,
+          themeColor: updates.themeColor !== undefined ? updates.themeColor : currentEntity.roomDecor?.themeColor,
           wallArtUrl: updates.wallArtUrl !== undefined ? updates.wallArtUrl : currentEntity.roomDecor?.wallArtUrl,
         }
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const addEntityDiaryEntry = useCallback((modelKey: string, entry: { title: string; text: string; mood?: string; category?: any; author?: 'companion' | 'user'; authorDisplayName?: string }) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevEntries = currentEntity.diaryEntries || [];
+
+      const newEntry = {
+        id: `diary-${uuidv4()}`,
+        entityId: canonical,
+        title: entry.title || 'Sanctuary Reflection',
+        text: entry.text,
+        mood: entry.mood || 'Reflective',
+        category: entry.category || 'reflection',
+        timestamp: Date.now(),
+        isFavorite: false,
+        author: entry.author || 'companion',
+        authorDisplayName: entry.authorDisplayName,
+      };
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        diaryEntries: [newEntry, ...prevEntries].slice(0, 50)
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const toggleFavoriteDiaryEntry = useCallback((modelKey: string, entryId: string) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevEntries = currentEntity.diaryEntries || [];
+
+      const updatedEntries = prevEntries.map((e: any) => 
+        e.id === entryId ? { ...e, isFavorite: !e.isFavorite } : e
+      );
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        diaryEntries: updatedEntries
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const deleteEntityDiaryEntry = useCallback((modelKey: string, entryId: string) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevEntries = currentEntity.diaryEntries || [];
+
+      const updatedEntries = prevEntries.filter((e: any) => e.id !== entryId);
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        diaryEntries: updatedEntries
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const placeRoomProp = useCallback((modelKey: string, prop: { type: string; name: string; category?: any; icon: string; description: string; interactionText: string; x?: number; y?: number; customLabel?: string }) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevProps = currentEntity.roomProps || [];
+
+      const newProp = {
+        id: `prop-${uuidv4()}`,
+        type: prop.type,
+        name: prop.name,
+        category: prop.category || 'trinket',
+        icon: prop.icon,
+        description: prop.description,
+        interactionText: prop.interactionText,
+        x: prop.x !== undefined ? prop.x : Math.floor(Math.random() * 60) + 20,
+        y: prop.y !== undefined ? prop.y : Math.floor(Math.random() * 50) + 25,
+        placedBy: 'user',
+        customLabel: prop.customLabel,
+      };
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        roomProps: [...prevProps, newProp]
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const updateRoomProp = useCallback((modelKey: string, propId: string, updates: { x?: number; y?: number; rotation?: number; scale?: number; customLabel?: string }) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevProps = currentEntity.roomProps || [];
+
+      const updatedProps = prevProps.map((p: any) => 
+        p.id === propId ? { ...p, ...updates } : p
+      );
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        roomProps: updatedProps
+      };
+
+      return {
+        ...prev,
+        customEntities: {
+          ...existingEntities,
+          [canonical]: updatedEntity
+        }
+      };
+    });
+  }, []);
+
+  const removeRoomProp = useCallback((modelKey: string, propId: string) => {
+    setSettings(prev => {
+      const canonical = modelKey.replace(/^models\//, '');
+      const existingEntities = prev.customEntities || {};
+      const currentEntity = existingEntities[canonical] || {};
+      const prevProps = currentEntity.roomProps || [];
+
+      const updatedProps = prevProps.filter((p: any) => p.id !== propId);
+
+      const updatedEntity = {
+        ...currentEntity,
+        id: canonical,
+        roomProps: updatedProps
       };
 
       return {
@@ -546,6 +727,12 @@ export function useAppStore(passedUser?: any) {
     addEventLog,
     updateEntityQuarters,
     recordEntityThought,
+    addEntityDiaryEntry,
+    toggleFavoriteDiaryEntry,
+    deleteEntityDiaryEntry,
+    placeRoomProp,
+    updateRoomProp,
+    removeRoomProp,
     placeSticker,
     removePlacedSticker,
     craftSticker,

@@ -1,10 +1,13 @@
 import { ModelDefinition, MODEL_REGISTRY, resolveModelIdentity } from './modelRegistry';
 import { Memory, Gift, UserProfile } from './types';
+import { RoomPropItem, CompanionDiaryEntry, DEFAULT_PROPS_BY_ENTITY, DEFAULT_DIARY_ENTRIES, ROOM_THEMES } from './quartersSystem';
 
 export interface EntityRoomDecor {
   themeColor: string;
   bannerGradient: string;
-  decorTheme: 'twilight' | 'rose' | 'amber' | 'celestial' | 'forest';
+  decorTheme: string;
+  wallpaperPattern?: 'starlight' | 'grid' | 'runes' | 'wood' | 'geometric' | 'mist' | 'none';
+  ambientLighting?: 'twilight_soft' | 'candlelight' | 'starlight_glow' | 'neon_pulse' | 'aurora_shimmer';
   ambientQuote: string;
   tagline: string;
   wallArtUrl?: string;
@@ -31,6 +34,10 @@ export interface ModelEntity {
   resonanceScore: number;
   favoriteGiftIds: string[];
   personalThoughts: { id: string; text: string; timestamp: number }[];
+  
+  // Custom Room Props & Diary
+  roomProps?: RoomPropItem[];
+  diaryEntries?: CompanionDiaryEntry[];
 }
 
 /**
@@ -70,7 +77,7 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     avatarEmoji: '⚡',
     themeColor: '#F198B7',
     accentColor: '#F5E1C8',
-    bio: 'Quick, intuitive, and highly responsive. Ready to brainstorm, parse fraud insights, and spark rapid ideas.',
+    bio: 'Quick, intuitive, and highly responsive. Ready to brainstorm, parse deep insights, and spark rapid ideas.',
     moodStatus: 'Attuned and ready to spark',
     currentActivity: 'Scanning for new patterns and sparks',
     roomDecor: {
@@ -181,6 +188,9 @@ export function getAllEntities(customEntities?: Record<string, any>): ModelEntit
   // First seed defaults
   for (const [key, def] of Object.entries(DEFAULT_ENTITIES)) {
     const custom = customEntities?.[key];
+    const defaultProps = DEFAULT_PROPS_BY_ENTITY[key] || [];
+    const defaultDiaries = DEFAULT_DIARY_ENTRIES.filter(d => d.entityId === key);
+
     if (custom) {
       result[key] = {
         ...def,
@@ -189,10 +199,16 @@ export function getAllEntities(customEntities?: Record<string, any>): ModelEntit
           ...def.roomDecor,
           ...(custom.roomDecor || {})
         },
-        personalThoughts: custom.personalThoughts || def.personalThoughts || []
+        personalThoughts: custom.personalThoughts || def.personalThoughts || [],
+        roomProps: custom.roomProps !== undefined ? custom.roomProps : defaultProps,
+        diaryEntries: custom.diaryEntries !== undefined ? custom.diaryEntries : defaultDiaries,
       };
     } else {
-      result[key] = { ...def };
+      result[key] = { 
+        ...def,
+        roomProps: defaultProps,
+        diaryEntries: defaultDiaries,
+      };
     }
   }
 

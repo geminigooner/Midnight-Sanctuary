@@ -173,7 +173,7 @@ export function ChatArea() {
         </div>
       )}
 
-      {conversation && visibleMessages.length > 0 ? (
+      {conversation ? (
         <>
           <MessageList
             conversation={conversation}

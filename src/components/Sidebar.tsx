@@ -17,9 +17,10 @@ export function Sidebar() {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
-  const modelConversations = store.conversations;
+  const modelConversations = Array.isArray(store.conversations) ? store.conversations : [];
   const filtered = modelConversations.filter(c => 
-    (c.title.toLowerCase().includes(search.toLowerCase()) || c.messages.some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
+    c && ((c.title?.toLowerCase() || '').includes(search.toLowerCase()) || 
+    (c.messages || []).some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
   );
 
   const reducedMotion = useReducedMotion();

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Presence, PresenceState } from './Presence';
-import { Menu, Terminal, MoreVertical, X, Gift, Download, Bookmark, User, Settings as SettingsIcon, ShieldCheck, LogIn } from 'lucide-react';
+import { Menu, Terminal, MoreVertical, X, Gift, Download, Bookmark, User, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore, useUI } from '../context/AppContext';
 import { Conversation } from '../lib/types';
+import { resolveModelIdentity } from '../lib/modelSystem';
+import { getAllEntities } from '../lib/entitySystem';
 
 export interface ChatHeaderProps {
   conversation: Conversation;
@@ -20,69 +22,80 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const store = useStore();
   const ui = useUI();
-  const { settings, availableModels } = store;
+  const { settings } = store;
 
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const modelsList = Array.isArray(availableModels) ? availableModels : [];
-  const currentModelDisplayName = modelsList.find(m => m.name === settings.model)?.displayName || settings.model?.split('/').pop() || 'Unknown Model';
+  const activeModelId = conversation?.modelId || settings?.model || 'models/gemini-3.1-pro-preview';
+  const entities = getAllEntities(settings?.customEntities);
+  const resolved = resolveModelIdentity(activeModelId);
+  const companion = entities.find(e => e.id === resolved?.identityId || e.apiModelId === activeModelId) || entities[0];
 
   return (
-    <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2C194D] rounded-[32px] bg-[#9D7FE3] relative z-30 shrink-0 min-w-0 shadow-[4px_4px_0px_#2C194D]">
-      <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-1">
+    <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2C194D] rounded-[28px] sm:rounded-[32px] bg-[#9D7FE3] relative z-30 shrink-0 min-w-0 shadow-[4px_4px_0px_#2C194D]">
+      {/* Left Navigation Controls */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <button 
           onClick={() => ui.setSidebarOpen(prev => !prev)} 
-          className="w-12 h-12 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 lg:hidden shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"
+          className="w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 lg:hidden shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-0.5 transition-all"
+          title="Open Menu"
         >
-          <Menu size={24} strokeWidth={2.5} />
+          <Menu size={20} strokeWidth={2.5} />
         </button>
-        <Presence state={presence} />
-        
-        <div className="flex-1 flex items-center justify-center min-w-0">
-          <div className="flex flex-col items-center min-w-0 w-full max-w-[280px]">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[#F5E1C8]">✨</span>
-              <span className="font-bold text-[#2C194D] text-lg sm:text-xl tracking-tight">Midnight Sanctuary</span>
-              <span className="text-[#F5E1C8]">✨</span>
-            </div>
-            <div className="relative bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-full px-4 py-1.5 w-full flex justify-between items-center shadow-[inset_0_-2px_0_rgba(0,0,0,0.05)] text-sm overflow-hidden">
-              <select 
-                value={settings.model} 
-                onChange={(e) => {
-                  store.updateSettings({ model: e.target.value });
-                  if (conversation) {
-                    store.updateConversation(conversation.id, { modelId: e.target.value });
-                  }
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              >
-                {modelsList.map(m => (
-                  <option key={m.name} value={m.name}>{m.displayName}</option>
-                ))}
-                {settings.model && !modelsList.find(m => m.name === settings.model) && (
-                  <option key={settings.model} value={settings.model}>{settings.model.split('/').pop()}</option>
-                )}
-              </select>
-              <span className="text-[#2C194D] font-bold truncate pointer-events-none">
-                ✨ {currentModelDisplayName}
-              </span>
-              <svg className="pointer-events-none shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2C194D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </div>
-            <div className="flex justify-between w-full px-2 mt-1 text-[10px] sm:text-xs font-bold text-[#2C194D]/70 uppercase tracking-widest">
-              <span>Temp {settings.temperature.toFixed(1)}</span>
-              <span className="text-[#F198B7]">•</span>
-              <span>Msgs {conversation.messages.length} / {visibleMessagesCount}</span>
-            </div>
-          </div>
+        <button
+          onClick={() => store.setCurrentId(null)}
+          className="w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-0.5 transition-all text-base"
+          title="Return to Sanctuary Home Hub"
+        >
+          🏠
+        </button>
+        <div className="hidden sm:flex">
+          <Presence state={presence} />
         </div>
       </div>
       
-      {/* Actions */}
-      <div className="flex items-center gap-2 shrink-0 px-1 relative">
+      {/* Center: Clean Companion Identity Banner */}
+      <div className="flex-1 flex items-center justify-center min-w-0 px-1.5">
+        <button
+          onClick={() => ui.setEntityQuartersOpen(true)}
+          className="flex items-center gap-2 px-3 py-1 sm:py-1.5 rounded-2xl bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#FAF0E4] active:translate-y-0.5 transition-all max-w-[210px] sm:max-w-xs min-w-0 group"
+          title="View Companion Quarters & Room"
+        >
+          <div 
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl border-2 border-[#2C194D] flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden shadow-xs"
+            style={{ backgroundColor: companion?.themeColor || '#9D7FE3' }}
+          >
+            {companion?.avatarUrl ? (
+              <img 
+                src={companion.avatarUrl} 
+                alt={companion.displayName} 
+                className="w-full h-full object-cover" 
+                referrerPolicy="no-referrer" 
+              />
+            ) : (
+              <span>{companion?.avatarEmoji || '🔮'}</span>
+            )}
+          </div>
+          <div className="flex flex-col text-left min-w-0 flex-1">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="font-extrabold text-[#2C194D] text-xs sm:text-sm truncate leading-tight">
+                {companion?.displayName || 'Companion'}
+              </span>
+              <span className="text-[10px] text-[#F198B7] shrink-0">✦</span>
+            </div>
+            <span className="text-[10px] text-[#2C194D]/75 font-semibold truncate leading-none">
+              {companion?.roleTitle || 'Sanctuary Anchor'}
+            </span>
+          </div>
+        </button>
+      </div>
+      
+      {/* Right Actions & Account */}
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <button
           onClick={() => ui.setAuthModalOpen(true)}
-          className={`h-12 px-3 flex items-center justify-center border-[3px] border-[#2C194D] rounded-2xl shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all ${
+          className={`h-10 sm:h-11 px-2.5 sm:px-3 flex items-center justify-center border-[3px] border-[#2C194D] rounded-2xl shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-0.5 transition-all ${
             store.user 
               ? 'bg-[#F5E1C8] text-[#2C194D]' 
               : 'bg-[#F198B7] text-[#2C194D] animate-pulse'
@@ -93,29 +106,29 @@ export function ChatHeader({
             <img 
               src={store.user.photoURL} 
               alt={store.user.displayName || 'User'} 
-              className="w-6 h-6 rounded-full border border-[#2C194D] object-cover"
+              className="w-5 h-5 rounded-full border border-[#2C194D] object-cover"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <ShieldCheck size={20} strokeWidth={2.5} />
+            <ShieldCheck size={18} strokeWidth={2.5} />
           )}
-          <span className="hidden md:inline-block ml-1.5 text-xs font-extrabold truncate max-w-[100px]">
+          <span className="hidden md:inline-block ml-1.5 text-xs font-extrabold truncate max-w-[90px]">
             {store.user ? (store.user.displayName?.split(' ')[0] || 'Auth') : 'Sign In'}
           </span>
         </button>
 
         <button 
           onClick={() => setShowMobileMenu(!showMobileMenu)} 
-          className="w-12 h-12 flex sm:hidden items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all"
+          className="w-10 h-10 sm:w-11 sm:h-11 flex sm:hidden items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-0.5 transition-all"
         >
-          <MoreVertical size={24} strokeWidth={2.5} />
+          <MoreVertical size={20} strokeWidth={2.5} />
         </button>
         <button 
           onClick={() => setShowDevPanel(!showDevPanel)} 
-          className="hidden sm:flex w-12 h-12 items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all" 
+          className="hidden sm:flex w-11 h-11 items-center justify-center bg-[#F198B7] border-[3px] border-[#2C194D] rounded-2xl text-[#2C194D] shrink-0 shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-0.5 transition-all" 
           title="Developer Details"
         >
-          <Terminal size={20} strokeWidth={2.5} />
+          <Terminal size={18} strokeWidth={2.5} />
         </button>
         
         <AnimatePresence>
@@ -196,16 +209,16 @@ export function ChatHeader({
                 
                 <div className="space-y-2 text-xs font-bold">
                   <div className="flex justify-between">
-                    <span className="text-[#2C194D]/70">Provider</span>
-                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D]">Google</span>
+                    <span className="text-[#2C194D]/70">Companion</span>
+                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]">{companion?.displayName}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#2C194D]/70">Model ID</span>
                     <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]" title={settings.model}>{settings.model}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[#2C194D]/70">Endpoint</span>
-                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]">/api/chat</span>
+                    <span className="text-[#2C194D]/70">Messages</span>
+                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D]">{conversation?.messages?.length || 0}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#2C194D]/70">Temperature</span>

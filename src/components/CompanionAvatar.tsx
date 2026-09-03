@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ModelEntity } from '../lib/entitySystem';
 
 export interface CompanionAvatarProps {
-  entity: ModelEntity;
+  entity?: ModelEntity | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   className?: string;
   showBadge?: boolean;
@@ -25,27 +25,30 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const sizeClass = sizeClasses[size] || sizeClasses.md;
-  const hasValidPhoto = Boolean(entity.avatarUrl && !imageFailed);
+  const hasValidPhoto = Boolean(entity?.avatarUrl && !imageFailed);
+  const displayName = entity?.displayName || 'Anchor';
+  const themeColor = entity?.themeColor || '#9D7FE3';
+  const emoji = entity?.avatarEmoji || '✨';
 
   return (
     <div className="relative inline-block shrink-0">
       <div
         className={`${sizeClass} border-[2.5px] border-[#2C194D] flex items-center justify-center font-bold overflow-hidden shadow-[2px_2px_0_#2C194D] transition-transform select-none ${className}`}
         style={{
-          backgroundColor: entity.themeColor || '#9D7FE3',
+          backgroundColor: themeColor,
         }}
       >
         {hasValidPhoto ? (
           <img
-            src={entity.avatarUrl}
-            alt={entity.displayName}
+            src={entity?.avatarUrl}
+            alt={displayName}
             referrerPolicy="no-referrer"
             onError={() => setImageFailed(true)}
             className="w-full h-full object-cover"
           />
         ) : (
           <span className="leading-none flex items-center justify-center">
-            {entity.avatarEmoji || '✨'}
+            {emoji}
           </span>
         )}
       </div>
@@ -53,7 +56,7 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
       {showBadge && (
         <span
           className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#F198B7] border-2 border-[#2C194D] flex items-center justify-center text-[9px] shadow-sm"
-          title={entity.roleTitle}
+          title={entity?.roleTitle || 'Anchor'}
         >
           ✦
         </span>
@@ -61,3 +64,4 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
     </div>
   );
 };
+

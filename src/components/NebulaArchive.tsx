@@ -32,13 +32,14 @@ function hashString(str: string) {
 }
 
 function getKeywords(title: string) {
-  return title.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  return (title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
 }
 
 function computeLayout(conversations: Conversation[]) {
-  const nodes = conversations.map(c => {
-    const keywords = getKeywords(c.title);
-    const kwHash = keywords.length > 0 ? hashString(keywords.sort()[0]) : hashString(c.id);
+  const safeList = Array.isArray(conversations) ? conversations : [];
+  const nodes = safeList.map(c => {
+    const keywords = getKeywords(c?.title || '');
+    const kwHash = keywords.length > 0 ? hashString(keywords.sort()[0]) : hashString(c?.id || 'conv');
     const rand = sfc32(kwHash, kwHash, kwHash, 1);
     
     const angle = (Math.abs(kwHash) % 360) * (Math.PI / 180);
@@ -48,7 +49,7 @@ function computeLayout(conversations: Conversation[]) {
       ...c,
       x: Math.cos(angle) * distance,
       y: Math.sin(angle) * distance,
-      depth: c.messages.length,
+      depth: (c?.messages || []).length,
       cluster: kwHash,
     };
   });
