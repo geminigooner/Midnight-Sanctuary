@@ -9,7 +9,8 @@ import {
   writeBatch,
   query,
   orderBy,
-  limit
+  onSnapshot,
+  Unsubscribe
 } from 'firebase/firestore';
 import { Conversation, AppSettings, JewelMetrics, Gift, Message, UserProfile } from './types';
 
@@ -38,137 +39,198 @@ export interface GranularLoadedState {
 }
 
 /**
- * Loads user state from granular subcollections, with fallback & auto-migration
- * from legacy monolithic users/{userId} documents.
+ * Pillar 2: Live Real-Time Multi-Device State Subscription (onSnapshot)
+ * Listens to settings, companions, gifts, conversations and granular message streams.
  */
-export async function loadState(userId: string, onData: (data: GranularLoadedState | null) => void) {
-  try {
-    const settingsDocRef = doc(db, 'users', userId, 'settings', 'app');
-    const convsColRef = collection(db, 'users', userId, 'conversations');
-    const giftsColRef = collection(db, 'users', userId, 'gifts');
-    const companionsColRef = collection(db, 'users', userId, 'companions');
+export function subscribeToState(
+  userId: string, 
+  onData: (data: GranularLoadedState | null) => void
+): Unsubscribe {
+  if (!userId) return () => {};
 
-    // Run parallel fetch for root subcollections
-    const [settingsSnap, convsSnap, giftsSnap, companionsSnap] = await Promise.all([
-      getDoc(settingsDocRef).catch(() => null),
-      getDocs(convsColRef).catch(() => null),
-      getDocs(giftsColRef).catch(() => null),
-      getDocs(companionsColRef).catch(() => null),
-    ]);
+  const unsubscribers: Unsubscribe[] = [];
+  let isSubscribed = true;
 
-    const hasGranularData = 
-      (settingsSnap && settingsSnap.exists()) || 
-      (convsSnap && !convsSnap.empty) || 
-      (giftsSnap && !giftsSnap.empty);
+  const liveState: GranularLoadedState = {
+    conversations: [],
+    settings: undefined,
+    jewelMetrics: undefined,
+    gifts: [],
+    userProfile: null,
+    companions: {},
+  };
 
-    if (hasGranularData) {
-      console.log('[Sanctuary Persistence] Found granular subcollections for user:', userId);
-      
-      const settingsData = settingsSnap?.exists() ? settingsSnap.data() : null;
-      
-      // Load conversations and their individual messages subcollections
-      const loadedConversations: Conversation[] = [];
-      if (convsSnap && !convsSnap.empty) {
-        for (const convDoc of convsSnap.docs) {
-          const convMeta = convDoc.data();
-          const convId = convDoc.id;
+  const notify = () => {
+    if (!isSubscribed) return;
+    onData({
+      conversations: [...(liveState.conversations || [])],
+      settings: liveState.settings,
+      jewelMetrics: liveState.jewelMetrics,
+      gifts: [...(liveState.gifts || [])],
+      userProfile: liveState.userProfile,
+      companions: { ...(liveState.companions || {}) },
+    });
+  };
 
-          // Fetch messages subcollection for this conversation
-          const messagesRef = collection(db, 'users', userId, 'conversations', convId, 'messages');
-          const messagesQuery = query(messagesRef, orderBy('timestamp', 'asc'));
-          const messagesSnap = await getDocs(messagesQuery).catch(() => null);
+  const messageUnsubs = new Map<string, Unsubscribe>();
 
-          let messages: Message[] = [];
-          if (messagesSnap && !messagesSnap.empty) {
-            messages = messagesSnap.docs.map(mDoc => ({
-              ...(mDoc.data() as Message),
-              id: mDoc.id,
-            }));
-          } else if (Array.isArray(convMeta.messages)) {
-            // In case messages were stored directly on conversation metadata
-            messages = convMeta.messages;
-          }
+  const settingsDocRef = doc(db, 'users', userId, 'settings', 'app');
+  const convsColRef = collection(db, 'users', userId, 'conversations');
+  const giftsColRef = collection(db, 'users', userId, 'gifts');
+  const companionsColRef = collection(db, 'users', userId, 'companions');
 
-          loadedConversations.push({
-            id: convId,
-            title: convMeta.title || 'Untitled Conversation',
-            modelId: convMeta.modelId,
-            updatedAt: convMeta.updatedAt || convMeta.createdAt || Date.now(),
-            messages,
-            type: convMeta.type || 'direct',
-            participantEntityIds: convMeta.participantEntityIds,
-          });
-        }
-      }
-
-      // Sort conversations by most recent
-      loadedConversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-      // Load gifts
-      const loadedGifts: Gift[] = [];
-      if (giftsSnap && !giftsSnap.empty) {
-        giftsSnap.forEach(gDoc => {
-          loadedGifts.push({ ...(gDoc.data() as Gift), id: gDoc.id });
-        });
-      }
-
-      // Load custom companion quarters / sovereignty states
-      const loadedCompanions: Record<string, any> = {};
-      if (companionsSnap && !companionsSnap.empty) {
-        companionsSnap.forEach(cDoc => {
-          loadedCompanions[cDoc.id] = cDoc.data();
-        });
-      }
-
-      onData({
-        conversations: loadedConversations,
-        settings: settingsData?.settings,
-        jewelMetrics: settingsData?.jewelMetrics,
-        userProfile: settingsData?.userProfile,
-        gifts: loadedGifts,
-        companions: loadedCompanions,
-      });
-      return () => {};
-    }
-
-    // Fallback: Check legacy monolithic users/{userId} document
-    console.log('[Sanctuary Persistence] Checking legacy monolithic document for user:', userId);
-    const legacyDocRef = doc(db, 'users', userId);
-    const legacySnap = await getDoc(legacyDocRef);
-
-    if (legacySnap.exists()) {
-      const legacyData = legacySnap.data();
-      console.log('[Sanctuary Persistence] Legacy data found! Migrating to granular subcollections...');
-      
-      // Pass data to UI immediately for instant rendering
-      onData(legacyData);
-
-      // Trigger automatic background migration into subcollections
-      migrateLegacyToGranular(userId, legacyData).catch(err => {
-        console.error('[Sanctuary Persistence] Error during legacy migration:', err);
-      });
+  // 1. Real-Time Settings Listener
+  const unsubSettings = onSnapshot(settingsDocRef, (snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      liveState.settings = data.settings;
+      liveState.jewelMetrics = data.jewelMetrics;
+      liveState.userProfile = data.userProfile;
+      notify();
     } else {
-      console.log('[Sanctuary Persistence] No existing user state found (fresh profile).');
-      onData(null);
+      checkLegacyOnce(userId, (legacy) => {
+        if (legacy && isSubscribed) {
+          liveState.settings = legacy.settings;
+          liveState.jewelMetrics = legacy.jewelMetrics;
+          liveState.userProfile = legacy.userProfile;
+          if (Array.isArray(legacy.conversations) && (!liveState.conversations || liveState.conversations.length === 0)) {
+            liveState.conversations = legacy.conversations;
+          }
+          if (Array.isArray(legacy.gifts) && (!liveState.gifts || liveState.gifts.length === 0)) {
+            liveState.gifts = legacy.gifts;
+          }
+          notify();
+        }
+      });
     }
-  } catch (error) {
-    console.error('[Sanctuary Persistence] Error loading state:', error);
-    onData(null);
-  }
+  }, (err) => {
+    console.error('[Realtime Sync] Error on settings snapshot:', err);
+  });
+  unsubscribers.push(unsubSettings);
 
-  return () => {};
+  // 2. Real-Time Conversations & Messages Listener
+  const unsubConvs = onSnapshot(convsColRef, (convsSnap) => {
+    const existingConvsMap = new Map((liveState.conversations || []).map(c => [c.id, c]));
+    const updatedConvs: Conversation[] = [];
+    const activeIds = new Set<string>();
+
+    convsSnap.forEach((cDoc) => {
+      const convId = cDoc.id;
+      activeIds.add(convId);
+      const convMeta = cDoc.data();
+      const existing = existingConvsMap.get(convId);
+
+      const conv: Conversation = {
+        id: convId,
+        title: convMeta.title || 'Untitled Conversation',
+        modelId: convMeta.modelId,
+        updatedAt: convMeta.updatedAt || convMeta.createdAt || Date.now(),
+        messages: existing?.messages || (Array.isArray(convMeta.messages) ? convMeta.messages : []),
+        type: convMeta.type || 'direct',
+        participantEntityIds: convMeta.participantEntityIds,
+      };
+      updatedConvs.push(conv);
+
+      // Deep message subcollection real-time listener
+      if (!messageUnsubs.has(convId)) {
+        const msgsColRef = collection(db, 'users', userId, 'conversations', convId, 'messages');
+        const msgsQuery = query(msgsColRef, orderBy('timestamp', 'asc'));
+        
+        const unsubMsgs = onSnapshot(msgsQuery, (msgsSnap) => {
+          if (!isSubscribed) return;
+          const messages: Message[] = [];
+          msgsSnap.forEach(mDoc => {
+            messages.push({ ...(mDoc.data() as Message), id: mDoc.id });
+          });
+
+          const target = (liveState.conversations || []).find(c => c.id === convId);
+          if (target) {
+            target.messages = messages;
+            notify();
+          }
+        }, (err) => {
+          console.error(`[Realtime Sync] Messages snapshot error in conv ${convId}:`, err);
+        });
+
+        messageUnsubs.set(convId, unsubMsgs);
+      }
+    });
+
+    for (const [id, unsub] of messageUnsubs.entries()) {
+      if (!activeIds.has(id)) {
+        unsub();
+        messageUnsubs.delete(id);
+      }
+    }
+
+    if (updatedConvs.length > 0) {
+      updatedConvs.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      liveState.conversations = updatedConvs;
+      notify();
+    }
+  }, (err) => {
+    console.error('[Realtime Sync] Conversations snapshot error:', err);
+  });
+  unsubscribers.push(unsubConvs);
+
+  // 3. Real-Time Gifts Listener
+  const unsubGifts = onSnapshot(giftsColRef, (giftsSnap) => {
+    const gifts: Gift[] = [];
+    giftsSnap.forEach(gDoc => {
+      gifts.push({ ...(gDoc.data() as Gift), id: gDoc.id });
+    });
+    liveState.gifts = gifts;
+    notify();
+  }, (err) => {
+    console.error('[Realtime Sync] Gifts snapshot error:', err);
+  });
+  unsubscribers.push(unsubGifts);
+
+  // 4. Real-Time Companion Quarters Listener
+  const unsubCompanions = onSnapshot(companionsColRef, (compsSnap) => {
+    const comps: Record<string, any> = {};
+    compsSnap.forEach(cDoc => {
+      comps[cDoc.id] = cDoc.data();
+    });
+    liveState.companions = comps;
+    notify();
+  }, (err) => {
+    console.error('[Realtime Sync] Companions snapshot error:', err);
+  });
+  unsubscribers.push(unsubCompanions);
+
+  return () => {
+    isSubscribed = false;
+    unsubscribers.forEach(unsub => unsub());
+    messageUnsubs.forEach(unsub => unsub());
+    messageUnsubs.clear();
+  };
 }
 
 /**
- * Automatically migrates monolithic state into granular Firestore subcollections
+ * Legacy monolithic check for initial migration
+ */
+async function checkLegacyOnce(userId: string, onLegacy: (data: any) => void) {
+  try {
+    const legacyDocRef = doc(db, 'users', userId);
+    const snap = await getDoc(legacyDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      onLegacy(data);
+      migrateLegacyToGranular(userId, data).catch(console.error);
+    }
+  } catch (err) {
+    console.error('[Realtime Sync] Legacy check error:', err);
+  }
+}
+
+/**
+ * Migration helper
  */
 export async function migrateLegacyToGranular(userId: string, legacyData: any) {
   if (!userId || !legacyData) return;
 
   try {
-    console.log('[Migration] Starting granular subcollection migration for user:', userId);
-    
-    // 1. Migrate settings, metrics, and userProfile
     if (legacyData.settings || legacyData.jewelMetrics || legacyData.userProfile) {
       const settingsRef = doc(db, 'users', userId, 'settings', 'app');
       await setDoc(settingsRef, removeUndefined({
@@ -179,21 +241,17 @@ export async function migrateLegacyToGranular(userId: string, legacyData: any) {
       }), { merge: true });
     }
 
-    // 2. Migrate conversations & their messages
     if (Array.isArray(legacyData.conversations) && legacyData.conversations.length > 0) {
       for (const conv of legacyData.conversations) {
         if (!conv || !conv.id) continue;
-        
         const convRef = doc(db, 'users', userId, 'conversations', conv.id);
         const { messages, ...meta } = conv;
         
-        // Save conversation metadata
         await setDoc(convRef, removeUndefined({
           ...meta,
           updatedAt: conv.updatedAt || Date.now(),
         }), { merge: true });
 
-        // Save individual messages in subcollection
         if (Array.isArray(messages) && messages.length > 0) {
           const batch = writeBatch(db);
           let count = 0;
@@ -214,7 +272,6 @@ export async function migrateLegacyToGranular(userId: string, legacyData: any) {
       }
     }
 
-    // 3. Migrate gifts
     if (Array.isArray(legacyData.gifts) && legacyData.gifts.length > 0) {
       const giftBatch = writeBatch(db);
       for (const gift of legacyData.gifts) {
@@ -225,21 +282,18 @@ export async function migrateLegacyToGranular(userId: string, legacyData: any) {
       await giftBatch.commit();
     }
 
-    // 4. Mark root document as migrated
     const rootUserDocRef = doc(db, 'users', userId);
     await setDoc(rootUserDocRef, {
       migratedToGranular: true,
       updatedAt: Date.now(),
     }, { merge: true });
-
-    console.log('[Migration] Granular subcollection migration completed successfully for user:', userId);
   } catch (err) {
-    console.error('[Migration] Failed during granular subcollection migration:', err);
+    console.error('[Migration] Failed during granular migration:', err);
   }
 }
 
 // -------------------------------------------------------------
-// Granular Save Operations
+// Granular Real-Time Save Handlers
 // -------------------------------------------------------------
 
 export async function saveSettingsDoc(
@@ -263,13 +317,11 @@ export async function saveConversationDoc(userId: string, conv: Conversation) {
   const convRef = doc(db, 'users', userId, 'conversations', conv.id);
   const { messages, ...meta } = conv;
 
-  // Save conversation metadata
   await setDoc(convRef, removeUndefined({
     ...meta,
     updatedAt: Date.now(),
   }), { merge: true });
 
-  // Save messages into subcollection
   if (Array.isArray(messages) && messages.length > 0) {
     const batch = writeBatch(db);
     let count = 0;
@@ -337,9 +389,6 @@ export async function saveCompanionDoc(userId: string, companionId: string, comp
   }), { merge: true });
 }
 
-/**
- * Full state save that synchronizes both granular subcollections and updates root user doc
- */
 export async function saveFullGranularState(userId: string, payload: {
   conversations?: Conversation[];
   settings?: AppSettings;
@@ -351,12 +400,10 @@ export async function saveFullGranularState(userId: string, payload: {
 
   const promises: Promise<any>[] = [];
 
-  // 1. Settings subcollection
   if (payload.settings) {
     promises.push(saveSettingsDoc(userId, payload.settings, payload.jewelMetrics, payload.userProfile));
   }
 
-  // 2. Conversations and messages
   if (Array.isArray(payload.conversations)) {
     for (const conv of payload.conversations) {
       if (conv?.id) {
@@ -365,7 +412,6 @@ export async function saveFullGranularState(userId: string, payload: {
     }
   }
 
-  // 3. Gifts subcollection
   if (Array.isArray(payload.gifts)) {
     for (const gift of payload.gifts) {
       if (gift?.id) {
@@ -374,7 +420,6 @@ export async function saveFullGranularState(userId: string, payload: {
     }
   }
 
-  // 4. Update root doc timestamp
   promises.push(
     setDoc(doc(db, 'users', userId), {
       updatedAt: Date.now(),
@@ -385,19 +430,9 @@ export async function saveFullGranularState(userId: string, payload: {
   await Promise.all(promises);
 }
 
-// Backward-compatible exports
-export async function saveConversation(userId: string, payload: any) {
-  return saveFullGranularState(userId, payload);
-}
-
-export async function saveMemory(userId: string, payload: any) {
-  return saveFullGranularState(userId, payload);
-}
-
-export async function saveGift(userId: string, payload: any) {
-  return saveFullGranularState(userId, payload);
-}
-
-export async function saveSettings(userId: string, payload: any) {
-  return saveFullGranularState(userId, payload);
-}
+// Alias for loadState -> subscribeToState
+export const loadState = subscribeToState;
+export const saveConversation = saveFullGranularState;
+export const saveMemory = saveFullGranularState;
+export const saveGift = saveFullGranularState;
+export const saveSettings = saveFullGranularState;

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut, onAuthStateChanged } from './firebase';
 import { 
   loadState, 
+  subscribeToState,
   saveSettings, 
   saveMessageDoc, 
   deleteMessageDoc, 
@@ -41,52 +42,44 @@ export function useAppStore(passedUser?: any) {
 
   useEffect(() => {
     if (!user) return;
-    let isInitialLoad = true;
     
-    let cancelled = false;
-    loadState(user.uid, (data) => {
-      if (cancelled) return;
+    const unsubscribe = subscribeToState(user.uid, (data) => {
       if (data) {
-        if (isInitialLoad) {
-          if (data.conversations) {
-            const parsed = data.conversations;
-            const filtered = parsed.map((c: any) => ({
-              ...c,
-              messages: c.messages || []
-            }));
-            setConversations(filtered);
-            if (filtered.length > 0) {
-              setCurrentId((prev) => prev || filtered[0].id);
+        if (data.conversations) {
+          const parsed = data.conversations;
+          const filtered = parsed.map((c: any) => ({
+            ...c,
+            messages: c.messages || []
+          }));
+          setConversations(filtered);
+          if (filtered.length > 0) {
+            setCurrentId((prev) => prev || filtered[0].id);
+          }
+        }
+        if (data.settings) {
+          setSettings(prev => ({ 
+            ...DEFAULT_SETTINGS, 
+            ...data.settings,
+            customEntities: {
+              ...(data.settings?.customEntities || {}),
+              ...(data.companions || {})
             }
-          }
-          if (data.settings) {
-            setSettings(prev => ({ 
-              ...DEFAULT_SETTINGS, 
-              ...data.settings,
-              customEntities: {
-                ...(data.settings?.customEntities || {}),
-                ...(data.companions || {})
-              }
-            }));
-          }
-          if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
-          if (data.gifts) setGifts(data.gifts);
-          if (data.userProfile) setProfile(data.userProfile);
-          
-          console.log('[Sanctuary Store] Loaded granular state from Firestore, convs:', data.conversations ? data.conversations.length : 0);
-          setDataLoaded(true);
-          isInitialLoad = false;
+          }));
         }
+        if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
+        if (data.gifts) setGifts(data.gifts);
+        if (data.userProfile) setProfile(data.userProfile);
+        
+        setDataLoaded(true);
       } else {
-        if (isInitialLoad) {
-          setDataLoaded(true);
-          isInitialLoad = false;
-        }
+        setDataLoaded(true);
       }
     });
 
     return () => {
-      cancelled = true;
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
     };
   }, [user]);
 
