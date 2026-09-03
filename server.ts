@@ -58,6 +58,29 @@ app.get('/api/models', async (req, res) => {
   }
 });
 
+app.post('/api/embed', async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'Text string is required' });
+  }
+  const apiKey = process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'API key not configured' });
+  }
+  try {
+    const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+    const response = await ai.models.embedContent({
+      model: 'text-embedding-004',
+      contents: text.trim(),
+    });
+    const embeddingValues = (response as any).embedding?.values || (response as any).embeddings?.[0]?.values || [];
+    res.json({ embedding: embeddingValues });
+  } catch (err: any) {
+    console.error('Embedding endpoint error:', err);
+    res.status(500).json({ error: err.message || 'Embedding failed' });
+  }
+});
+
 app.post('/api/search', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });

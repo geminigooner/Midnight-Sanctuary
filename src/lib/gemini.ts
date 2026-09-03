@@ -3,6 +3,7 @@ import { auth, signOut } from './firebase';
 import { getContextMemories, isUserMemory } from './memorySystem';
 import { getModelVisibleGifts } from './giftSystem';
 import { modelRegistry } from './modelRegistry';
+import { retrieveRelevantMemories } from './vectorMemory';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -95,11 +96,27 @@ export async function* streamChat(
     const relevantMemories = getContextMemories(settings.memories, settings.model);
 
     if (relevantMemories.length > 0) {
-      const memoryText = relevantMemories.map(m => {
+      // Find last user query to score semantic relevance
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+      const lastUserText = lastUserMsg?.parts?.map(p => p.text || '').join(' ') || '';
+
+      let topMemories = relevantMemories;
+      if (lastUserText.trim().length > 0 && relevantMemories.length > 5) {
+        try {
+          const scored = await retrieveRelevantMemories(lastUserText, relevantMemories, 8);
+          if (scored.length > 0) {
+            topMemories = scored.map(s => s.memory);
+          }
+        } catch (e) {
+          console.warn('[Semantic Memory] Error retrieving top memories:', e);
+        }
+      }
+
+      const memoryText = topMemories.map(m => {
         const prefix = isUserMemory(m) ? '[User Saved]' : '[My Memory]';
         return `- ${prefix} ${m.content}`;
       }).join('\n');
-      identityParts.push(`## Context & Saved Memories:\n${memoryText}`);
+      identityParts.push(`## Context & Saved Memories (Semantic Deep Recall):\n${memoryText}`);
     }
   }
 
