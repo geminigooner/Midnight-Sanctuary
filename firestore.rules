@@ -2,11 +2,20 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only allow ahatley094@gmail.com to access the database
     function isOwner() {
       return request.auth != null && request.auth.token.email == 'ahatley094@gmail.com';
     }
 
+    // User root document and all nested granular subcollections
+    match /users/{userId} {
+      allow read, write: if isOwner();
+      
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner();
+      }
+    }
+
+    // Fallback for any other root documents
     match /{document=**} {
       allow read, write: if isOwner();
     }

@@ -2,7 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message, UserProfile } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut, onAuthStateChanged } from './firebase';
-import { loadState, saveConversation, saveSettings, saveMemory, saveGift } from './persistenceSystem';
+import { 
+  loadState, 
+  saveSettings, 
+  saveMessageDoc, 
+  deleteMessageDoc, 
+  deleteConversationDocs, 
+  saveFullGranularState,
+  saveConversationDoc
+} from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
 
 export function useAppStore(passedUser?: any) {
@@ -35,7 +43,9 @@ export function useAppStore(passedUser?: any) {
     if (!user) return;
     let isInitialLoad = true;
     
-    const unsubscribe = loadState(user.uid, (data) => {
+    let cancelled = false;
+    loadState(user.uid, (data) => {
+      if (cancelled) return;
       if (data) {
         if (isInitialLoad) {
           if (data.conversations) {
@@ -49,12 +59,21 @@ export function useAppStore(passedUser?: any) {
               setCurrentId((prev) => prev || filtered[0].id);
             }
           }
-          if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+          if (data.settings) {
+            setSettings(prev => ({ 
+              ...DEFAULT_SETTINGS, 
+              ...data.settings,
+              customEntities: {
+                ...(data.settings?.customEntities || {}),
+                ...(data.companions || {})
+              }
+            }));
+          }
           if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
           if (data.gifts) setGifts(data.gifts);
           if (data.userProfile) setProfile(data.userProfile);
           
-          console.log('LOADING DATA from firestore, conversations count:', data.conversations ? data.conversations.length : 0);
+          console.log('[Sanctuary Store] Loaded granular state from Firestore, convs:', data.conversations ? data.conversations.length : 0);
           setDataLoaded(true);
           isInitialLoad = false;
         }
@@ -66,7 +85,9 @@ export function useAppStore(passedUser?: any) {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   useEffect(() => {
@@ -601,15 +622,38 @@ export function useAppStore(passedUser?: any) {
       }
       return next;
     });
-  }, [currentId]);
+    if (user) {
+      deleteConversationDocs(user.uid, id).catch(err => {
+        console.error('[Sanctuary Store] Error deleting conversation subcollection:', err);
+      });
+    }
+  }, [currentId, user]);
 
   const renameConversation = useCallback((id: string, newTitle: string) => {
-    setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c));
-  }, []);
+    setConversations(prev => {
+      const next = prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c);
+      const target = next.find(c => c.id === id);
+      if (target && user) {
+        saveConversationDoc(user.uid, target).catch(err => {
+          console.error('[Sanctuary Store] Error updating conversation title:', err);
+        });
+      }
+      return next;
+    });
+  }, [user]);
 
   const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
-    setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c));
-  }, []);
+    setConversations(prev => {
+      const next = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c);
+      const target = next.find(c => c.id === id);
+      if (target && user) {
+        saveConversationDoc(user.uid, target).catch(err => {
+          console.error('[Sanctuary Store] Error updating conversation doc:', err);
+        });
+      }
+      return next;
+    });
+  }, [user]);
 
   const addMessage = useCallback((conversationId: string, message: Message) => {
     setConversations(prev => {
@@ -647,8 +691,8 @@ export function useAppStore(passedUser?: any) {
       }
 
       if (user) {
-        saveConversation(user.uid, { conversations: next })
-          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (addMessage):', e));
+        saveMessageDoc(user.uid, conversationId, message)
+          .catch(e => console.error('[Diagnostic] Granular message save error:', e));
       }
 
       return next;
@@ -657,6 +701,7 @@ export function useAppStore(passedUser?: any) {
 
   const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
     setConversations(prev => {
+      let targetMsg: Message | null = null;
       const next = prev.map(c => 
         c.id === conversationId ? { 
           ...c, 
@@ -666,16 +711,18 @@ export function useAppStore(passedUser?: any) {
               if (safeUpdates.parts && safeUpdates.parts.length === 0) {
                 safeUpdates.parts = [{ text: '' }];
               }
-              return { ...m, ...safeUpdates };
+              const updated = { ...m, ...safeUpdates };
+              targetMsg = updated;
+              return updated;
             }
             return m;
           }),
           updatedAt: Date.now() 
         } : c
       );
-      if (user && updates.thoughtStatus === 'complete') {
-        saveConversation(user.uid, { conversations: next })
-          .catch(e => console.error('[Diagnostic] Immediate Save FAILURE (updateMessage):', e));
+      if (user && updates.thoughtStatus === 'complete' && targetMsg) {
+        saveMessageDoc(user.uid, conversationId, targetMsg)
+          .catch(e => console.error('[Diagnostic] Granular message update error:', e));
       }
       return next;
     });
@@ -689,7 +736,12 @@ export function useAppStore(passedUser?: any) {
         updatedAt: Date.now() 
       } : c
     ));
-  }, []);
+    if (user) {
+      deleteMessageDoc(user.uid, conversationId, messageId).catch(err => {
+        console.error('[Sanctuary Store] Error deleting message doc:', err);
+      });
+    }
+  }, [user]);
 
   const updateJewelMetrics = useCallback((updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => {
     setJewelMetrics(prev => typeof updates === 'function' ? updates(prev) : { ...prev, ...updates });

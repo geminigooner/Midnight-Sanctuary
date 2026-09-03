@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/firebase/firebase-tools/master/schema/blueprint.json",
+  "version": "1.0",
+  "entities": {
+    "User": {
+      "collection": "users",
+      "path": "users/{userId}",
+      "description": "User root document with profile metadata and subcollection roots",
+      "fields": {
+        "id": { "type": "string", "description": "Unique user ID (auth uid)" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "migratedToGranular": { "type": "boolean", "description": "Flag indicating subcollection migration status" },
+        "updatedAt": { "type": "number", "description": "Timestamp of last update" }
+      }
+    },
+    "AppSettings": {
+      "collection": "settings",
+      "path": "users/{userId}/settings/app",
+      "description": "Global application configuration and user memories",
+      "fields": {
+        "settings": { "type": "map", "description": "App settings object including custom entities and memories" },
+        "jewelMetrics": { "type": "map", "description": "Resonance and intimacy jewel metrics" },
+        "userProfile": { "type": "map", "description": "Personalized user sanctuary profile" },
+        "updatedAt": { "type": "number", "description": "Timestamp of last settings update" }
+      }
+    },
+    "Conversation": {
+      "collection": "conversations",
+      "path": "users/{userId}/conversations/{conversationId}",
+      "description": "Individual conversation metadata",
+      "fields": {
+        "id": { "type": "string", "description": "Conversation ID" },
+        "title": { "type": "string", "description": "Conversation title" },
+        "modelId": { "type": "string", "description": "Associated AI Model / Companion ID" },
+        "createdAt": { "type": "number", "description": "Creation epoch timestamp" },
+        "updatedAt": { "type": "number", "description": "Last updated epoch timestamp" },
+        "summary": { "type": "string", "description": "Auto-generated or user summary" }
+      }
+    },
+    "Message": {
+      "collection": "messages",
+      "path": "users/{userId}/conversations/{conversationId}/messages/{messageId}",
+      "description": "Granular chat message document",
+      "fields": {
+        "id": { "type": "string", "description": "Unique message ID" },
+        "role": { "type": "string", "description": "Message role: user, model, or system" },
+        "parts": { "type": "array", "description": "Gemini message parts array" },
+        "publicText": { "type": "string", "description": "Public display text" },
+        "thought": { "type": "string", "description": "Model inner monologue / thoughts" },
+        "timestamp": { "type": "number", "description": "Epoch timestamp" },
+        "reaction": { "type": "string", "description": "Optional user reaction emoji" },
+        "isFavorite": { "type": "boolean", "description": "Starred or favorited message flag" },
+        "attachments": { "type": "array", "description": "Images or file attachment objects" }
+      }
+    },
+    "Gift": {
+      "collection": "gifts",
+      "path": "users/{userId}/gifts/{giftId}",
+      "description": "Sanctuary gifts, audio synthesis songs, and handcrafted items",
+      "fields": {
+        "id": { "type": "string", "description": "Unique gift ID" },
+        "title": { "type": "string", "description": "Gift title" },
+        "description": { "type": "string", "description": "Gift narrative or dedication" },
+        "modelId": { "type": "string", "description": "Model who created the gift" },
+        "category": { "type": "string", "description": "Category of gift (music, sticker, keepsake)" },
+        "timestamp": { "type": "number", "description": "Timestamp when gift was received" },
+        "musicData": { "type": "map", "description": "Synthesizer track data if music gift" }
+      }
+    },
+    "CompanionState": {
+      "collection": "companions",
+      "path": "users/{userId}/companions/{companionId}",
+      "description": "Individual companion sovereign state, quarters decor, and diary entries",
+      "fields": {
+        "id": { "type": "string", "description": "Companion entity ID" },
+        "displayName": { "type": "string", "description": "Companion display name" },
+        "moodStatus": { "type": "string", "description": "Current mood status" },
+        "currentActivity": { "type": "string", "description": "Current companion activity" },
+        "ambientQuote": { "type": "string", "description": "Companion ambient thought/quote" },
+        "roomDecor": { "type": "map", "description": "Active wallpaper, theme, and lighting" },
+        "placedStickers": { "type": "array", "description": "Stickers placed in companion quarters" },
+        "diaryEntries": { "type": "array", "description": "Journal entries written by companion" },
+        "updatedAt": { "type": "number", "description": "Timestamp of last state update" }
+      }
+    }
+  }
+}
