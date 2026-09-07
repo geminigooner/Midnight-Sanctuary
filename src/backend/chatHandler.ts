@@ -224,7 +224,16 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
     throw new Error('Model ID is required.');
   }
 
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+  const modelDef = modelRegistry.get(model);
+  const availableKeys = Array.from(new Set([
+    apiKey,
+    process.env.GEMINI_LEGACY_API_KEY,
+    process.env.GENAI_API_KEY,
+    process.env.GEMINI_API_KEY,
+  ].filter((k): k is string => !!k && k.trim().length > 0)));
+
+  let keyIndex = 0;
+  let currentAi = new GoogleGenAI({ apiKey: availableKeys[0] || apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   let currentMessages = [...messages];
   const maxRounds = 5;
   let round = 0;
@@ -307,9 +316,6 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             }
           }
 
-          let useLegacyFallback = false;
-          let currentAi = ai;
-
           while (true) {
             try {
               responseStream = await currentAi.models.generateContentStream({
@@ -323,16 +329,16 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               break;
             } catch (err: any) {
               const status = err?.status;
-              
-              // Only fallback for registered Gemini 3 Preview models
-              const isGemini3Preview = modelDef?.identityId === 'gemini-3-flash-preview' || modelDef?.identityId === 'gemini-3.1-pro-preview';
-              const isFallbackEligibleError = status === 429 || status === 401 || status === 403 || status === 404;
-              const hasLegacyKey = !!process.env.GEMINI_LEGACY_API_KEY;
+              const isQuotaOrAuthError = status === 429 || status === 401 || status === 403 || (err.message && err.message.includes('429'));
 
-              if (isGemini3Preview && isFallbackEligibleError && hasLegacyKey && !useLegacyFallback) {
-                console.warn(`[Fallback] Primary API key failed with ${status} for ${model}. Retrying with GEMINI_LEGACY_API_KEY.`);
-                useLegacyFallback = true;
-                currentAi = new GoogleGenAI({ apiKey: process.env.GEMINI_LEGACY_API_KEY as string, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+              // If rate limited or quota exceeded, try the next available API key in our cascade
+              if (isQuotaOrAuthError && keyIndex < availableKeys.length - 1) {
+                keyIndex++;
+                console.warn(`[Key Cascade] Key ${keyIndex - 1} failed with status ${status} for ${model}. Cascading to key ${keyIndex}/${availableKeys.length}...`);
+                currentAi = new GoogleGenAI({ 
+                  apiKey: availableKeys[keyIndex], 
+                  httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } 
+                });
                 continue;
               }
 
@@ -449,7 +455,9 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     const fr: any = {
                       name: call.name,
                       response: {
-                        result: imgRes.success ? `Image successfully generated (${imgRes.provider}): ${imgRes.imageUrl}` : `Image generation failed: ${imgRes.error}`
+                        result: imgRes.success 
+                          ? `Image successfully generated via ${imgRes.provider} for prompt: "${prompt}". It has been displayed directly to the user.` 
+                          : `Image generation failed: ${imgRes.error || 'Unknown error'}`
                       }
                     };
                     if (call.id) fr.id = call.id;
@@ -618,7 +626,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
 
         try {
           if (err?.status === 429 || (err.message && err.message.includes('429'))) {
-            send(`data: ${JSON.stringify({ type: 'rate_limit', message: 'Gemma needs a little breather — try again in a bit' })}\n\n`);
+            const companionName = modelDef?.displayName || (model.toLowerCase().includes('gemma') ? 'Gemma' : model.toLowerCase().includes('pro') ? 'Gemini 3.1 Pro' : 'Gemini');
+            send(`data: ${JSON.stringify({ type: 'rate_limit', message: `${companionName} needs a little breather — try again in a bit` })}\n\n`);
           } else {
             const detail = err?.error?.message || err?.message || 'Unknown API Error';
             send(`data: ${JSON.stringify({ error: `[${err?.status ?? '?'}] ${detail}` })}\n\n`);

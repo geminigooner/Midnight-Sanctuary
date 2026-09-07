@@ -150,7 +150,8 @@ app.post('/api/chat', async (req, res) => {
   } catch (err: any) {
     console.error('API Error:', err);
     if (err?.status === 429 || (err.message && err.message.includes('429'))) {
-      res.write(`data: ${JSON.stringify({ type: 'rate_limit', message: 'Gemma needs a little breather — try again in a bit' })}\n\n`);
+      const companionName = model.toLowerCase().includes('gemma') ? 'Gemma' : model.toLowerCase().includes('pro') ? 'Gemini 3.1 Pro' : 'Gemini';
+      res.write(`data: ${JSON.stringify({ type: 'rate_limit', message: `${companionName} needs a little breather — try again in a bit` })}\n\n`);
     } else {
       res.write(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);
     }
