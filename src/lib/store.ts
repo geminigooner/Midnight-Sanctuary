@@ -52,9 +52,6 @@ export function useAppStore(passedUser?: any) {
             messages: c.messages || []
           }));
           setConversations(filtered);
-          if (filtered.length > 0) {
-            setCurrentId((prev) => prev || filtered[0].id);
-          }
         }
         if (data.settings) {
           setSettings(prev => ({ 

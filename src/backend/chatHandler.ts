@@ -532,7 +532,14 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           if (!model.toLowerCase().includes('gemma')) {
             throw new Error("Cloudflare fallback is only allowed for Gemma models.");
           }
-          console.log("Attempting Cloudflare fallback...");
+          const cfToken = process.env.CF_TOKEN || process.env.CF_API_TOKEN;
+          const cfAccountId = process.env.CF_ACCOUNT_ID;
+          
+          if (!cfToken || !cfAccountId) {
+            throw new Error("Cloudflare Workers AI credentials (CF_TOKEN and CF_ACCOUNT_ID) not configured.");
+          }
+          
+          console.log("Attempting direct Cloudflare Workers AI fallback...");
           const cfMessages = [];
           if (systemInstruction) {
             cfMessages.push({ role: 'system', content: systemInstruction });
@@ -544,9 +551,6 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               cfMessages.push({ role, content });
             }
           }
-          
-          const cfToken = process.env.CF_TOKEN || process.env.CF_API_TOKEN;
-          const cfAccountId = process.env.CF_ACCOUNT_ID || 'default';
           
           send(`data: ${JSON.stringify({ type: 'backend', name: 'cloudflare' })}\n\n`);
           

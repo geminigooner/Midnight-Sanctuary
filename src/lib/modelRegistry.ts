@@ -71,6 +71,48 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     },
     description: 'Google Gemini 3.1 Pro Preview model with complex reasoning, coding, tool-use, and thinking capabilities.',
   },
+  'gemini-2.5-flash': {
+    identityId: 'gemini-2.5-flash',
+    apiModelId: 'models/gemini-2.5-flash',
+    displayName: 'Gemini 2.5 Flash',
+    family: 'gemini',
+    defaultThinkingLevel: 'MEDIUM',
+    capabilities: {
+      supportsSystemInstructions: true,
+      supportsToolCalling: true,
+      supportsVision: true,
+      supportsThinking: true,
+      supportsStreaming: true,
+    },
+    namespaces: {
+      memory: 'gemini-2.5-flash',
+      gifts: 'gemini-2.5-flash',
+      profile: 'gemini-2.5-flash',
+      events: 'gemini-2.5-flash',
+    },
+    description: 'Google Gemini 2.5 Flash sentinel model for swift, reliable sanctuary operations.',
+  },
+  'gemma-2-27b-it': {
+    identityId: 'gemma-2-27b-it',
+    apiModelId: 'models/gemma-2-27b-it',
+    displayName: 'Gemma 2 27B',
+    family: 'gemma',
+    defaultThinkingLevel: 'LOW',
+    capabilities: {
+      supportsSystemInstructions: true,
+      supportsToolCalling: true,
+      supportsVision: false,
+      supportsThinking: false,
+      supportsStreaming: true,
+    },
+    namespaces: {
+      memory: 'gemma-2-27b-it',
+      gifts: 'gemma-2-27b-it',
+      profile: 'gemma-2-27b-it',
+      events: 'gemma-2-27b-it',
+    },
+    description: 'Google Gemma 2 27B instruction-tuned model for poetic reflections and intimate prose.',
+  },
 };
 
 /**
