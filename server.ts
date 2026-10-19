@@ -105,7 +105,7 @@ app.post('/api/chat', async (req, res) => {
   const model = req.body?.model || '';
   const modelLower = model.toLowerCase();
   const isGemma = modelLower.includes('gemma');
-  const isGemini3Paid = modelLower.includes('gemini-3.1-pro') || modelLower.includes('gemini-3-flash') || modelLower.includes('3.1-pro') || modelLower.includes('3-flash');
+  const isGemini3Paid = modelLower.includes('gemini-3.1-pro') || modelLower.includes('gemini-3-flash') || modelLower.includes('3.1-pro') || modelLower.includes('3-flash') || modelLower.includes('3.8-flash') || modelLower.includes('gemini-3.8');
   
   let apiKey;
   let keyName;

@@ -715,7 +715,7 @@ export function useAppStore(passedUser?: any) {
           updatedAt: (updates.thoughtStatus === 'complete' || updates.finishReason) ? Date.now() : c.updatedAt
         } : c
       );
-      if (user && updates.thoughtStatus === 'complete' && targetMsg) {
+      if (user && (updates.thoughtStatus === 'complete' || updates.thoughtStatus === 'error') && targetMsg) {
         saveMessageDoc(user.uid, conversationId, targetMsg)
           .catch(e => console.error('[Diagnostic] Granular message update error:', e));
       }

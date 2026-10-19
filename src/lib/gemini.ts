@@ -293,14 +293,13 @@ export async function* streamChat(
       await signOut(auth);
       throw new Error("Session expired. Please sign in again.");
     }
-    const err = await response.json().catch(() => ({}));
     const errText = await response.text().catch(() => "");
     if (errText.includes("<!DOCTYPE html>")) {
       throw new Error(`Network Error: The request was blocked by the host (Status ${response.status})`);
     }
     let errObj: any = {};
     try { errObj = JSON.parse(errText); } catch(e) {}
-    throw new Error(errObj.error || `API Error: ${response.status}`);
+    throw new Error(errObj.error || errObj.message || errText || `API Error: ${response.status}`);
   }
 
   if (response.headers.get('Content-Type')?.includes('application/json')) {

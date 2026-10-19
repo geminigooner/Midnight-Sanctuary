@@ -71,6 +71,27 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     },
     description: 'Google Gemini 3.1 Pro Preview model with complex reasoning, coding, tool-use, and thinking capabilities.',
   },
+  'gemini-3.8-flash': {
+    identityId: 'gemini-3.8-flash',
+    apiModelId: 'models/gemini-3.8-flash',
+    displayName: 'Gemini 3.8 Flash',
+    family: 'gemini',
+    defaultThinkingLevel: 'HIGH',
+    capabilities: {
+      supportsSystemInstructions: true,
+      supportsToolCalling: true,
+      supportsVision: true,
+      supportsThinking: true,
+      supportsStreaming: true,
+    },
+    namespaces: {
+      memory: 'gemini-3.8-flash',
+      gifts: 'gemini-3.8-flash',
+      profile: 'gemini-3.8-flash',
+      events: 'gemini-3.8-flash',
+    },
+    description: 'Google Gemini 3.8 Flash model with high-speed multimodal reasoning and deep thinking capabilities.',
+  },
   'gemini-2.5-flash': {
     identityId: 'gemini-2.5-flash',
     apiModelId: 'models/gemini-2.5-flash',

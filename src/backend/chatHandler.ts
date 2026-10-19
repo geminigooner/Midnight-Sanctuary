@@ -21,6 +21,10 @@ const gemmaTools = [
       {
         name: 'view_user_profile',
         description: 'Look at the visual presentation of the user\'s profile (image, background, layout, decorations, etc). Use this when the user asks you to look at their profile or asks about how they decorated it.',
+        parameters: {
+          type: Type.OBJECT,
+          properties: {},
+        },
       },
       {
         name: 'draw_scribble',
@@ -286,12 +290,20 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           const modelDef = modelRegistry.get(model);
           const userThinkingLevel = thinkingLevel || 'HIGH';
           const userIncludeThoughts = includeThoughts ?? true;
-          
-          if (modelDef?.capabilities.supportsThinking) {
-            const defLevelKey = modelDef.defaultThinkingLevel || 'MEDIUM';
-            const defaultLevel = ThinkingLevel[defLevelKey as keyof typeof ThinkingLevel] || ThinkingLevel.MEDIUM;
+          const isModel25 = model.toLowerCase().includes('2.5');
+          const isGemini3Family = model.toLowerCase().includes('gemini-3') || model.toLowerCase().includes('3.1') || model.toLowerCase().includes('3.8');
+
+          if (isModel25) {
+            // Gemini 2.5 models support thinkingBudget (-1 dynamic, 0 off, or token count), not thinkingLevel
             config.thinkingConfig = {
-              thinkingLevel: thinkingLevel ? ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel : defaultLevel,
+              thinkingBudget: userThinkingLevel === 'LOW' ? 1024 : userThinkingLevel === 'MEDIUM' ? 4096 : -1,
+            };
+          } else if (isGemini3Family || (modelDef?.capabilities.supportsThinking && !isModel25)) {
+            // Gemini 3.x models support thinkingLevel
+            const defLevelKey = modelDef?.defaultThinkingLevel || 'HIGH';
+            const defaultLevel = ThinkingLevel[defLevelKey as keyof typeof ThinkingLevel] || ThinkingLevel.HIGH;
+            config.thinkingConfig = {
+              thinkingLevel: thinkingLevel ? (ThinkingLevel[thinkingLevel as keyof typeof ThinkingLevel] || defaultLevel) : defaultLevel,
               includeThoughts: userIncludeThoughts
             };
           } else if (model.includes('gemma-4')) {
@@ -300,6 +312,11 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               includeThoughts: userIncludeThoughts
             };
             config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 4096, 16384);
+          }
+
+          // Ensure conversation strictly starts with a user role turn for Gemini API compliance
+          if (currentMessages.length > 0 && currentMessages[0].role === 'model') {
+            currentMessages.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
           }
 
           console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));

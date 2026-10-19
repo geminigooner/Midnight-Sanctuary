@@ -154,20 +154,39 @@ export function subscribeToState(
 
           const target = (liveState.conversations || []).find(c => c.id === convId);
           if (target) {
-            // Check if local conversation has active streaming in progress to avoid wiping ongoing response
             const localMsgs = target.messages || [];
-            const lastLocal = localMsgs[localMsgs.length - 1];
-            const lastIncoming = messages[messages.length - 1];
-            if (
-              lastLocal &&
-              lastIncoming &&
-              lastLocal.id === lastIncoming.id &&
-              (lastLocal.thoughtStatus === 'thinking' || ((lastLocal.parts?.[0]?.text?.length || 0) > (lastIncoming.parts?.[0]?.text?.length || 0)))
-            ) {
-              target.messages = messages.map(m => m.id === lastLocal.id ? { ...m, ...lastLocal } : m);
-            } else {
-              target.messages = messages;
-            }
+            const incomingIds = new Set(messages.map(m => m.id));
+
+            // Retain any pending local messages (user or assistant) that haven't arrived in Firestore snapshot yet
+            const pendingLocal = localMsgs.filter(m => !incomingIds.has(m.id));
+
+            // Merge incoming messages with local state if local is more active (e.g. streaming, error, richer text)
+            const merged = messages.map(m => {
+              const localMatch = localMsgs.find(lm => lm.id === m.id);
+              if (localMatch) {
+                const localTextLen = (localMatch.publicText?.length || 0) + (localMatch.parts?.[0]?.text?.length || 0);
+                const incomingTextLen = (m.publicText?.length || 0) + (m.parts?.[0]?.text?.length || 0);
+                if (
+                  localMatch.thoughtStatus === 'thinking' ||
+                  localMatch.thoughtStatus === 'error' ||
+                  localTextLen > incomingTextLen
+                ) {
+                  return { ...m, ...localMatch };
+                }
+              }
+              return m;
+            });
+
+            const combined = [...merged, ...pendingLocal];
+            combined.sort((a, b) => {
+              const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+              if (timeDiff !== 0) return timeDiff;
+              if (a.role === 'user' && b.role === 'model') return -1;
+              if (a.role === 'model' && b.role === 'user') return 1;
+              return (a.id || '').localeCompare(b.id || '');
+            });
+
+            target.messages = combined;
             notify();
           }
         }, (err) => {
