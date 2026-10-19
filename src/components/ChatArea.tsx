@@ -66,9 +66,10 @@ export function ChatArea() {
 
     // If on home view without an active conversation, create one automatically
     let activeConvId = store.currentId;
-    if (!activeConvId || !store.conversations.some(c => c.id === activeConvId)) {
-      const newConv = store.createConversation();
-      activeConvId = newConv.id;
+    let targetConv = store.conversations.find(c => c.id === activeConvId);
+    if (!activeConvId || !targetConv) {
+      targetConv = store.createConversation();
+      activeConvId = targetConv.id;
     }
 
     if (replaceIndex === undefined && textToSend === undefined) {
@@ -83,7 +84,9 @@ export function ChatArea() {
     sendMessage(rawText, {
       attachments: currentAttachments,
       replaceIndex,
-      additionalMessages
+      additionalMessages,
+      targetConversationId: activeConvId,
+      targetConversation: targetConv,
     });
   }, [input, attachments, sendMessage, store]);
 
