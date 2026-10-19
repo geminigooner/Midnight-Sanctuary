@@ -18,7 +18,12 @@ export function Sidebar() {
   const [viewMode, setViewMode] = useState<'list' | 'nebula'>('list');
 
   const modelConversations = Array.isArray(store.conversations) ? store.conversations : [];
-  const filtered = modelConversations.filter(c => 
+  const sorted = [...modelConversations].sort((a, b) => {
+    const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
+    if (diff !== 0) return diff;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+  const filtered = sorted.filter(c => 
     c && ((c.title?.toLowerCase() || '').includes(search.toLowerCase()) || 
     (c.messages || []).some(m => m.parts?.[0]?.text?.toLowerCase().includes(search.toLowerCase())))
   );
@@ -123,7 +128,6 @@ export function Sidebar() {
                 return (
                   <motion.div 
                     key={c.id} 
-                    layout
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={listMotion}

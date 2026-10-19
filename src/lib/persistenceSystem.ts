@@ -143,9 +143,31 @@ export function subscribeToState(
             messages.push({ ...(mDoc.data() as Message), id: mDoc.id });
           });
 
+          // Deterministic stable sorting for messages: timestamp, then user before model, then id
+          messages.sort((a, b) => {
+            const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+            if (timeDiff !== 0) return timeDiff;
+            if (a.role === 'user' && b.role === 'model') return -1;
+            if (a.role === 'model' && b.role === 'user') return 1;
+            return (a.id || '').localeCompare(b.id || '');
+          });
+
           const target = (liveState.conversations || []).find(c => c.id === convId);
           if (target) {
-            target.messages = messages;
+            // Check if local conversation has active streaming in progress to avoid wiping ongoing response
+            const localMsgs = target.messages || [];
+            const lastLocal = localMsgs[localMsgs.length - 1];
+            const lastIncoming = messages[messages.length - 1];
+            if (
+              lastLocal &&
+              lastIncoming &&
+              lastLocal.id === lastIncoming.id &&
+              (lastLocal.thoughtStatus === 'thinking' || ((lastLocal.parts?.[0]?.text?.length || 0) > (lastIncoming.parts?.[0]?.text?.length || 0)))
+            ) {
+              target.messages = messages.map(m => m.id === lastLocal.id ? { ...m, ...lastLocal } : m);
+            } else {
+              target.messages = messages;
+            }
             notify();
           }
         }, (err) => {
@@ -164,7 +186,12 @@ export function subscribeToState(
     }
 
     if (updatedConvs.length > 0) {
-      updatedConvs.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      // Deterministic stable sorting for conversations: updatedAt descending, then id
+      updatedConvs.sort((a, b) => {
+        const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
+        if (diff !== 0) return diff;
+        return (a.id || '').localeCompare(b.id || '');
+      });
       liveState.conversations = updatedConvs;
       notify();
     }
@@ -319,7 +346,7 @@ export async function saveConversationDoc(userId: string, conv: Conversation) {
 
   await setDoc(convRef, removeUndefined({
     ...meta,
-    updatedAt: Date.now(),
+    updatedAt: conv.updatedAt || Date.now(),
   }), { merge: true });
 
   if (Array.isArray(messages) && messages.length > 0) {
@@ -348,7 +375,7 @@ export async function saveMessageDoc(userId: string, convId: string, message: Me
 
   await Promise.all([
     setDoc(msgRef, removeUndefined(message), { merge: true }),
-    setDoc(convRef, { updatedAt: Date.now() }, { merge: true }),
+    setDoc(convRef, { updatedAt: message.timestamp || Date.now() }, { merge: true }),
   ]);
 }
 
@@ -404,15 +431,12 @@ export async function saveFullGranularState(userId: string, payload: {
     promises.push(saveSettingsDoc(userId, payload.settings, payload.jewelMetrics, payload.userProfile));
   }
 
-  if (Array.isArray(payload.conversations)) {
-    for (const conv of payload.conversations) {
-      if (conv?.id) {
-        promises.push(saveConversationDoc(userId, conv));
-      }
-    }
-  }
+  // NOTE: Conversations and their messages are saved individually in real-time via
+  // saveConversationDoc and saveMessageDoc. We intentionally do not iterate and re-save
+  // all conversations on every debounced settings save to prevent timestamp jitter
+  // and chaotic re-sorting of the chat list.
 
-  if (Array.isArray(payload.gifts)) {
+  if (Array.isArray(payload.gifts) && payload.gifts.length > 0) {
     for (const gift of payload.gifts) {
       if (gift?.id) {
         promises.push(saveGiftDoc(userId, gift));

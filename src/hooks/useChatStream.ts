@@ -258,7 +258,7 @@ export function useChatStream({
         publicText: '',
         thoughtText: '',
         thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
-        timestamp: Date.now() 
+        timestamp: Math.max(Date.now(), now + 1)
       });
 
       let rawTextAccumulator = '';

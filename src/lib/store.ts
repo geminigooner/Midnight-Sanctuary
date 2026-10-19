@@ -601,8 +601,13 @@ export function useAppStore(passedUser?: any) {
     };
     setConversations(prev => [newConv, ...prev]);
     setCurrentId(newId);
+    if (user) {
+      saveConversationDoc(user.uid, newConv).catch(err => {
+        console.error('[Sanctuary Store] Error saving new conversation doc:', err);
+      });
+    }
     return newConv;
-  }, [settings.model]);
+  }, [settings.model, user]);
 
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => {
@@ -707,7 +712,7 @@ export function useAppStore(passedUser?: any) {
             }
             return m;
           }),
-          updatedAt: Date.now() 
+          updatedAt: (updates.thoughtStatus === 'complete' || updates.finishReason) ? Date.now() : c.updatedAt
         } : c
       );
       if (user && updates.thoughtStatus === 'complete' && targetMsg) {
