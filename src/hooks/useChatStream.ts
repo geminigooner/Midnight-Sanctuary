@@ -60,6 +60,7 @@ export function useChatStream({
   const watchdogTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const presenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const activeGenerationConversationIdRef = useRef<string | null>(null);
+  const generationIdRef = useRef(0);
 
   useEffect(() => {
     isGeneratingRef.current = isGenerating;
@@ -88,14 +89,15 @@ export function useChatStream({
   }, []);
 
   const stopGeneration = useCallback(() => {
+    generationIdRef.current++;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
-      setIsGenerating(false);
-      activeGenerationConversationIdRef.current = null;
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      setTemporaryPresence('complete', 'resting');
     }
+    setIsGenerating(false);
+    activeGenerationConversationIdRef.current = null;
+    if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
+    setTemporaryPresence('complete', 'resting');
   }, [setTemporaryPresence]);
 
   const sendMessage = useCallback(async (
@@ -185,12 +187,16 @@ export function useChatStream({
       onUpdate(requestConversationId, { title: textToAnalyse.slice(0, 30) });
     }
 
+    const currentGenId = ++generationIdRef.current;
+    const currentAbortController = new AbortController();
+    abortControllerRef.current = currentAbortController;
+    activeGenerationConversationIdRef.current = requestConversationId;
+
     setIsGenerating(true);
     setPresence('deep_thinking');
-    abortControllerRef.current = new AbortController();
-    activeGenerationConversationIdRef.current = requestConversationId;
     
     let modelMsgId = uuidv4();
+    let modelMsgAdded = false;
     let currentModelText = '';
     let currentModelThought = '';
     let currentModelApiParts: any[] = [];
@@ -207,13 +213,28 @@ export function useChatStream({
       const isGemini3 = effectiveSettings.model.includes('gemini-3');
       const timeoutMs = isGemini3 ? 240000 : 90000;
       watchdogTimeoutRef.current = setTimeout(() => {
-        console.warn("Idle timeout triggered. Aborting stuck stream.");
-        if (abortControllerRef.current) abortControllerRef.current.abort();
+        if (generationIdRef.current === currentGenId) {
+          console.warn("Idle timeout triggered. Aborting stuck stream.");
+          currentAbortController.abort();
+        }
       }, timeoutMs); 
     };
     resetIdleTimeout();
 
     const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
+      if (!modelMsgAdded) {
+        onAddMessage(requestConversationId, {
+          id: modelMsgId,
+          role: 'model',
+          parts: [{ text: '' }],
+          publicText: '',
+          thoughtText: '',
+          thoughtStatus: status,
+          timestamp: Date.now(),
+        });
+        modelMsgAdded = true;
+      }
+
       const partsToSave: any[] = [];
       if (thought) {
         partsToSave.push({
@@ -249,7 +270,7 @@ export function useChatStream({
 
     try {
       let hasToolCalls = false;
-      const generator = streamChat(currentMessages, effectiveSettings, gifts, profile, abortControllerRef.current.signal);
+      const generator = streamChat(currentMessages, effectiveSettings, gifts, profile, currentAbortController.signal);
       
       onAddMessage(requestConversationId, { 
         id: modelMsgId, 
@@ -260,10 +281,10 @@ export function useChatStream({
         thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
         timestamp: Math.max(Date.now(), now + 1)
       });
+      modelMsgAdded = true;
 
       let rawTextAccumulator = '';
       let apiThoughtAccumulator = '';
-      let hasClientFulfillmentRef = false;
       let lastUpdateTime = 0;
 
       const updateWithParsedThinking = (textChunk: string, force = false) => {
@@ -469,7 +490,6 @@ export function useChatStream({
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'client_tool_call') {
             hasToolCalls = true;
-            hasClientFulfillmentRef = true;
             const element = document.getElementById('capture-profile-view');
             if (element) {
                try {
@@ -499,7 +519,12 @@ export function useChatStream({
                  setIsScanningProfile(true);
                  setTimeout(() => {
                    setIsScanningProfile(false);
-                   sendMessage('', { additionalMessages: [functionResponseMsg as any] });
+                   sendMessage('', { 
+                     additionalMessages: [functionResponseMsg as any],
+                     targetConversationId: requestConversationId,
+                     targetConversation: conversationRef.current,
+                     targetSettings: effectiveSettings,
+                   });
                  }, 1500);
                } catch (e) {
                  console.error("Failed to capture profile view", e);
@@ -519,7 +544,12 @@ export function useChatStream({
                     }],
                     timestamp: Date.now()
                  };
-                 sendMessage('', { additionalMessages: [functionResponseMsg as any] });
+                 sendMessage('', { 
+                   additionalMessages: [functionResponseMsg as any],
+                   targetConversationId: requestConversationId,
+                   targetConversation: conversationRef.current,
+                   targetSettings: effectiveSettings,
+                 });
             }
           } else if (chunk.type === 'model_parts') {
             currentModelApiParts = chunk.parts;
@@ -560,17 +590,16 @@ export function useChatStream({
             rawTextAccumulator = '';
             apiThoughtAccumulator = '';
             isFirstChunk = true;
-            if (!hasClientFulfillmentRef) {
-               onAddMessage(requestConversationId, {
-                 id: modelMsgId,
-                 role: 'model',
-                 parts: [{ text: '' }],
-                 publicText: '',
-                 thoughtText: '',
-                 thoughtStatus: settings.model.includes('gemma') || settings.model.includes('gemini-3') ? 'thinking' : 'complete',
-                 timestamp: Date.now(),
-               });
-            }
+            onAddMessage(requestConversationId, {
+              id: modelMsgId,
+              role: 'model',
+              parts: [{ text: '' }],
+              publicText: '',
+              thoughtText: '',
+              thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
+              timestamp: Date.now(),
+            });
+            modelMsgAdded = true;
           } else if (chunk.type === 'finish_reason') {
             currentModelFinishReason = chunk.reason;
             updateModelMessage(currentModelText, currentModelThought, 'complete');
@@ -630,10 +659,12 @@ export function useChatStream({
          }
       }
     } finally {
-      setIsGenerating(false);
-      activeGenerationConversationIdRef.current = null;
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
-      abortControllerRef.current = null;
+      if (generationIdRef.current === currentGenId) {
+        setIsGenerating(false);
+        activeGenerationConversationIdRef.current = null;
+        if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
+        abortControllerRef.current = null;
+      }
     }
   }, [
     isGenerating,
