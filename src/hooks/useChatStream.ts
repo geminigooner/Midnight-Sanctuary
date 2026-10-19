@@ -16,6 +16,7 @@ export interface UseChatStreamOptions {
   onUpdate: (id: string, updates: Partial<Conversation>) => void;
   onAddMessage: (conversationId: string, message: Message) => void;
   onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
+  onRemoveMessage?: (conversationId: string, messageId: string) => void;
   onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
   onAddGift: (gift: any) => void;
   onAddMemory: (content: string, origin?: string, author?: 'user' | 'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => void;
@@ -37,6 +38,7 @@ export function useChatStream({
   onUpdate,
   onAddMessage,
   onUpdateMessage,
+  onRemoveMessage,
   onUpdateJewel,
   onAddGift,
   onAddMemory,
@@ -582,8 +584,13 @@ export function useChatStream({
       if (!currentModelText && currentModelThought) {
         updateModelMessage(currentModelThought, '', 'complete');
       } else if (!currentModelText && !currentModelThought) {
-         updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error');
-         setTemporaryPresence('error', 'resting', 5000);
+         if (hasToolCalls && onRemoveMessage) {
+           // Tools already fulfilled the response in earlier round or separate gift/artwork card
+           onRemoveMessage(requestConversationId, modelMsgId);
+         } else {
+           updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error');
+           setTemporaryPresence('error', 'resting', 5000);
+         }
       } else {
         updateModelMessage(currentModelText, currentModelThought, 'complete');
         onUpdateJewel(prev => ({

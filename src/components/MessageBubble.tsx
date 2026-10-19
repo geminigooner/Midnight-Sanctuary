@@ -84,6 +84,12 @@ export const MessageBubble = React.memo(function MessageBubble({
   
   const publicText = getPublicMessageText(msg);
   const thoughtText = getThoughtMessageText(msg);
+  const hasVisualContent = Boolean(
+    (msg.scribbles && msg.scribbles.length > 0) ||
+    (msg.generatedImages && msg.generatedImages.length > 0) ||
+    (msg.musicTracks && msg.musicTracks.length > 0) ||
+    msg.parts?.some(p => p.inlineData)
+  );
   const isWaitingForToken = isGenerating && isLast && !isUser && !publicText && !thoughtText;
 
   const reducedMotion = useReducedMotion();
@@ -134,7 +140,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               />
             )}
             
-            {(publicText || (!isWaitingForToken && !thoughtText)) && (
+            {Boolean(publicText?.trim()) || (isWaitingForToken && !hasVisualContent) ? (
               <div className="min-w-0 break-words">
                 <StreamingMarkdown content={publicText} isGenerating={isGenerating && isLast} />
                 {publicText.includes('Unauthorized') && (
@@ -153,7 +159,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
 
             {msg.finishReason && (
               <div className="text-xs text-[#B39DE5]/50 mt-2 italic">

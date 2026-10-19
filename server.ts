@@ -6,6 +6,7 @@ import { performWebSearch } from './src/backend/searchService';
 import { createChatStream } from './src/backend/chatHandler';
 import { generateImage } from './src/backend/imageService';
 import { verifyRequest } from './src/backend/verifyAuth';
+import { modelRegistry } from './src/lib/modelRegistry';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -115,16 +116,16 @@ app.post('/api/chat', async (req, res) => {
     keyName = 'GEMINI_LEGACY_API_KEY';
   } else if (isGemma) {
     // Gemma fallback key (Cloudflare is handled first in chatHandler with CF_TOKEN)
-    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY;
+    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
     keyName = 'GEMINI_API_KEY';
   } else {
-    // Other Gemini models
-    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY;
+    // Other Gemini models - check standard keys first, fallback to legacy key
+    apiKey = process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
     keyName = 'GEMINI_API_KEY';
   }
   
   if (!apiKey && !isGemma) {
-    return res.status(500).json({ error: `${keyName} is not configured in the environment for model ${model}.` });
+    return res.status(500).json({ error: `${keyName} (or backup key) is not configured in the environment for model ${model}.` });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -150,7 +151,7 @@ app.post('/api/chat', async (req, res) => {
   } catch (err: any) {
     console.error('API Error:', err);
     if (err?.status === 429 || (err.message && err.message.includes('429'))) {
-      const companionName = model.toLowerCase().includes('gemma') ? 'Gemma' : model.toLowerCase().includes('pro') ? 'Gemini 3.1 Pro' : 'Gemini';
+      const companionName = modelRegistry.getDisplayName(model) || (model.toLowerCase().includes('gemma') ? 'Gemma' : 'Gemini');
       res.write(`data: ${JSON.stringify({ type: 'rate_limit', message: `${companionName} needs a little breather — try again in a bit` })}\n\n`);
     } else {
       res.write(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);

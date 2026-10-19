@@ -219,11 +219,10 @@ export async function* streamChat(
   }
 
   if (syntheticTurn) {
-    // Instead of unshifting to the beginning, let's append these context parts to the LAST user message,
-    // so the model is acutely aware of the gifts right now.
+    // Append these context parts to the LAST regular user message (not functionResponse turn)
     let lastUserIndex = -1;
     for (let i = serializedMessages.length - 1; i >= 0; i--) {
-      if (serializedMessages[i].role === 'user') {
+      if (serializedMessages[i].role === 'user' && !serializedMessages[i].parts.some((p: any) => p.functionResponse)) {
         lastUserIndex = i;
         break;
       }
@@ -231,7 +230,7 @@ export async function* streamChat(
     if (lastUserIndex !== -1) {
       serializedMessages[lastUserIndex].parts.unshift(...syntheticTurn.parts);
     } else {
-      serializedMessages.push(syntheticTurn);
+      serializedMessages.unshift(syntheticTurn);
     }
   }
 
@@ -346,7 +345,7 @@ export async function* streamChat(
           if (data.error) {
             throw new APIError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
           }
-          if (data.type === 'gift' || data.type === 'scribble_gift' || data.type === 'memory' || data.type === 'lock_memory' || data.type === 'update_quarters' || data.type === 'record_thought' || data.type === 'eventLog' || data.type === 'thought' || data.type === 'history_append' || data.type === 'model_parts') {
+          if (data.type === 'gift' || data.type === 'scribble_gift' || data.type === 'music_track' || data.type === 'memory' || data.type === 'lock_memory' || data.type === 'update_quarters' || data.type === 'record_thought' || data.type === 'user_note' || data.type === 'eventLog' || data.type === 'stick_sticker' || data.type === 'craft_sticker' || data.type === 'create_room_artwork' || data.type === 'image_generating' || data.type === 'image_generated' || data.type === 'search_result' || data.type === 'client_tool_call' || data.type === 'thought' || data.type === 'history_append' || data.type === 'model_parts' || data.type === 'finish_reason' || data.type === 'backend') {
             yield data as ChatStreamEvent;
           } else if (data.text) {
             fullText += data.text;

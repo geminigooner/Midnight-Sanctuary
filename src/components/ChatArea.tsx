@@ -38,6 +38,7 @@ export function ChatArea() {
     onUpdate: store.updateConversation,
     onAddMessage: store.addMessage,
     onUpdateMessage: store.updateMessage,
+    onRemoveMessage: store.removeMessage,
     onUpdateJewel: store.updateJewelMetrics,
     onAddGift: store.addGift,
     onAddMemory: store.addMemory,
