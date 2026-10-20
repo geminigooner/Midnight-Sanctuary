@@ -87,6 +87,7 @@ export function ChatArea() {
       additionalMessages,
       targetConversationId: activeConvId,
       targetConversation: targetConv,
+      targetSettings: targetConv.modelId ? { ...store.settings, model: targetConv.modelId } : undefined,
     });
   }, [input, attachments, sendMessage, store]);
 

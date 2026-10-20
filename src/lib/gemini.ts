@@ -207,7 +207,8 @@ export async function* streamChat(
         const finalText = (m.publicText ?? '').trim();
         if (finalText) parts.push({ text: finalText });
         for (const p of m.parts || []) {
-          if (p.functionCall) parts.push({ functionCall: p.functionCall });
+          // keep thoughtSignature on function-call parts (Gemini 3 requires it on replay)
+          if (p.functionCall) parts.push({ ...(p.thoughtSignature ? { thoughtSignature: p.thoughtSignature } : {}), functionCall: p.functionCall });
         }
         return { role: m.role, parts };
       }
@@ -278,7 +279,7 @@ export async function* streamChat(
     }
   }
 
-  console.log("[Diagnostics] Sanitized API History:", JSON.stringify(serializedMessages, null, 2));
+  console.log(`[Diagnostics] Sanitized API History: ${serializedMessages.length} turns (content redacted)`);
 
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Unauthorized: Please sign in.');
