@@ -156,9 +156,53 @@ export async function* streamChat(
   const serializedMessages = messages
     .map(m => {
       if (m.role === 'model') {
-        // Gemma 4 contract: historical model turns carry ONLY the final answer.
-        // No thoughts, no thoughtSignature (a Gemini-3 mechanism Gemma doesn't use)
-        // no streaming fragments — publicText is already the joined final text.
+        if (isGemma) {
+          // Gemma contract: historical model turns carry ONLY the final answer.
+          // No thoughts, no thoughtSignature (a Gemini-3 mechanism Gemma doesn't use)
+          // no streaming fragments — publicText is already the joined final text.
+          const parts: any[] = [];
+          const finalText = (m.publicText ?? '').trim();
+          if (finalText) parts.push({ text: finalText });
+          for (const p of m.parts || []) {
+            if (p.functionCall) parts.push({ functionCall: p.functionCall });
+          }
+          return { role: m.role, parts };
+        }
+
+        // For Gemini (Gemini 2.5, Gemini 3, etc.):
+        // Preserve exact API response parts, including thoughtSignature metadata,
+        // thoughts, and function calls required for Gemini 3 interactions and tool calling.
+        if (m.parts && m.parts.length > 0) {
+          const parts: any[] = [];
+          for (const p of m.parts) {
+            const cleanPart: any = {};
+            if (p.thoughtSignature) cleanPart.thoughtSignature = p.thoughtSignature;
+            if (p.thought !== undefined) cleanPart.thought = p.thought;
+            if (p.functionCall) cleanPart.functionCall = p.functionCall;
+            if (p.inlineData) cleanPart.inlineData = p.inlineData;
+            if (typeof p.text === 'string' && (p.text.length > 0 || p.thought)) {
+              cleanPart.text = p.text;
+            }
+            for (const key of Object.keys(p)) {
+              if (!['thoughtSignature', 'thought', 'functionCall', 'inlineData', 'text'].includes(key)) {
+                cleanPart[key] = p[key];
+              }
+            }
+            if (
+              cleanPart.functionCall ||
+              cleanPart.thoughtSignature ||
+              cleanPart.inlineData ||
+              (cleanPart.text && cleanPart.text.trim().length > 0) ||
+              cleanPart.thought
+            ) {
+              parts.push(cleanPart);
+            }
+          }
+          if (parts.length > 0) {
+            return { role: m.role, parts };
+          }
+        }
+
         const parts: any[] = [];
         const finalText = (m.publicText ?? '').trim();
         if (finalText) parts.push({ text: finalText });

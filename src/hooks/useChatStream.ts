@@ -235,23 +235,27 @@ export function useChatStream({
         modelMsgAdded = true;
       }
 
-      const partsToSave: any[] = [];
-      if (thought) {
-        partsToSave.push({
-          thought: true,
-          text: thought,
-        });
-      }
-      if (text) {
-        partsToSave.push({
-          text,
-        });
-      }
-      const functionCalls = currentModelApiParts.filter(p => p.functionCall);
-      partsToSave.push(...functionCalls);
+      let partsToSave: any[] = [];
+      if (currentModelApiParts && currentModelApiParts.length > 0) {
+        partsToSave = currentModelApiParts;
+      } else {
+        if (thought) {
+          partsToSave.push({
+            thought: true,
+            text: thought,
+          });
+        }
+        if (text) {
+          partsToSave.push({
+            text,
+          });
+        }
+        const functionCalls = currentModelApiParts.filter(p => p.functionCall);
+        partsToSave.push(...functionCalls);
 
-      if (partsToSave.length === 0) {
-        partsToSave.push({ text: '' });
+        if (partsToSave.length === 0) {
+          partsToSave.push({ text: '' });
+        }
       }
 
       onUpdateMessage(requestConversationId, modelMsgId, {
