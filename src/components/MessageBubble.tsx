@@ -173,6 +173,12 @@ export const MessageBubble = React.memo(function MessageBubble({
               </div>
             )}
 
+            {msg.backend === 'gemini_fallback' && (
+              <div className="text-xs text-[#B39DE5]/50 mt-2 italic">
+                via Gemini (Cloudflare fallback)
+              </div>
+            )}
+
             {msg.searchResults && msg.searchResults.length > 0 && (
               <div className="mt-3 pt-2 border-t-[2px] border-[#2C194D]/20">
                 <button

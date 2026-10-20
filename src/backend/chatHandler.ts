@@ -567,17 +567,69 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           return;
         }
 
+        // Gemma fallback chain: Cloudflare Workers AI first. If Cloudflare rejects the request
+        // (401/403, an HTML bot-challenge page, or the Cloudflare credential is missing), serve
+        // this same request from the direct Gemini API using the selected model id.
+        const runGeminiFallback = async (reason: string) => {
+          try {
+            console.warn(`[Fallback] Cloudflare unavailable for ${model} (${reason}). Serving this request via direct Gemini API.`);
+            const fbKey = availableKeys[0];
+            if (!fbKey) throw new Error('No Gemini API key configured for the direct fallback.');
+            const fbAi = new GoogleGenAI({ apiKey: fbKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
+            const fbContents: any[] = currentMessages
+              .map((m: any) => ({
+                role: m.role === 'model' ? 'model' : 'user',
+                parts: (m.parts || [])
+                  .filter((p: any) => typeof p.text === 'string' && p.text.length > 0 && p.thought !== true)
+                  .map((p: any) => ({ text: p.text })),
+              }))
+              .filter((c: any) => c.parts.length > 0);
+            if (fbContents.length === 0 || fbContents[0].role === 'model') {
+              fbContents.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+            }
+            send(`data: ${JSON.stringify({ type: 'backend', name: 'gemini_fallback' })}\n\n`);
+            const fbStream: any = await fbAi.models.generateContentStream({
+              model: model,
+              contents: fbContents,
+              config: {
+                systemInstruction,
+                temperature: temperature ?? 2.0,
+                topP: topP ?? 0.95,
+                maxOutputTokens: maxOutputTokens ?? 4096,
+                abortSignal,
+              },
+            });
+            for await (const chunk of fbStream) {
+              if (abortSignal?.aborted) break;
+              const parts = chunk.candidates?.[0]?.content?.parts || [];
+              for (const part of parts) {
+                if (part.thought !== true && part.text) {
+                  send(`data: ${JSON.stringify({ text: part.text })}\n\n`);
+                }
+              }
+            }
+            send('data: [DONE]\n\n');
+            safeClose();
+          } catch (fbErr: any) {
+            console.error('Gemini direct fallback failed:', fbErr?.message || fbErr);
+            send(`data: ${JSON.stringify({ error: `[${fbErr?.status ?? '?'}] Gemini fallback failed: ${fbErr?.message || 'Unknown error'}` })}\n\n`);
+            safeClose();
+          }
+        };
+
         try {
           if (!model.toLowerCase().includes('gemma')) {
             throw new Error("Cloudflare fallback is only allowed for Gemma models.");
           }
-          const cfToken = process.env.CF_TOKEN || process.env.CF_API_TOKEN;
-          const cfAccountId = process.env.CF_ACCOUNT_ID;
-          
+          const cfToken = (process.env.CF_TOKEN || process.env.CF_API_TOKEN || '').trim();
+          const cfAccountId = (process.env.CF_ACCOUNT_ID || '').trim();
+
           if (!cfToken || !cfAccountId) {
-            throw new Error("Cloudflare Workers AI credentials (CF_TOKEN and CF_ACCOUNT_ID) not configured.");
+            console.warn('[Fallback] Cloudflare credentials (CF_TOKEN / CF_ACCOUNT_ID) are not set.');
+            await runGeminiFallback('Cloudflare credentials missing');
+            return;
           }
-          
+
           console.log("Attempting direct Cloudflare Workers AI fallback...");
           const cfMessages = [];
           if (systemInstruction) {
@@ -590,9 +642,9 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               cfMessages.push({ role, content });
             }
           }
-          
+
           send(`data: ${JSON.stringify({ type: 'backend', name: 'cloudflare' })}\n\n`);
-          
+
           const cfModel = process.env.CF_GEMMA_MODEL || '@cf/google/gemma-4-26b-a4b-it';
           const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/${cfModel}`, {
             method: 'POST',
@@ -609,6 +661,14 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           });
 
           if (!cfRes.ok) {
+            const bodyText = await cfRes.text().catch(() => '');
+            const contentType = cfRes.headers.get('content-type') || '';
+            const isChallenge = /just a moment|challenge-platform|cf-chl|<html/i.test(bodyText) || contentType.includes('text/html');
+            const isAuthish = cfRes.status === 401 || cfRes.status === 403 || isChallenge;
+            if (isAuthish) {
+              await runGeminiFallback(`Cloudflare ${cfRes.status}${isChallenge ? ' bot challenge' : ''}`);
+              return;
+            }
             throw new Error(`Cloudflare API Error: ${cfRes.status} ${cfRes.statusText}`);
           }
 
@@ -636,7 +696,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               }
             }
           }
-          
+
           if (buffer.startsWith('data: ')) {
              const data = buffer.slice(6).trim();
              if (data !== '[DONE]') {
