@@ -24,7 +24,7 @@ export function resolveModelRoute(modelKey: string): RouteResolution {
   const isGemma = normalized.includes('gemma');
 
   // 1. Gemini 3.1 Pro & Gemini 3 Flash -> GEMINI_LEGACY_API_KEY
-  if (normalized.includes('gemini-3.1-pro') || normalized.includes('gemini-3-flash') || normalized.includes('3.1-pro') || normalized.includes('3-flash')) {
+  if (normalized.includes('gemini-3.1-pro') || normalized.includes('gemini-3-flash') || normalized.includes('3.1-pro') || normalized.includes('3-flash') || normalized.includes('3.8-flash') || normalized.includes('gemini-3.8')) {
     return {
       provider: 'gemini_legacy',
       keyEnvName: 'GEMINI_LEGACY_API_KEY',

@@ -110,8 +110,11 @@ app.post('/api/chat', async (req, res) => {
   
   // Single source of truth for key selection: modelRouter.resolveModelRoute()
   const route = resolveModelRoute(model);
-  const apiKey = process.env[route.keyEnvName] || process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
-  const keyName = route.keyEnvName;
+  // Gemma's primary path is Cloudflare (CF_TOKEN, read in chatHandler); the direct Gemini fallback needs a Gemini key.
+  const keyName = route.isGemma ? 'GEMINI_API_KEY' : route.keyEnvName;
+  const apiKey = route.isGemma
+    ? (process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY || process.env.GEMINI_LEGACY_API_KEY)
+    : (process.env[route.keyEnvName] || process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY);
   
   if (!apiKey && !isGemma) {
     return res.status(500).json({ error: `${keyName} (or backup key) is not configured in the environment for model ${model}.` });

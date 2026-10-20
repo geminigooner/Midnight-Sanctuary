@@ -15,7 +15,10 @@ export default async (req: Request) => {
     const reqBody = await req.json();
     // Same key selection as server.ts: resolveModelRoute() decides which env key a model uses
     const route = resolveModelRoute(String(reqBody?.model || ''));
-    const apiKey = process.env[route.keyEnvName] || process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
+    // Gemma's primary path is Cloudflare (CF_TOKEN, read in chatHandler); its direct fallback needs a Gemini key.
+    const apiKey = route.isGemma
+      ? (process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY)
+      : (process.env[route.keyEnvName] || process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY);
     if (!apiKey && !route.isGemma) {
       return new Response(JSON.stringify({ error: `${route.keyEnvName} is not configured.` }), { status: 500 });
     }
