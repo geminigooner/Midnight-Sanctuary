@@ -280,7 +280,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             systemInstruction,
             temperature: temperature ?? 2.0,
             topP: topP ?? 0.95,
-            maxOutputTokens: maxOutputTokens ?? 4096,
+            maxOutputTokens: maxOutputTokens ?? 12000,
             tools: gemmaTools,
             safetySettings: [
               { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -314,7 +314,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               thinkingLevel: ThinkingLevel[userThinkingLevel as keyof typeof ThinkingLevel] || ThinkingLevel.HIGH,
               includeThoughts: userIncludeThoughts
             };
-            config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 4096, 16384);
+            config.maxOutputTokens = Math.max(config.maxOutputTokens ?? 12000, 16384);
           }
 
           // Ensure conversation strictly starts with a user role turn for Gemini API compliance
@@ -595,7 +595,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                 systemInstruction,
                 temperature: temperature ?? 2.0,
                 topP: topP ?? 0.95,
-                maxOutputTokens: maxOutputTokens ?? 4096,
+                maxOutputTokens: maxOutputTokens ?? 12000,
                 abortSignal,
               },
             });
@@ -655,7 +655,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             body: JSON.stringify({
               messages: cfMessages,
               stream: true,
-              max_tokens: 4096
+              max_tokens: 8192
             }),
             signal: abortSignal
           });

@@ -613,7 +613,9 @@ export function useChatStream({
             updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          } else {
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
+            currentModelText += `\n\n[Reply cut off: the connection stalled before it finished.]`;
+            updateModelMessage(currentModelText, currentModelThought, 'error');
+            setTemporaryPresence('error', 'resting', 5000);
          }
       } else if (e.name === 'RepetitionError') {
          currentModelText += e.message;
@@ -628,7 +630,7 @@ export function useChatStream({
             updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          } else {
-            currentModelText += `\n\n[Error: ${e.message}]`;
+            currentModelText += `\n\n[Reply cut off: ${e.message}]`;
             updateModelMessage(currentModelText, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          }

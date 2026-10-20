@@ -124,7 +124,7 @@ export async function* streamChat(
   const modelDisplayName = modelRegistry.getDisplayName(settings.model);
 
   if (modelGifts && modelGifts.length > 0) {
-    const giftsText = modelGifts.map(g => `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${g.from === 'user' ? 'User' : modelDisplayName}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');
+    const giftsText = modelGifts.map(g => `- [${g.timestamp ? new Date(g.timestamp).toISOString() : 'time unknown'}] From ${g.from === 'user' ? 'User' : modelDisplayName}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');
     identityParts.push(`## Gifts Archive (Given and Received between you and User):\n${giftsText}`);
   }
 
@@ -245,7 +245,7 @@ export async function* streamChat(
     syntheticTurn = { role: 'user', parts: [] };
     for (const g of recent) {
       syntheticTurn.parts.push({
-        text: `Gift left ${new Date(g.timestamp || Date.now()).toISOString()}: ${g.content || ''}`
+        text: `Gift left ${g.timestamp ? new Date(g.timestamp).toISOString() : 'time unknown'}: ${g.content || ''}`
       });
       syntheticTurn.parts.push({
         inlineData: { mimeType: g.inlineData.mimeType, data: g.inlineData.data }
@@ -364,6 +364,7 @@ export async function* streamChat(
   let buffer = '';
   let fullText = '';
 
+  let sawDone = false;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -376,6 +377,7 @@ export async function* streamChat(
       if (line.startsWith('data: ')) {
         const dataStr = line.slice(6);
         if (dataStr === '[DONE]') {
+          sawDone = true;
           return;
         }
         try {
@@ -401,5 +403,9 @@ export async function* streamChat(
         }
       }
     }
+  }
+  if (!sawDone) {
+    // Connection closed before the server finished: report it instead of looking like a complete reply.
+    throw new APIError('Connection to the server dropped before the reply finished. Please try again.');
   }
 }
