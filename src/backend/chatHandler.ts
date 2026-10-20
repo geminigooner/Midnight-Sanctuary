@@ -244,6 +244,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
   // Set when the model calls a client-side tool (view_user_profile). The backend ends the
   // request there; the client sends exactly one follow-up carrying the tool result.
   let clientToolPending = false;
+  // Gemini sometimes returns an empty turn (finishReason MALFORMED_FUNCTION_CALL). Retry the
+  // generation request up to 2 times with a short backoff before surfacing an error to the user.
+  const EMPTY_RESPONSE_BACKOFF_MS = [1000, 3000];
+  let emptyResponseRetries = 0;
 
   return new ReadableStream({
     async start(controller) {
@@ -378,6 +382,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           let hasClientFulfillmentSent = false;
           let hasText = false;
           let blocked = false;
+          let pendingMalformedFinish: string | null = null;
 
           const requestStartTime = Date.now();
           let firstTokenTime = null;
@@ -392,7 +397,10 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
               const fr = chunk.candidates?.[0]?.finishReason;
             if (fr) {
               console.log("FINISH REASON:", fr, JSON.stringify(chunk.candidates?.[0]?.safetyRatings ?? []));
-              if (fr !== 'STOP') {
+              if (fr === 'MALFORMED_FUNCTION_CALL') {
+                // Held back: if this attempt comes back empty we retry and never show it.
+                pendingMalformedFinish = fr;
+              } else if (fr !== 'STOP') {
                 send(`data: ${JSON.stringify({ type: 'finish_reason', reason: fr })}\n\n`);
               }
             }
@@ -525,6 +533,25 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           }
 
           if (blocked) { safeClose(); return; }
+
+          // Empty turn (no visible text, no tool call): retry the same request before surfacing an error.
+          if (!hasText && !hasFunctionCalls && !clientToolPending && !abortSignal?.aborted) {
+            if (emptyResponseRetries < EMPTY_RESPONSE_BACKOFF_MS.length) {
+              const delay = EMPTY_RESPONSE_BACKOFF_MS[emptyResponseRetries];
+              emptyResponseRetries++;
+              console.warn(`[Empty] Model ${model} returned an empty response (finishReason: ${pendingMalformedFinish ?? 'none'}). Retrying in ${delay}ms (retry ${emptyResponseRetries}/${EMPTY_RESPONSE_BACKOFF_MS.length})...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              round--; // same round: the request is re-sent with identical history
+              continue;
+            }
+            // Retries exhausted: surface the held-back finish reason now.
+            if (pendingMalformedFinish) {
+              send(`data: ${JSON.stringify({ type: 'finish_reason', reason: pendingMalformedFinish })}\n\n`);
+            }
+          } else if (pendingMalformedFinish) {
+            send(`data: ${JSON.stringify({ type: 'finish_reason', reason: pendingMalformedFinish })}\n\n`);
+          }
+          emptyResponseRetries = hasText || hasFunctionCalls ? 0 : emptyResponseRetries;
 
           if (clientToolPending) {
             // Option B: end this request at the client-side tool call. Persist the model's
