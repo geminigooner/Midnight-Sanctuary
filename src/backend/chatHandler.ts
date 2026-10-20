@@ -241,6 +241,9 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
   let currentMessages = [...messages];
   const maxRounds = 5;
   let round = 0;
+  // Set when the model calls a client-side tool (view_user_profile). The backend ends the
+  // request there; the client sends exactly one follow-up carrying the tool result.
+  let clientToolPending = false;
 
   return new ReadableStream({
     async start(controller) {
@@ -319,7 +322,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             currentMessages.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
           }
 
-          console.log(`ROUND ${round} CONTENTS:`, JSON.stringify(currentMessages, null, 2));
+          console.log(`ROUND ${round} CONTENTS: ${currentMessages.length} turns`);
           
           let responseStream: any;
           let retries = 0;
@@ -402,7 +405,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
             }
             if (chunk.candidates && chunk.candidates.length > 0 && chunk.candidates[0].content && chunk.candidates[0].content.parts) {
               for (const part of chunk.candidates[0].content.parts) {
-                console.log("RECEIVED PART:", JSON.stringify(part));
+                console.log("RECEIVED PART:", part.thought ? "thought" : part.functionCall ? "functionCall" : part.text ? "text" : "other");
                 modelParts.push(part);
                 if (part.thought === true && part.text) {
                   send(`data: ${JSON.stringify({ type: 'thought', text: part.text })}\n\n`);
@@ -417,6 +420,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                     send(`data: ${JSON.stringify({ type: 'client_tool_call', name: call.name, callId: call.id })}\n\n`);
                     requireClientFulfillment = true;
                     hasClientFulfillmentSent = true;
+                    clientToolPending = true;
                     hasFunctionCalls = true;
                   } else if (call.name === 'draw_scribble') {
                     send(`data: ${JSON.stringify({ 
@@ -441,7 +445,7 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
                       modelId: model 
                     })}\n\n`);
                   } else if (call.name === 'give_gift') {
-                    send(`data: ${JSON.stringify({ type: 'gift', ...call.args })}\n\n`);
+                    send(`data: ${JSON.stringify({ type: 'gift', ...call.args, modelId: model })}\n\n`);
                   } else if (call.name === 'save_memory') {
                     send(`data: ${JSON.stringify({ type: 'memory', ...call.args, author: 'model', modelId: model })}\n\n`);
                   } else if (call.name === 'lock_memory') {
@@ -522,6 +526,16 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
 
           if (blocked) { safeClose(); return; }
 
+          if (clientToolPending) {
+            // Option B: end this request at the client-side tool call. Persist the model's
+            // function call (and any server-side responses from this turn). The client sends
+            // one follow-up request that carries the view_user_profile result.
+            send(`data: ${JSON.stringify({ type: 'model_parts', parts: modelParts })}\n\n`);
+            send('data: [DONE]\n\n');
+            safeClose();
+            return;
+          }
+
           if (!hasFunctionCalls) {
             // Preserve the exact API response, including thoughtSignature metadata.
             send(`data: ${JSON.stringify({ type: 'model_parts', parts: modelParts })}\n\n`);
@@ -579,7 +593,8 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
           
           send(`data: ${JSON.stringify({ type: 'backend', name: 'cloudflare' })}\n\n`);
           
-          const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/@cf/google/gemma-4-26b-a4b-it`, {
+          const cfModel = process.env.CF_GEMMA_MODEL || '@cf/google/gemma-4-26b-a4b-it';
+          const cfRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/ai/run/${cfModel}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${cfToken}`,

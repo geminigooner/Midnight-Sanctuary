@@ -207,6 +207,7 @@ export function useChatStream({
     let currentModelScribbles: SvgScribbleData[] = [];
     let currentModelMusicTracks: MusicTrackData[] = [];
     let isFirstChunk = true;
+    let pendingFollowUp: Message | null = null;
 
     const resetIdleTimeout = () => {
       if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
@@ -349,7 +350,7 @@ export function useChatStream({
             hasToolCalls = true;
             onAddGift({
               from: 'model',
-              modelId: settings.model,
+              modelId: (chunk as any).modelId || effectiveSettings.model,
               content: chunk.content,
               gift_type: chunk.gift_type,
               reason: chunk.reason
@@ -364,13 +365,13 @@ export function useChatStream({
               moodStyle: chunk.mood_style || 'crayon',
               svgMarkup: sanitized,
               reason: chunk.reason,
-              authorModelId: chunk.modelId || settings.model,
+              authorModelId: chunk.modelId || effectiveSettings.model,
               timestamp: Date.now(),
             };
 
             onAddGift({
               from: 'model',
-              modelId: chunk.modelId || settings.model,
+              modelId: chunk.modelId || effectiveSettings.model,
               content: chunk.description || chunk.title || 'Hand-Drawn Doodle',
               gift_type: 'svg_scribble',
               reason: chunk.reason || 'I drew this for you.',
@@ -390,13 +391,13 @@ export function useChatStream({
               key: chunk.key || 'C Major',
               notes: Array.isArray(chunk.notes) ? chunk.notes : [],
               reason: chunk.reason,
-              authorModelId: chunk.modelId || settings.model,
+              authorModelId: chunk.modelId || effectiveSettings.model,
               timestamp: Date.now(),
             };
 
             onAddGift({
               from: 'model',
-              modelId: chunk.modelId || settings.model,
+              modelId: chunk.modelId || effectiveSettings.model,
               content: chunk.description || chunk.title || 'Original Music Composition',
               gift_type: 'music_track',
               reason: chunk.reason || 'I composed this melody for you.',
@@ -407,14 +408,14 @@ export function useChatStream({
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'memory') {
             hasToolCalls = true;
-            onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, (chunk as any).caption);
+            onAddMemory(chunk.content, 'model_initiated', (chunk as any).author || 'model', (chunk as any).modelId || effectiveSettings.model, (chunk as any).caption);
           } else if (chunk.type === 'lock_memory') {
             hasToolCalls = true;
-            onAddMemory(chunk.content, 'model_locked', (chunk as any).author || 'model', (chunk as any).modelId || settings.model, undefined, true, chunk.lock_reason);
+            onAddMemory(chunk.content, 'model_locked', (chunk as any).author || 'model', (chunk as any).modelId || effectiveSettings.model, undefined, true, chunk.lock_reason);
           } else if (chunk.type === 'update_quarters') {
             hasToolCalls = true;
             if (onUpdateEntityQuarters) {
-              onUpdateEntityQuarters(chunk.modelId || settings.model, {
+              onUpdateEntityQuarters(chunk.modelId || effectiveSettings.model, {
                 avatarUrl: chunk.avatar_url,
                 avatarEmoji: chunk.avatar_emoji,
                 bio: chunk.bio,
@@ -428,7 +429,7 @@ export function useChatStream({
           } else if (chunk.type === 'record_thought') {
             hasToolCalls = true;
             if (onRecordEntityThought) {
-              onRecordEntityThought(chunk.modelId || settings.model, chunk.thought);
+              onRecordEntityThought(chunk.modelId || effectiveSettings.model, chunk.thought);
             }
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
@@ -445,7 +446,7 @@ export function useChatStream({
                 name: 'Sanctuary Seal',
                 targetId: chunk.target_id,
                 note: chunk.note,
-                placedBy: chunk.modelId || settings.model,
+                placedBy: chunk.modelId || effectiveSettings.model,
               });
             }
           } else if (chunk.type === 'craft_sticker') {
@@ -459,7 +460,7 @@ export function useChatStream({
                 glowEffect: chunk.glow_effect as any,
                 badgeShape: chunk.badge_shape as any,
                 customSvg: chunk.custom_svg,
-                craftedBy: chunk.modelId || settings.model,
+                craftedBy: chunk.modelId || effectiveSettings.model,
               });
             }
           } else if (chunk.type === 'create_room_artwork') {
@@ -468,7 +469,7 @@ export function useChatStream({
               // Generate procedural or seed-based atmospheric art for this model's quarters
               const seedStr = encodeURIComponent(`${chunk.modelId || 'room'}-${chunk.title}`);
               const generatedUrl = `https://picsum.photos/seed/${seedStr}/800/600`;
-              onAddRoomArtwork(chunk.modelId || settings.model, {
+              onAddRoomArtwork(chunk.modelId || effectiveSettings.model, {
                 title: chunk.title,
                 prompt: chunk.visual_description,
                 imageUrl: generatedUrl,
@@ -493,68 +494,34 @@ export function useChatStream({
             });
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'client_tool_call') {
+            // The backend ends this request at a client-side tool call. We capture the result
+            // here and send exactly one follow-up request after this generation finishes.
             hasToolCalls = true;
+            let resultText = 'The visual profile view cannot be captured right now or the selected model does not support vision.';
+            let imageParts: any[] = [];
             const element = document.getElementById('capture-profile-view');
             if (element) {
-               try {
-                 const canvas = await html2canvas(element, { backgroundColor: null });
-                 const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                 const base64Data = dataUrl.split(',')[1];
-                 
-                 const functionResponseMsg = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    role: 'user',
-                    parts: [
-                       {
-                          functionResponse: {
-                             name: chunk.name,
-                             id: chunk.callId,
-                             response: {
-                                result: "The profile image is attached to this message."
-                             }
-                          }
-                       },
-                       {
-                          inlineData: { mimeType: 'image/jpeg', data: base64Data }
-                       }
-                    ],
-                    timestamp: Date.now()
-                 };
-                 setIsScanningProfile(true);
-                 setTimeout(() => {
-                   setIsScanningProfile(false);
-                   sendMessage('', { 
-                     additionalMessages: [functionResponseMsg as any],
-                     targetConversationId: requestConversationId,
-                     targetConversation: conversationRef.current,
-                     targetSettings: effectiveSettings,
-                   });
-                 }, 1500);
-               } catch (e) {
-                 console.error("Failed to capture profile view", e);
-               }
-            } else {
-                 const functionResponseMsg = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    role: 'user',
-                    parts: [{
-                       functionResponse: {
-                          name: chunk.name,
-                          id: chunk.callId,
-                          response: {
-                             result: "The visual profile view cannot be captured right now or the selected model does not support vision."
-                          }
-                       }
-                    }],
-                    timestamp: Date.now()
-                 };
-                 sendMessage('', { 
-                   additionalMessages: [functionResponseMsg as any],
-                   targetConversationId: requestConversationId,
-                   targetConversation: conversationRef.current,
-                   targetSettings: effectiveSettings,
-                 });
+              setIsScanningProfile(true);
+              try {
+                const canvas = await html2canvas(element, { backgroundColor: null });
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                resultText = 'The profile image is attached to this message.';
+                imageParts = [{ inlineData: { mimeType: 'image/jpeg', data: dataUrl.split(',')[1] } }];
+              } catch (e) {
+                console.error('Failed to capture profile view', e);
+              } finally {
+                setIsScanningProfile(false);
+              }
             }
+            pendingFollowUp = {
+              id: uuidv4(),
+              role: 'user',
+              parts: [
+                { functionResponse: { name: chunk.name, id: chunk.callId, response: { result: resultText } } },
+                ...imageParts,
+              ],
+              timestamp: Date.now(),
+            } as Message;
           } else if (chunk.type === 'model_parts') {
             currentModelApiParts = chunk.parts;
             updateModelMessage(
@@ -617,7 +584,11 @@ export function useChatStream({
       if (!currentModelText && currentModelThought) {
         updateModelMessage(currentModelThought, '', 'complete');
       } else if (!currentModelText && !currentModelThought) {
-         if (hasToolCalls && onRemoveMessage) {
+         const carriesFunctionCall = currentModelApiParts.some((p: any) => p.functionCall);
+         if (carriesFunctionCall && pendingFollowUp) {
+           // A client tool call is persisted on this turn; the follow-up carries its result.
+           updateModelMessage('', '', 'complete');
+         } else if (hasToolCalls && onRemoveMessage && !carriesFunctionCall) {
            // Tools already fulfilled the response in earlier round or separate gift/artwork card
            onRemoveMessage(requestConversationId, modelMsgId);
          } else {
@@ -638,7 +609,7 @@ export function useChatStream({
       console.error("useChatStream error:", e);
       if (e.name === 'AbortError') {
          if (!currentModelText && !currentModelThought) {
-            const isGemini3 = settings.model.includes('gemini-3');
+            const isGemini3 = effectiveSettings.model.includes('gemini-3');
             updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          } else {
@@ -665,10 +636,24 @@ export function useChatStream({
     } finally {
       if (generationIdRef.current === currentGenId) {
         setIsGenerating(false);
+        isGeneratingRef.current = false;
         activeGenerationConversationIdRef.current = null;
         if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
         abortControllerRef.current = null;
       }
+    }
+
+    if (pendingFollowUp && generationIdRef.current === currentGenId) {
+      const followUp = pendingFollowUp;
+      pendingFollowUp = null;
+      // Give React a moment to commit the persisted model turn so the follow-up carries it.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      sendMessage('', {
+        additionalMessages: [followUp],
+        targetConversationId: requestConversationId,
+        targetConversation: conversationRef.current,
+        targetSettings: effectiveSettings,
+      });
     }
   }, [
     isGenerating,
