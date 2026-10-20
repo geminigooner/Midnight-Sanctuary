@@ -144,9 +144,23 @@ export function ChatArea() {
     }
   }, [ui.pendingPrompt, store, sendMessage, ui]);
 
-  const visibleMessages = (conversation?.messages || []).filter(
-    (m: Message) => m.role === 'user' || m.role === 'model'
-  );
+  const visibleMessages = (conversation?.messages || []).filter((m: Message, idx: number, all: Message[]) => {
+    if (m.role !== 'user' && m.role !== 'model') return false;
+    if (m.role === 'model') {
+      // Drop phantom empty model bubbles (stream failed/aborted before any text).
+      // Keep the one still streaming, and any that carry real content.
+      const hasContent = getPublicMessageText(m).trim().length > 0
+        || (m.thoughtText ?? '').trim().length > 0
+        || (m.generatedImages?.length ?? 0) > 0
+        || (m.scribbles?.length ?? 0) > 0
+        || (m.musicTracks?.length ?? 0) > 0
+        || (m.searchResults?.length ?? 0) > 0
+        || (m.parts || []).some((p: any) => p.functionCall || p.inlineData);
+      const isLast = idx === all.length - 1;
+      if (!hasContent && !(isGenerating && isLast)) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#1a153b] relative overflow-hidden min-w-0 max-w-full">
