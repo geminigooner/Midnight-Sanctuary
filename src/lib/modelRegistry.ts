@@ -289,7 +289,7 @@ export function assembleModelContext(
   if (recentGifts.length > 0) {
     const giftLines = recentGifts.map(g => {
       const sender = g.from === 'user' ? 'User' : modelDisplayName;
-      return `- [${new Date(g.timestamp || Date.now()).toISOString()}] From ${sender}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`;
+      return `- [${g.timestamp ? new Date(g.timestamp).toISOString() : 'time unknown'}] From ${sender}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`;
     });
     sections.push(`## Recent Gifts Exchanged (Last ${recentGifts.length}):\n${giftLines.join('\n')}`);
   }
