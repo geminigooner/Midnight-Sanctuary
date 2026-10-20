@@ -52,6 +52,24 @@ export type ChatStreamEvent =
 
 import { UserProfile } from './types';
 
+// Max gifts placed in the Gifts Archive text per request.
+const GIFT_ARCHIVE_CAP = 15;
+
+// Drop duplicate gifts (same id) and return them sorted oldest -> newest by timestamp.
+function dedupeGiftsById(list: Gift[]): Gift[] {
+  const seen = new Set<string>();
+  const out: Gift[] = [];
+  for (const g of list) {
+    const key = g.id ?? '';
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(g);
+  }
+  return out.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+}
+
 export async function* streamChat(
   messages: Message[],
   settings: AppSettings,
@@ -120,7 +138,10 @@ export async function* streamChat(
     }
   }
 
-  const modelGifts = getModelVisibleGifts(gifts, settings.model);
+  // Dedupe by id and sort chronologically (oldest first) so slices below mean "most recent".
+  const allModelGifts = dedupeGiftsById(getModelVisibleGifts(gifts, settings.model));
+  // Archive text: only the ~15 most recent gifts.
+  const modelGifts = allModelGifts.slice(-GIFT_ARCHIVE_CAP);
   const modelDisplayName = modelRegistry.getDisplayName(settings.model);
 
   if (modelGifts && modelGifts.length > 0) {
@@ -237,18 +258,15 @@ export async function* streamChat(
       return acc;
     }, [] as any[]);
 
-  const giftImages = (modelGifts || []).filter(g => g.inlineData?.data);
+  const giftImages = allModelGifts.filter(g => g.inlineData?.data).slice(-3); // newest 3 by timestamp (allModelGifts is sorted oldest->newest)
   let syntheticTurn: any = null;
 
   if (giftImages.length > 0) {
-    const recent = giftImages.slice(-3);
+    const recent = giftImages;
     syntheticTurn = { role: 'user', parts: [] };
     for (const g of recent) {
       syntheticTurn.parts.push({
-        text: `Gift left ${g.timestamp ? new Date(g.timestamp).toISOString() : 'time unknown'}: ${g.content || ''}`
-      });
-      syntheticTurn.parts.push({
-        inlineData: { mimeType: g.inlineData.mimeType, data: g.inlineData.data }
+        inlineData: { mimeType: g.inlineData!.mimeType, data: g.inlineData!.data }
       });
     }
   }
