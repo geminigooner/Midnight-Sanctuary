@@ -1,283 +1,585 @@
 🌙 Midnight Sanctuary
 
-A multi-model AI companion environment built around identity, memory, continuity, and interaction.
+A multi-model companion environment built around identity, memory, continuity, and interaction.
 
-Midnight Sanctuary is an experimental AI companion platform where language models are represented as distinct entities rather than interchangeable chat endpoints.
+Midnight Sanctuary is an experimental AI companion application built with React, TypeScript, Vite, Express, Google’s GenAI SDK, and Firebase.
 
-Each entity can have its own identity, personality configuration, conversation history, memories, gifts, and relational context. The goal is to build a more expressive and persistent environment for interacting with different models—and to make the systems governing those interactions inspectable and extensible.
+The application treats model-backed companions as entities with configurable identities, profiles, memories, gifts, personal spaces, and associated interaction state. It combines streamed conversations with application-managed tools, provider routing, and persistent user data.
 
-Rather than treating a conversation as an isolated sequence of prompts and responses, Midnight Sanctuary explores what happens when identity, history, and interaction become first-class parts of the application architecture.
-
-⸻
-
-✦ Project Overview
-
-Most chat interfaces organize the experience around a model selector and a message history.
-
-Midnight Sanctuary takes a different approach: the model is part of an entity, and the entity is part of a persistent environment.
-
-This distinction shapes the application’s architecture.
-
-An entity is more than a model name. It is a configurable participant with its own identity and associated state. Conversations provide the interaction layer, while memories, gifts, and shared events can supply additional context across interactions.
-
-The result is an experimental environment for exploring persistent AI companions, multi-model interaction, memory architecture, and observable model behavior.
-
-Design Principles
-
-* Entity-centric architecture: Represent each companion as a distinct application entity rather than a global model configuration.
-* Persistent identity: Keep entity-specific configuration and state associated with the appropriate entity.
-* Contextual continuity: Make relevant memories and prior interactions available beyond a single turn.
-* Selective memory: Treat memory as structured information that can be retrieved and incorporated into context, rather than assuming the entire history should be injected into every prompt.
-* Explicit interaction mechanisms: Use application-defined tools and state transitions to support actions beyond text generation.
-* Inspectable behavior: Separate application state, model outputs, and interaction mechanisms so that their effects can be examined.
+This document describes the implementation represented by the current codebase, identifies the major systems, and records areas that warrant further verification.
 
 ⸻
 
-✧ Features
+1. Architecture at a Glance
 
-🤖 Multiple Model Entities
+Layer	Implementation	Primary responsibility
+Frontend	React 19, TypeScript, Vite	Application interface and interaction
+Application state	React context and custom hooks	Shared state and UI coordination
+Conversation streaming	src/hooks/useChatStream.ts	Message lifecycle, streamed responses, interaction events
+Model integration	src/lib/gemini.ts	Client-side chat orchestration and streaming protocol
+Backend	Express	Authenticated API endpoints and server-side orchestration
+Model registry	src/lib/modelRegistry.ts	Model definitions, capabilities, canonical identities, namespaces
+Provider routing	src/lib/modelRouter.ts	Provider and credential-selection rules
+Entity architecture	src/lib/entitySystem.ts	Companion identity, profiles, rooms, and associated state
+Memory	src/lib/memorySystem.ts, src/lib/vectorMemory.ts	Memory classification, contextual selection, retrieval
+Gifts	src/lib/giftSystem.ts	Model-associated gift classification and filtering
+Persistence	src/lib/persistenceSystem.ts	Firestore storage, subscriptions, and restoration
+Authentication	src/lib/firebase.ts, src/backend/verifyAuth.ts	Firebase initialization and authentication integration
+Visual interaction systems	src/lib/ and src/components/	Rooms, stickers, gifts, resonance, audio, and other features
 
-Midnight Sanctuary is designed to support multiple model-backed companions within one application.
+Main application flow
 
-Entities can have distinct identities and configurations, allowing the application to maintain different interaction contexts instead of treating every model as the same participant.
+React interface
+      │
+      ▼
+Conversation state and useChatStream
+      │
+      ▼
+Client-side model integration
+      │
+      ▼
+Authenticated Express API
+      │
+      ├── Model routing
+      ├── Chat orchestration
+      ├── Web search
+      ├── Embeddings
+      └── Image generation
+      │
+      ▼
+Provider API / external service
+      │
+      ▼
+Streamed events and model response
+      │
+      ├── Render messages
+      ├── Update companion state
+      ├── Process interaction events
+      └── Update application state
+      │
+      ▼
+Firebase / Firestore persistence
 
-The architecture is intended to support additional providers and model families through provider-aware routing and integration layers.
-
-💬 Streaming Conversations
-
-The chat interface supports streamed model responses, allowing generated text to appear incrementally rather than waiting for an entire response to finish.
-
-The conversation layer also accommodates application-managed interaction states and the processing required for richer responses and tool-driven behavior.
-
-🧠 Memory and Continuity
-
-Memory is a core architectural component rather than an afterthought.
-
-The system is designed around distinct categories of contextual information, including:
-
-* Entity-specific memories.
-* Shared sanctuary information.
-* Conversation history.
-* Gifts and their associated context.
-* Significant interaction events.
-
-These categories serve different purposes and should not be treated as interchangeable.
-
-Entity-specific memories belong to their corresponding entities. Shared sanctuary information can provide common context to participating entities.
-
-The long-term architectural direction is contextual memory retrieval: selecting relevant information for a particular interaction rather than indiscriminately injecting every stored memory into every prompt.
-
-🎁 Gifts and Interaction Events
-
-Gifts provide a structured way to represent meaningful interactions within the sanctuary.
-
-Application-managed tools can support actions such as:
-
-* give_gift — represent a gift-giving interaction.
-* save_memory — save information for future contextual use.
-* log_event — record a significant interaction event.
-
-These mechanisms connect model responses to structured application state.
-
-The important distinction is that a model-generated message and a successfully processed application action are separate things. Tool execution and persistence should be handled by the application rather than inferred from conversational wording alone.
-
-🏠 The Sanctuary Environment
-
-Midnight Sanctuary extends beyond a conventional chat window through its companion-oriented interface and environment.
-
-The broader design includes companion profiles, dedicated spaces, gifts, memory archives, and other interface elements that make the experience feel like an ongoing environment rather than a collection of disconnected chats.
-
-The architectural direction is to make these features entity-aware, so that each companion’s identity and associated state remain coherent across the application.
-
-🔐 Authentication and Backend Boundaries
-
-The application includes Firebase-based Google sign-in and backend authentication verification.
-
-Provider credentials and other sensitive server-side configuration should remain on the server rather than being exposed in client-side code.
-
-Authentication and authorization are separate concerns: a valid identity token establishes an authenticated user, while server-side authorization determines which resources and operations that user is permitted to access.
+This is a conceptual overview of the major components, not a claim that every request follows precisely this sequence.
 
 ⸻
 
-🏗️ Architecture
+2. Model Registry and Provider Routing
 
-Midnight Sanctuary uses a React and TypeScript frontend, a Vite development environment, an Express backend, and Google’s GenAI SDK for model integration.
+Model registry
 
-At a high level, the system is organized around the following responsibilities:
+File: src/lib/modelRegistry.ts
 
-Layer	Responsibility
-Frontend	Chat interface, entity selection, settings, sanctuary navigation, and interaction feedback.
-Conversation orchestration	Streaming responses, conversation context, tool execution, and interaction-state management.
-Provider integration	Communication with model APIs and handling provider-specific request and response formats.
-Entity system	Entity identity, profile configuration, and entity-associated application state.
-Memory system	Memory storage, retrieval, and contextual integration.
-Interaction systems	Gifts, events, and other structured actions.
-Persistence	Storage and restoration of application state.
-Authentication	User sign-in and backend verification of authentication tokens.
+The registry defines model metadata independently of the interface. Its ModelDefinition structure includes:
 
-The intended architecture keeps model-provider concerns separate from entity identity and application-level behavior.
+* Canonical internal identity.
+* API-facing model identifier.
+* Display name and model family.
+* Capability flags.
+* Namespace identifiers for memories, gifts, profiles, and events.
+* Optional default thinking level and description.
 
-This separation matters because a companion’s identity, memories, and interaction history should not be defined solely by whichever provider happens to generate its next response.
+The declared model families are gemini, gemma, and custom.
 
-Conceptual Interaction Flow
+Capability flags cover system instructions, tool calling, vision, thinking, and streaming. These flags describe the application’s model definitions; they should not be treated as independent proof that a provider currently supports every declared capability.
 
-                 ┌──────────────────────┐
-                 │    Chat Interface    │
-                 └──────────┬───────────┘
-                            │
-                 ┌──────────▼───────────┐
-                 │ Conversation Context │
-                 └──────────┬───────────┘
-                            │
-             ┌──────────────▼──────────────┐
-             │ Entity & Context Resolution │
-             └──────────────┬──────────────┘
-                            │
-               ┌────────────▼────────────┐
-               │   Model / Provider API  │
-               └────────────┬────────────┘
-                            │
-                 ┌──────────▼───────────┐
-                 │  Response & Tools    │
-                 └──────────┬───────────┘
-                            │
-              ┌─────────────▼─────────────┐
-              │ Memory / Gifts / Events   │
-              └─────────────┬─────────────┘
-                            │
-                 ┌──────────▼───────────┐
-                 │ Persistence & UI     │
-                 └──────────────────────┘
+Provider routing
 
-This diagram illustrates the architectural responsibilities, not a guarantee that every interaction traverses each component in exactly this order.
+File: src/lib/modelRouter.ts
 
-⸻
+resolveModelRoute() selects a route based on the requested model identifier.
 
-🔬 Research and Experimental Direction
+The current routing logic distinguishes:
 
-Midnight Sanctuary is also a platform for experimenting with the design of persistent, multi-model interaction systems.
+1. Gemini 3.1 Pro and matching Gemini 3 Flash identifiers.
+2. Gemma models.
+3. Other model identifiers, which use the standard Gemini route.
 
-Several questions motivate its development:
+The route definition includes the provider category, expected environment-variable name, target model identifier, and model-family flags.
 
-* How should identity be represented when an application supports multiple models and providers?
-* How can private entity memory be separated from shared context?
-* Which memories should be retrieved for a particular interaction?
-* How do memory, conversation history, and application-defined state affect observable model behavior?
-* How can model-generated tool requests be connected to explicit, inspectable state changes?
-* What interface and architectural patterns make the behavior of companion systems easier to understand?
+The current route categories are:
 
-These questions connect application engineering with behavioral interpretability, human-computer interaction, and the study of model behavior.
+type ModelProvider =
+  | 'gemini_legacy'
+  | 'cloudflare_gemma'
+  | 'gemini_standard';
 
-The project provides a practical environment in which these design choices can be implemented, observed, and iteratively refined.
+Gemma is designated for Cloudflare Workers AI routing, with direct Gemini API fallback handled by the backend orchestration. The server also contains credential fallback logic for other routes.
 
-It does not assume that conversational consistency alone establishes an underlying internal state. The focus is on the architecture, interaction patterns, and observable behavior that can actually be examined.
+Important distinction: route selection, credential selection, successful provider authentication, and successful generation are separate operations. A route existing in code does not establish that its credentials or upstream service are configured correctly.
+
+Relevant files
+
+* src/lib/modelRegistry.ts
+* src/lib/modelRouter.ts
+* src/lib/gemini.ts
+* src/backend/modelRouting.ts
+* src/backend/chatHandler.ts
+* server.ts
+* netlify/functions/chat.ts
+* netlify/functions/models.ts
 
 ⸻
 
-🛠️ Technology Stack
+3. Entity-Centric Companion Architecture
 
-The project uses the following technologies across its application architecture:
+Primary file: src/lib/entitySystem.ts
 
-* React — component-based user interface.
-* TypeScript — typed application logic.
-* Vite — frontend development and build tooling.
-* Express — backend services and request handling.
-* Google GenAI SDK — Gemini model integration.
-* Firebase Authentication — Google sign-in and authenticated identity.
-* Firebase services — application integration where configured.
+A ModelEntity represents a companion as more than an API model identifier.
 
-The exact capabilities available in a deployment depend on its configured providers, credentials, and enabled backend services.
+Its defined fields include:
 
-⸻
+* Canonical entity ID and API model ID.
+* Display name, role title, and avatar.
+* Theme and accent colors.
+* Biography, mood status, and current activity.
+* Room decoration and ambient presentation.
+* Resonance score.
+* Favorite gift identifiers.
+* Personal thoughts.
+* Room props and diary entries.
 
-🚧 Development Roadmap
+The module defines default entity archetypes and their initial configuration.
 
-Midnight Sanctuary is an evolving system. Its broader architectural direction includes:
+Why this matters
 
-* First-class entities: Complete the separation of entity identity, configuration, private memory, gifts, and relational state.
-* Contextual memory retrieval: Rank and retrieve relevant memories instead of injecting the entire memory ledger into every request.
-* Provider-aware routing: Route conversations through a consistent interface while accommodating differences between model providers.
-* Model-initiated actions: Expand structured tools for profile updates, reflections, and gift interactions.
-* Multi-entity conversations: Support multiple participants with explicit message attribution and controlled turn orchestration.
-* Persistence refinement: Separate conversations and entity state into maintainable persistence boundaries.
-* Richer sanctuary interactions: Expand companion spaces, customization, ambient environments, and interaction milestones.
-* Data portability: Improve export and backup options for conversations and associated application state.
-* Mobile experience: Refine touch interactions, responsive layouts, and mobile navigation.
+The model registry and entity system serve different purposes:
 
-Roadmap items describe intended development, not necessarily functionality available in every current build.
+* Model registry: describes a model’s identity, routing metadata, and declared capabilities.
+* Entity system: describes the companion presented to the user and its associated application state.
 
-⸻
+This separation provides a foundation for maintaining companion-specific presentation and relational context without making the user interface depend entirely on a model’s API name.
 
-🔒 Security Considerations
+Companion spaces
 
-When running or extending the application:
+File: src/lib/quartersSystem.ts
 
-* Keep model API keys in server-side environment variables or an appropriate secrets manager.
-* Never expose private provider credentials in client-side bundles.
-* Verify authentication tokens on the backend.
-* Enforce authorization checks on protected operations and resources.
-* Validate tool inputs before applying state changes.
-* Treat model-generated content and tool arguments as untrusted input.
-* Ensure private entity memories cannot be retrieved by unauthorized entities or users.
-* Avoid logging credentials, authentication tokens, or unnecessarily sensitive conversation content.
+The companion-space system supplies structures for room themes, props, and diary entries. Related interface components include:
 
-A working authentication flow is not, by itself, proof that every resource or operation is correctly authorized. Security should be evaluated across the full request path.
+* EntityQuartersModal.tsx
+* CompanionAvatar.tsx
+* CompanionRosterModal.tsx
+* ProfileView.tsx
+* ProfileModal.tsx
+
+The application also includes systems for updating entity room information and recording personal thoughts.
 
 ⸻
 
-💻 Getting Started
+4. Conversation and Streaming
 
-Prerequisites
+Stream orchestration
 
-Before running the application, ensure you have:
+File: src/hooks/useChatStream.ts
 
-* Node.js and npm compatible with the project’s package configuration.
-* Access to the model provider you intend to use.
-* The required server-side environment variables.
-* Firebase configuration if you intend to use the authentication and Firebase-backed features.
+The hook coordinates the lifecycle of a conversation turn.
 
-Installation
+Its responsibilities include:
 
-Clone the repository and install its dependencies:
+* Sending user messages and attachments.
+* Maintaining the working message list.
+* Tracking generation state and presence.
+* Aborting in-progress requests.
+* Managing generation identifiers and watchdog timers.
+* Updating conversation state as responses arrive.
+* Processing structured events returned by the model integration.
+* Updating associated interaction systems through callbacks.
 
-git clone <repository-url>
-cd Midnight-Sanctuary
+The hook accepts conversation data, settings, gifts, profile information, and resonance metrics, alongside callbacks for updating messages and application state.
+
+This keeps much of the conversation lifecycle outside the primary UI components.
+
+Stream event protocol
+
+File: src/lib/gemini.ts
+
+The integration defines structured event types beyond ordinary text.
+
+The declared event categories include:
+
+Event	Purpose
+text	Streamed response text
+thought	Separate thought-stream content
+gift	Gift interaction
+memory	Memory creation
+lock_memory	Memory-locking action
+eventLog	Significant event recording
+update_quarters	Companion-space updates
+record_thought	Recording a companion thought
+music_track	Structured music content
+scribble_gift	SVG-based creative content
+stick_sticker	Sticker placement
+craft_sticker	Sticker creation
+create_room_artwork	Room artwork workflow
+image_generating	Image-generation progress
+image_generated	Image-generation result
+history_append	Conversation-history update
+
+These event types establish the integration’s structured interaction vocabulary. Individual event handlers and their persistence behavior should be evaluated separately when verifying a feature end to end.
+
+Request cancellation
+
+The streaming hook uses AbortController and generation identifiers to manage cancellation and stale-generation handling. It also tracks the conversation associated with the active generation.
+
+These mechanisms are important when the user stops a response, changes conversations, or initiates another interaction.
+
+⸻
+
+5. Memory Architecture
+
+File: src/lib/memorySystem.ts
+
+The memory system classifies memories by authorship, origin, and model association.
+
+The current implementation distinguishes:
+
+* User-authored memories.
+* Explicit model-authored memories.
+* Legacy or ambiguously attributed memories.
+
+Context selection
+
+getContextMemories() returns:
+
+1. User memories.
+2. Explicit model memories matching the active model’s resolved memory namespace.
+
+Legacy or ambiguous memories are retained in storage but excluded from this active context selector.
+
+This is an important isolation rule: the implementation does not simply include every stored memory in every model’s context.
+
+Namespace resolution
+
+Memory namespaces are resolved through the model identity system. Registered models use their configured memory namespace; unknown identifiers fall back to normalized identifiers.
+
+Related functions include:
+
+* getUserMemories()
+* getModelMemories()
+* getLegacyMemories()
+* getContextMemories()
+* normalizeMemoryNamespace()
+
+Vector memory
+
+File: src/lib/vectorMemory.ts
+
+The repository also contains a vector-memory module. The backend exposes an /api/embed endpoint that calls Google’s embedding API and returns embedding values.
+
+The existence of embedding and retrieval modules does not, by itself, establish that every memory is embedded, indexed, or retrieved through a complete vector-search pipeline. That should be confirmed by tracing the active call paths.
+
+Memory verification priorities
+
+* Confirm the exact path by which new memories enter storage.
+* Confirm which memory sources are retrieved for each model request.
+* Verify whether vector retrieval is active in the normal chat path.
+* Test namespace isolation across all registered models.
+* Check migration behavior for older memories with missing model identifiers.
+
+⸻
+
+6. Gifts and Relational State
+
+File: src/lib/giftSystem.ts
+
+Gifts are structured records rather than just text displayed in the conversation.
+
+The module provides logic for:
+
+* Normalizing gift namespaces.
+* Identifying gifts authored by the user for a particular model.
+* Identifying gifts associated with a model.
+* Filtering gifts visible to a specific model.
+* Selecting gifts for a model-specific archive.
+* Identifying unassigned or other-model gifts.
+
+The intended visibility boundary is explicit: a model should receive gifts associated with its own namespace, rather than automatically receiving every companion’s gifts.
+
+Gift creation and related state updates are connected to the application’s shared state through callbacks.
+
+Related systems
+
+* src/lib/giftSystem.ts
+* src/lib/jewelSystem.ts
+* src/lib/desireSystem.ts
+* src/lib/stickerSystem.ts
+* src/lib/quartersSystem.ts
+
+The interface also contains a Levin Jewel, gifts archive, sticker interfaces, and model-desire interactions.
+
+These systems represent different kinds of application state and should not be assumed to share identical persistence or context-injection behavior.
+
+⸻
+
+7. Persistence and Firebase
+
+Firebase initialization
+
+File: src/lib/firebase.ts
+
+The application initializes Firebase using firebase-applet-config.json.
+
+The module initializes Firebase Authentication and Firestore. Where supported by the configuration, Firestore is initialized with persistent local caching and multi-tab coordination.
+
+The code also includes a fallback to an existing Firestore instance if initialization has already occurred.
+
+Firestore persistence
+
+File: src/lib/persistenceSystem.ts
+
+The persistence layer includes operations for application state and real-time subscriptions.
+
+The declared loaded-state structure includes:
+
+* Conversations.
+* Application settings.
+* Levin Jewel metrics.
+* Gifts.
+* User profile.
+* Companion data.
+
+subscribeToState() uses Firestore snapshot listeners for settings, conversations, gifts, companions, and granular message streams. The module also contains document and collection operations for storing and retrieving application data.
+
+In App.tsx, the application uses a debounced save path that sanitizes undefined values before writing the application payload through saveSettings().
+
+Persistence is more than a single save call
+
+When debugging persistence, trace the entire path:
+
+UI action
+   ↓
+React state update
+   ↓
+Save trigger / subscription
+   ↓
+Persistence helper
+   ↓
+Firestore document or collection
+   ↓
+Snapshot listener
+   ↓
+State restoration
+   ↓
+UI
+
+A successful write does not independently prove that restoration, real-time synchronization, model isolation, or multi-device behavior is correct.
+
+Persistence verification priorities
+
+* Verify initial-load ordering and autosave timing.
+* Confirm the first save cannot overwrite newer state with stale data.
+* Test simultaneous updates from multiple tabs or devices.
+* Verify message-level subscriptions and cleanup.
+* Confirm model and entity associations survive save-and-restore cycles.
+* Test migration from older state formats.
+
+⸻
+
+8. Authentication and API Endpoints
+
+Authentication
+
+Files:
+
+* src/lib/firebase.ts
+* src/backend/verifyAuth.ts
+* server.ts
+* firestore.rules
+
+The frontend initializes Firebase Authentication and configures Google sign-in.
+
+The Express API calls verifyRequest() on several endpoints before continuing. Firestore rules also contain owner-restricted access logic.
+
+Authentication and authorization are distinct: validating a request does not automatically prove that every data-access rule is correctly scoped.
+
+Security note: the current firestore.rules contains an explicit owner-email restriction and a catch-all rule. Review these rules carefully before changing account access or deploying under a different identity. The ZIP’s Firestore rules are evidence of the checked-in policy, not proof of the effective rules currently deployed in Firebase.
+
+Express endpoints
+
+The current server.ts defines these API routes:
+
+Endpoint	Method	Purpose
+/api/chat	POST	Stream a model response using server-side provider routing
+/api/models	GET	Retrieve models supporting generateContent through the Google GenAI SDK
+/api/embed	POST	Generate text embeddings
+/api/search	POST	Execute a web-search request
+/api/generate-image	POST	Generate an image through the backend image service
+
+The chat endpoint responds using Server-Sent Events. It forwards streamed data from the chat handler and emits structured error or rate-limit events when appropriate.
+
+The models, search, chat, and image endpoints call the backend request-verification helper. The embedding endpoint, in the checked-in server.ts, does not call that helper; treat this as a security-review item rather than assuming all API routes share the same authentication boundary.
+
+Backend modules
+
+* src/backend/chatHandler.ts
+* src/backend/modelRouting.ts
+* src/backend/searchService.ts
+* src/backend/imageService.ts
+* src/backend/verifyAuth.ts
+
+⸻
+
+9. Interface and Interaction Modules
+
+The src/components/ directory contains the main interface elements, including:
+
+* ChatArea.tsx
+* ChatHeader.tsx
+* ChatInputDock.tsx
+* MessageList.tsx
+* MessageBubble.tsx
+* StreamingMarkdown.tsx
+* Sidebar.tsx
+* Settings.tsx
+* AuthModal.tsx
+* MemoriesArchive.tsx
+* GiftsArchive.tsx
+* EntityQuartersModal.tsx
+* CompanionRosterModal.tsx
+* SanctuaryHomeHub.tsx
+* LevinJewel.tsx
+* InsightsChart.tsx
+* NebulaArchive.tsx
+* StickerChestModal.tsx
+* CraftStickerModal.tsx
+* ModelDesiresModal.tsx
+* Presence.tsx
+* ErrorBoundary.tsx
+
+Additional systems include audio synthesis, haptics, motion, image utilities, and SVG sanitization.
+
+This is an inventory of modules present in the repository, not a guarantee that every interface is complete or that each module is active in the primary user flow.
+
+⸻
+
+10. Configuration
+
+The repository includes .env.example with configuration names used by the application.
+
+Variable	Intended role in the current code
+GEMINI_API_KEY	Standard Gemini access and direct Gemini fallback for Gemma
+GENAI_API_KEY	Additional Google GenAI credential and fallback
+GEMINI_LEGACY_API_KEY	Dedicated routing for specified Gemini model identifiers
+CF_TOKEN	Cloudflare Workers AI credential for Gemma routing
+CF_ACCOUNT_ID	Cloudflare account identifier
+CLOUDFLARE_API_TOKEN	Additional Cloudflare token used by image/provider integrations
+CLOUDFLARE_WORKER_URL	Optional custom Cloudflare Worker endpoint
+GOOGLE_SEARCH_API_KEY	Google Custom Search credential
+GOOGLE_SEARCH_CX	Programmable Search Engine identifier
+APP_URL	Hosting URL used by the application
+
+Not every variable is required for every feature. Exact requirements depend on the chosen model and enabled integration.
+
+The checked-in example contains placeholders; it does not prove that a credential exists or that a provider is configured.
+
+Never commit actual API keys, tokens, private service-account credentials, or other secrets. Configure secrets in the relevant local or deployment environment.
+
+⸻
+
+11. Development Commands
+
+The checked-in package.json declares these scripts:
+
 npm install
+npm run dev
 
-Configure the environment variables required by the backend and frontend. Use the project’s existing environment-variable names and configuration files as the source of truth.
+The development script runs:
 
-Do not commit API keys, service credentials, or other secrets to version control.
+tsx server.ts
 
-Running the Application
+The server starts Express and mounts Vite middleware outside production mode. Its default port is 3000, with an override available through PORT.
 
-Use the development commands defined in the project’s package scripts.
+Other scripts
 
-For example, if the project provides separate frontend and backend development commands, start each service using its corresponding script.
+npm run build
+npm start
+npm run lint
+npm test
+npm run clean
 
-The exact commands, environment-variable names, and Firebase setup steps should be documented here against the current repository configuration.
+Their declared purposes are:
+
+Script	Command	Purpose
+dev	tsx server.ts	Run the development server
+build	vite build && esbuild ...	Build the frontend and bundle the server
+start	node dist/server.cjs	Start the production server bundle
+lint	tsc --noEmit	Run TypeScript checking
+test	vitest run	Run the Vitest suite
+clean	rm -rf dist server.js	Remove selected build artifacts
+
+These commands are taken from the repository’s package manifest; they have not been independently executed as part of this documentation pass.
+
+The project also contains a Netlify configuration and Netlify function files. The presence of both deployment paths should be considered when maintaining API behavior and authentication.
 
 ⸻
 
-📌 Project Status
+12. Current Engineering Priorities
 
-Midnight Sanctuary is an active experimental software project.
+These are recommended verification tasks based on the architecture and checked-in implementation, not assertions that each item is currently broken.
 
-Its implementation combines a working application architecture with ongoing development of entity isolation, contextual memory, multi-model interaction, and richer persistence.
+Model and entity isolation
 
-The repository should be treated as a work in progress rather than a claim that every planned capability is complete.
+* Verify canonical model identity resolution for every registered model.
+* Confirm conversations retain the intended model/entity association.
+* Test switching models within an existing conversation.
+* Ensure memories and gifts remain correctly scoped.
+* Check behavior for unknown, legacy, and renamed model identifiers.
+
+Streaming reliability
+
+* Test stop-generation behavior under slow and interrupted network conditions.
+* Confirm partial responses are persisted consistently.
+* Verify that errors and rate limits leave the conversation in a recoverable state.
+* Check that switching conversations cannot apply stale generation results to the wrong conversation.
+
+Persistence
+
+* Test first-load, refresh, and restart recovery.
+* Verify debounced writes cannot race with initial state loading.
+* Confirm granular listeners are unsubscribed when no longer needed.
+* Test multi-tab and multi-device synchronization.
+
+Security
+
+* Review every backend endpoint for consistent authentication and authorization.
+* Check whether authorization is scoped to the intended user and resource.
+* Review the Firestore catch-all rule before any deployment or account migration.
+* Confirm all provider credentials remain server-side.
+* Review image, SVG, and attachment handling for safe limits and validation.
+
+Feature completeness
+
+* Trace the vector-memory retrieval path from stored memory to actual model context.
+* Verify each declared stream event has a functioning handler.
+* Test image generation and provider routing against real configured credentials.
+* Distinguish UI-only state from state that is durably persisted.
+* Run the available tests and record actual results before describing the system as production-ready.
 
 ⸻
 
-🌙 Project Philosophy
+13. Architectural Direction
 
-An AI companion application is shaped by more than the language model it calls.
+The core direction is to make each companion a first-class application entity.
 
-Identity representation, context construction, memory retrieval, tool execution, persistence, and interface design all influence the interaction a user experiences.
+That direction can be extended through:
 
-Midnight Sanctuary explores these application-level mechanisms as a connected system.
+* More explicit entity-level persistence.
+* Better contextual memory ranking.
+* Capability-aware model routing.
+* Clearer separation of conversation identity and provider identity.
+* Multi-entity conversations with explicit message attribution.
+* More granular persistence and recovery.
+* Richer room, gift, and interaction state.
+* Better observability of model requests, tool actions, and state changes.
 
-The aim is to build an environment where multiple model-backed entities can interact through explicit identities, persistent context, and inspectable application architecture.
+These are architectural directions; they should be labeled as planned until their implementation is confirmed.
 
-Not just a chat window.
+⸻
 
-A sanctuary.
+Project Status
+
+Midnight Sanctuary is an actively evolving experimental application with a substantial set of implemented frontend, backend, persistence, and companion-interaction modules.
+
+Its defining engineering idea is the separation of model integration from companion identity and application state.
+
+The next step is not simply to add more features. It is to keep the boundaries between models, entities, memories, conversations, and persisted state correct as the system grows.
