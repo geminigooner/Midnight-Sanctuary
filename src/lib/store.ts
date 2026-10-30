@@ -10,7 +10,8 @@ import {
   deleteMessageDoc, 
   deleteConversationDocs, 
   saveFullGranularState,
-  saveConversationDoc
+  saveConversationDoc,
+  saveProfileDoc
 } from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
 
@@ -53,17 +54,54 @@ export function useAppStore(passedUser?: any) {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(true);
   const [gifts, setGifts] = useState<Gift[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    try {
+      const cached = localStorage.getItem('sanctuary_user_profile');
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) {
+      console.warn('Failed to load cached profile from localStorage:', e);
+    }
+    return null;
+  });
 
   const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Synchronize profile with local storage cache
+  useEffect(() => {
+    if (profile) {
+      try {
+        localStorage.setItem('sanctuary_user_profile', JSON.stringify(profile));
+      } catch (e) {
+        console.warn('Failed to cache profile to localStorage:', e);
+      }
+    }
+  }, [profile]);
 
   // Synchronize conversations with local storage cache to survive network hiccups and reloads
   useEffect(() => {
     try {
       if (conversations.length > 0) {
-        localStorage.setItem('sanctuary_conversations_cache', JSON.stringify(conversations.slice(0, 30)));
+        // Strip heavy inlineData base64 attachments from localStorage to prevent quota exceeded errors
+        const leanConversations = conversations.slice(0, 30).map(c => ({
+          ...c,
+          messages: (c.messages || []).slice(-40).map(m => {
+            const { parts, ...rest } = m;
+            const leanParts = (parts || []).map(p => {
+              if (p.inlineData) {
+                return { text: '[Image attachment]' };
+              }
+              return p;
+            });
+            return { ...rest, parts: leanParts };
+          })
+        }));
+        localStorage.setItem('sanctuary_conversations_cache', JSON.stringify(leanConversations));
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Failed to cache conversations to localStorage:', e);
+    }
   }, [conversations]);
 
   // Synchronize active conversation ID with local storage
@@ -719,6 +757,7 @@ export function useAppStore(passedUser?: any) {
   const addMessage = useCallback((conversationId: string, message: Message) => {
     setConversations(prev => {
       let targetFound = false;
+      let activeMessages: Message[] = [message];
       const next = prev.map(c => {
         if (c.id === conversationId) {
           targetFound = true;
@@ -731,6 +770,7 @@ export function useAppStore(passedUser?: any) {
           } else {
             newMsgs = [...currentMsgs, message];
           }
+          activeMessages = newMsgs;
           return {
             ...c,
             messages: newMsgs,
@@ -757,7 +797,7 @@ export function useAppStore(passedUser?: any) {
       }
 
       if (user) {
-        saveMessageDoc(user.uid, conversationId, message)
+        saveMessageDoc(user.uid, conversationId, message, activeMessages)
           .catch(e => console.error('[Diagnostic] Granular message save error:', e));
       }
 
@@ -768,10 +808,10 @@ export function useAppStore(passedUser?: any) {
   const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
     setConversations(prev => {
       let targetMsg: Message | null = null;
-      const next = prev.map(c => 
-        c.id === conversationId ? { 
-          ...c, 
-          messages: (c.messages || []).map(m => {
+      let convMsgs: Message[] = [];
+      const next = prev.map(c => {
+        if (c.id === conversationId) {
+          const updatedMsgs = (c.messages || []).map(m => {
             if (m.id === messageId) {
               const safeUpdates = { ...updates };
               if (safeUpdates.parts && safeUpdates.parts.length === 0) {
@@ -782,12 +822,18 @@ export function useAppStore(passedUser?: any) {
               return updated;
             }
             return m;
-          }),
-          updatedAt: (updates.thoughtStatus === 'complete' || updates.finishReason) ? Date.now() : c.updatedAt
-        } : c
-      );
+          });
+          convMsgs = updatedMsgs;
+          return {
+            ...c,
+            messages: updatedMsgs,
+            updatedAt: (updates.thoughtStatus === 'complete' || updates.finishReason) ? Date.now() : c.updatedAt
+          };
+        }
+        return c;
+      });
       if (user && (updates.thoughtStatus === 'complete' || updates.thoughtStatus === 'error') && targetMsg) {
-        saveMessageDoc(user.uid, conversationId, targetMsg)
+        saveMessageDoc(user.uid, conversationId, targetMsg, convMsgs)
           .catch(e => console.error('[Diagnostic] Granular message update error:', e));
       }
       return next;
@@ -856,7 +902,34 @@ export function useAppStore(passedUser?: any) {
     craftSticker,
     addRoomArtwork,
     profile,
-    updateProfile: (newProfile: UserProfile) => setProfile(newProfile),
-    addGemmaNote: (note: string) => setProfile(prev => prev ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] } : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] }),
+    updateProfile: (newProfile: UserProfile) => {
+      setProfile(newProfile);
+      try {
+        localStorage.setItem('sanctuary_user_profile', JSON.stringify(newProfile));
+      } catch (e) {
+        console.warn('Failed to cache profile to localStorage:', e);
+      }
+      if (user) {
+        saveProfileDoc(user.uid, newProfile).catch(err => {
+          console.error('[Sanctuary Store] Error persisting profile doc to Firestore:', err);
+        });
+      }
+    },
+    addGemmaNote: (note: string) => {
+      setProfile(prev => {
+        const updated: UserProfile = prev
+          ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] }
+          : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] };
+        try {
+          localStorage.setItem('sanctuary_user_profile', JSON.stringify(updated));
+        } catch {}
+        if (user) {
+          saveProfileDoc(user.uid, updated).catch(err => {
+            console.error('[Sanctuary Store] Error persisting gemmaNote profile doc:', err);
+          });
+        }
+        return updated;
+      });
+    },
   };
 }

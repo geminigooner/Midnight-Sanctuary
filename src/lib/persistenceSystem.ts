@@ -99,12 +99,13 @@ export function subscribeToState(
           if (Array.isArray(legacy.gifts) && (!liveState.gifts || liveState.gifts.length === 0)) {
             liveState.gifts = legacy.gifts;
           }
-          notify();
         }
+        notify();
       });
     }
   }, (err) => {
     console.error('[Realtime Sync] Error on settings snapshot:', err);
+    notify();
   });
   unsubscribers.push(unsubSettings);
 
@@ -213,18 +214,17 @@ export function subscribeToState(
       }
     }
 
-    if (updatedConvs.length > 0) {
-      // Deterministic stable sorting for conversations: updatedAt descending, then id
-      updatedConvs.sort((a, b) => {
-        const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
-        if (diff !== 0) return diff;
-        return (a.id || '').localeCompare(b.id || '');
-      });
-      liveState.conversations = updatedConvs;
-      notify();
-    }
+    // Deterministic stable sorting for conversations: updatedAt descending, then id
+    updatedConvs.sort((a, b) => {
+      const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
+      if (diff !== 0) return diff;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+    liveState.conversations = updatedConvs;
+    notify();
   }, (err) => {
     console.error('[Realtime Sync] Conversations snapshot error:', err);
+    notify();
   });
   unsubscribers.push(unsubConvs);
 
@@ -367,13 +367,30 @@ export async function saveSettingsDoc(
   }), { merge: true });
 }
 
+export async function saveProfileDoc(userId: string, userProfile: UserProfile) {
+  if (!userId || !userProfile) return;
+  const settingsRef = doc(db, 'users', userId, 'settings', 'app');
+  return setDoc(settingsRef, removeUndefined({
+    userProfile,
+    updatedAt: Date.now(),
+  }), { merge: true });
+}
+
 export async function saveConversationDoc(userId: string, conv: Conversation) {
   if (!userId || !conv || !conv.id) return;
   const convRef = doc(db, 'users', userId, 'conversations', conv.id);
   const { messages, ...meta } = conv;
 
+  // Store the most recent messages directly on the conversation doc for instant 1st-frame snapshot loading
+  const previewMessages = Array.isArray(messages) ? messages.slice(-30).map(m => {
+    const { parts, ...mRest } = m;
+    const cleanParts = (parts || []).map((p: any) => p.inlineData ? { text: '[Image attachment]' } : p);
+    return { ...mRest, parts: cleanParts };
+  }) : [];
+
   await setDoc(convRef, removeUndefined({
     ...meta,
+    messages: previewMessages,
     updatedAt: conv.updatedAt || Date.now(),
   }), { merge: true });
 
@@ -396,14 +413,26 @@ export async function saveConversationDoc(userId: string, conv: Conversation) {
   }
 }
 
-export async function saveMessageDoc(userId: string, convId: string, message: Message) {
+export async function saveMessageDoc(userId: string, convId: string, message: Message, allMessages?: Message[]) {
   if (!userId || !convId || !message || !message.id) return;
   const msgRef = doc(db, 'users', userId, 'conversations', convId, 'messages', message.id);
   const convRef = doc(db, 'users', userId, 'conversations', convId);
 
+  const convUpdate: any = {
+    updatedAt: message.timestamp || Date.now()
+  };
+
+  if (Array.isArray(allMessages) && allMessages.length > 0) {
+    convUpdate.messages = allMessages.slice(-30).map(m => {
+      const { parts, ...mRest } = m;
+      const cleanParts = (parts || []).map((p: any) => p.inlineData ? { text: '[Image attachment]' } : p);
+      return { ...mRest, parts: cleanParts };
+    });
+  }
+
   await Promise.all([
     setDoc(msgRef, removeUndefined(message), { merge: true }),
-    setDoc(convRef, { updatedAt: message.timestamp || Date.now() }, { merge: true }),
+    setDoc(convRef, removeUndefined(convUpdate), { merge: true }),
   ]);
 }
 

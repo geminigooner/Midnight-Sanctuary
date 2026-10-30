@@ -26,6 +26,23 @@ export function ProfileModal() {
   const [askMeAbout, setAskMeAbout] = useState(profile?.askMeAbout || '');
   const [pleaseKnow, setPleaseKnow] = useState(profile?.pleaseKnow || '');
   const [photo, setPhoto] = useState(profile?.photo);
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Sync inputs whenever profile loads or changes from Firestore or cache
+  React.useEffect(() => {
+    if (profile) {
+      if (profile.name) setName(profile.name);
+      if (profile.pronouns) setPronouns(profile.pronouns);
+      if (profile.location) setLocation(profile.location);
+      if (profile.occupation) setOccupation(profile.occupation);
+      if (profile.about) setAbout(profile.about);
+      if (profile.currentVibe) setCurrentVibe(profile.currentVibe);
+      if (profile.favorites) setFavorites(profile.favorites);
+      if (profile.askMeAbout) setAskMeAbout(profile.askMeAbout);
+      if (profile.pleaseKnow) setPleaseKnow(profile.pleaseKnow);
+      if (profile.photo) setPhoto(profile.photo);
+    }
+  }, [profile]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,7 +75,10 @@ export function ProfileModal() {
       backgroundImage: profile?.backgroundImage,
       gemmaNotes: profile?.gemmaNotes || []
     });
-    setProfileOpen(false);
+    setIsSaved(true);
+    setTimeout(() => {
+      setProfileOpen(false);
+    }, 450);
   };
 
   return (
@@ -244,9 +264,12 @@ export function ProfileModal() {
           </button>
           <button 
             onClick={handleSave}
-            className="px-6 py-2.5 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#2C194D] shadow-[3px_3px_0_#2C194D] hover:bg-[#B39DE5] active:translate-y-1 active:shadow-none transition-all"
+            disabled={isSaved}
+            className={`px-6 py-2.5 border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#2C194D] shadow-[3px_3px_0_#2C194D] active:translate-y-1 active:shadow-none transition-all ${
+              isSaved ? 'bg-emerald-300 scale-95' : 'bg-[#F198B7] hover:bg-[#B39DE5]'
+            }`}
           >
-            Save Dossier
+            {isSaved ? 'Saved to Sanctuary! ✨' : 'Save Dossier'}
           </button>
         </div>
       </motion.div>

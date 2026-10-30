@@ -16,27 +16,26 @@ try {
   app = initializeApp(firebaseConfig, 'sanctuary-app');
 }
 
-// Initialize Firestore with client-side multi-tab persistent IndexedDB cache
+// Initialize Firestore with client-side persistent cache, falling back gracefully
 let firestoreInstance: any;
 const dbId = firebaseConfig.firestoreDatabaseId || undefined;
 
 try {
   if (dbId) {
     firestoreInstance = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: persistentLocalCache({}),
     }, dbId);
   } else {
     firestoreInstance = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: persistentLocalCache({}),
     });
   }
 } catch {
-  // If already initialized, fallback gracefully to existing instance
-  firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  try {
+    firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  } catch {
+    firestoreInstance = getFirestore(app);
+  }
 }
 
 export const db = firestoreInstance;
