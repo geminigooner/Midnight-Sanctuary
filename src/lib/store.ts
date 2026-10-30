@@ -29,8 +29,25 @@ export function useAppStore(passedUser?: any) {
   }, [passedUser]);
 
   const user = authUser;
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const cached = localStorage.getItem('sanctuary_conversations_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load cached conversations from localStorage:', e);
+    }
+    return [];
+  });
+  const [currentId, setCurrentId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('sanctuary_current_conv_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [jewelMetrics, setJewelMetrics] = useState<JewelMetrics>(DEFAULT_JEWEL_METRICS);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
@@ -40,18 +57,67 @@ export function useAppStore(passedUser?: any) {
 
   const [dataLoaded, setDataLoaded] = useState(false);
 
+  // Synchronize conversations with local storage cache to survive network hiccups and reloads
+  useEffect(() => {
+    try {
+      if (conversations.length > 0) {
+        localStorage.setItem('sanctuary_conversations_cache', JSON.stringify(conversations.slice(0, 30)));
+      }
+    } catch {}
+  }, [conversations]);
+
+  // Synchronize active conversation ID with local storage
+  useEffect(() => {
+    if (currentId) {
+      try {
+        localStorage.setItem('sanctuary_current_conv_id', currentId);
+      } catch {}
+    }
+  }, [currentId]);
+
   useEffect(() => {
     if (!user) return;
     
     const unsubscribe = subscribeToState(user.uid, (data) => {
       if (data) {
         if (data.conversations) {
-          const parsed = data.conversations;
-          const filtered = parsed.map((c: any) => ({
-            ...c,
-            messages: c.messages || []
-          }));
-          setConversations(filtered);
+          const incoming = data.conversations;
+          setConversations(prev => {
+            const prevMap = new Map(prev.map(c => [c.id, c]));
+            const incomingIds = new Set(incoming.map((c: any) => c.id));
+
+            // Retain locally-created conversations that haven't hit Firestore snapshot yet
+            const localOnly = prev.filter(c => !incomingIds.has(c.id));
+
+            const mergedIncoming = incoming.map((c: any) => {
+              const prevConv = prevMap.get(c.id);
+              let msgs = c.messages || [];
+
+              // Never let an empty or in-flight snapshot wipe out local messages
+              if (msgs.length === 0 && prevConv?.messages && prevConv.messages.length > 0) {
+                msgs = prevConv.messages;
+              } else if (prevConv?.messages && prevConv.messages.length > 0) {
+                // If local has messages that are streaming or pending, preserve them
+                const incomingMsgIds = new Set(msgs.map((m: any) => m.id));
+                const localPending = prevConv.messages.filter((m: any) => !incomingMsgIds.has(m.id) || m.thoughtStatus === 'thinking');
+                if (localPending.length > 0) {
+                  const combined = msgs.map((m: any) => {
+                    const match = localPending.find((lm: any) => lm.id === m.id);
+                    return match || m;
+                  });
+                  const unadded = localPending.filter((lm: any) => !msgs.some((m: any) => m.id === lm.id));
+                  msgs = [...combined, ...unadded].sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
+                }
+              }
+
+              return {
+                ...c,
+                messages: msgs
+              };
+            });
+
+            return [...mergedIncoming, ...localOnly];
+          });
         }
         if (data.settings) {
           setSettings(prev => ({ 
@@ -683,6 +749,11 @@ export function useAppStore(passedUser?: any) {
           updatedAt: Date.now()
         };
         next.unshift(newConv);
+        if (user) {
+          saveConversationDoc(user.uid, newConv).catch(err => {
+            console.error('[Sanctuary Store] Error saving new conversation doc in addMessage:', err);
+          });
+        }
       }
 
       if (user) {

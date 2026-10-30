@@ -60,9 +60,10 @@ export function ChatArea() {
     store.addMemory(content, 'chat_starred', 'user', activeModelId);
   }, [store.settings.model, store.addMemory]);
 
-  const handleSend = useCallback((textToSend?: string, replaceIndex?: number, additionalMessages?: Message[]) => {
+  const handleSend = useCallback((textToSend?: string, replaceIndex?: number, additionalMessages?: Message[], sendAttachments?: any[]) => {
     const rawText = textToSend !== undefined ? textToSend : input;
-    if (!rawText.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) return;
+    const currentAttachments = sendAttachments !== undefined ? sendAttachments : [...attachments];
+    if (!rawText.trim() && currentAttachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) return;
 
     // If on home view without an active conversation, create one automatically
     let activeConvId = store.currentId;
@@ -76,7 +77,6 @@ export function ChatArea() {
       setInput('');
     }
 
-    const currentAttachments = [...attachments];
     if (replaceIndex === undefined && textToSend === undefined) {
       setAttachments([]);
     }
@@ -147,8 +147,8 @@ export function ChatArea() {
   const visibleMessages = (conversation?.messages || []).filter((m: Message, idx: number, all: Message[]) => {
     if (m.role !== 'user' && m.role !== 'model') return false;
     if (m.role === 'model') {
-      // Drop phantom empty model bubbles (stream failed/aborted before any text).
-      // Keep the one still streaming, and any that carry real content.
+      const isError = m.thoughtStatus === 'error';
+      // Keep real content, error banners with retry capability, and active streaming bubbles
       const hasContent = getPublicMessageText(m).trim().length > 0
         || (m.thoughtText ?? '').trim().length > 0
         || (m.generatedImages?.length ?? 0) > 0
@@ -157,7 +157,7 @@ export function ChatArea() {
         || (m.searchResults?.length ?? 0) > 0
         || (m.parts || []).some((p: any) => p.functionCall || p.inlineData);
       const isLast = idx === all.length - 1;
-      if (!hasContent && !(isGenerating && isLast)) return false;
+      if (!hasContent && !isError && !(isGenerating && isLast)) return false;
     }
     return true;
   });
@@ -199,7 +199,7 @@ export function ChatArea() {
             visibleMessages={visibleMessages}
             isGenerating={isGenerating}
             onCopy={handleCopy}
-            onResend={(content, origIndex) => handleSend(content, origIndex)}
+            onResend={(content, origIndex, atts) => handleSend(content, origIndex, undefined, atts)}
             onFavorite={handleFavorite}
             onImageClick={(url) => setSelectedImage(url)}
             onSelectPrompt={(prompt) => handleSend(prompt)}

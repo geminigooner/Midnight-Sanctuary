@@ -5,6 +5,7 @@ import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { ScribbleCard } from './ScribbleCard';
 import { MusicGiftCard } from './MusicGiftCard';
+import { ErrorState } from './ErrorState';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { getMotion } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
@@ -16,17 +17,21 @@ export const MessageBubble = React.memo(function MessageBubble({
    isGenerating, 
    onCopy, 
    onResend,
-  onFavorite,
-  onImageClick,
-  onDelete,
-  onReact,
-  modelName
+   onRetry,
+   precedingUserPrompt,
+   onFavorite,
+   onImageClick,
+   onDelete,
+   onReact,
+   modelName
 }: { 
    msg: Message;
   isLast: boolean;
   isGenerating: boolean;
   onCopy: (t: string) => void;
   onResend?: (content: string) => void;
+  onRetry?: () => void;
+  precedingUserPrompt?: string;
   onFavorite?: (content: string) => void;
   onImageClick?: (url: string) => void;
   onDelete?: () => void;
@@ -103,6 +108,42 @@ export const MessageBubble = React.memo(function MessageBubble({
        transition: { type: 'spring' as const, stiffness: 400, damping: 25, mass: 0.8 } 
      }
   };
+
+  const isError = !isUser && (
+    msg.thoughtStatus === 'error' ||
+    publicText.startsWith('[Error:') ||
+    publicText.startsWith('[Request timed out') ||
+    publicText.startsWith('[The model returned an empty response')
+  );
+
+  if (isError) {
+    return (
+      <motion.div 
+        variants={reducedMotion ? {} : messageVariants}
+        className="flex justify-start group w-full"
+      >
+        <div className="w-full max-w-[90%] sm:max-w-[85%] lg:max-w-[75%] flex flex-col gap-2">
+          {Boolean(thoughtText?.trim()) && (
+            <ThoughtBubble
+              text={thoughtText || ''}
+              status="complete"
+              modelName={modelName}
+            />
+          )}
+          <ErrorState
+            errorMessage={publicText}
+            userPrompt={precedingUserPrompt}
+            onRetry={() => {
+              triggerHaptic('medium');
+              onRetry?.();
+            }}
+            onDismiss={onDelete}
+            isRetrying={isGenerating && isLast}
+          />
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div 
@@ -397,4 +438,9 @@ export const MessageBubble = React.memo(function MessageBubble({
       </div>
     </motion.div>
   );
-}, (prev, next) => prev.msg === next.msg && prev.isLast === next.isLast && prev.isGenerating === next.isGenerating);
+}, (prev, next) => 
+  prev.msg === next.msg && 
+  prev.isLast === next.isLast && 
+  prev.isGenerating === next.isGenerating &&
+  prev.precedingUserPrompt === next.precedingUserPrompt
+);

@@ -122,12 +122,14 @@ export function subscribeToState(
 
       const conv: Conversation = {
         id: convId,
-        title: convMeta.title || 'Untitled Conversation',
-        modelId: convMeta.modelId,
+        title: convMeta.title || existing?.title || 'Untitled Conversation',
+        modelId: convMeta.modelId || existing?.modelId,
         updatedAt: convMeta.updatedAt || convMeta.createdAt || Date.now(),
-        messages: existing?.messages || (Array.isArray(convMeta.messages) ? convMeta.messages : []),
-        type: convMeta.type || 'direct',
-        participantEntityIds: convMeta.participantEntityIds,
+        messages: (existing?.messages && existing.messages.length > 0)
+          ? existing.messages
+          : (Array.isArray(convMeta.messages) ? convMeta.messages : []),
+        type: convMeta.type || existing?.type || 'direct',
+        participantEntityIds: convMeta.participantEntityIds || existing?.participantEntityIds,
       };
       updatedConvs.push(conv);
 
@@ -152,7 +154,14 @@ export function subscribeToState(
             return (a.id || '').localeCompare(b.id || '');
           });
 
-          const target = (liveState.conversations || []).find(c => c.id === convId);
+          let target = (liveState.conversations || []).find(c => c.id === convId);
+          if (!target) {
+            target = updatedConvs.find(c => c.id === convId);
+            if (target && !liveState.conversations?.some(c => c.id === convId)) {
+              liveState.conversations = [...(liveState.conversations || []), target];
+            }
+          }
+
           if (target) {
             const localMsgs = target.messages || [];
             const incomingIds = new Set(messages.map(m => m.id));

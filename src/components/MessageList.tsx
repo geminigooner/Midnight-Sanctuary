@@ -11,7 +11,7 @@ export interface MessageListProps {
   visibleMessages: Message[];
   isGenerating: boolean;
   onCopy: (text: string) => void;
-  onResend: (content: string, originalIndex: number) => void;
+  onResend: (content: string, originalIndex: number, attachments?: any[]) => void;
   onFavorite: (content: string) => void;
   onImageClick: (url: string) => void;
   onSelectPrompt?: (promptText: string) => void;
@@ -68,24 +68,51 @@ export function MessageList({
             }
           }}
         >
-          {visibleMessages.map((msg, i) => (
-            <MessageBubble 
-              key={msg.id}
-              msg={msg}
-              isLast={i === visibleMessages.length - 1}
-              isGenerating={isGenerating}
-              modelName={modelName}
-              onCopy={onCopy}
-              onResend={(content) => {
-                const origIndex = conversation.messages.findIndex(m => m.id === msg.id);
-                onResend(content, origIndex);
-              }}
-              onFavorite={onFavorite}
-              onImageClick={onImageClick}
-              onDelete={() => store.removeMessage(conversation.id, msg.id)}
-              onReact={(reaction) => store.updateMessage(conversation.id, msg.id, { reaction })}
-            />
-          ))}
+          {visibleMessages.map((msg, i) => {
+            const origIndex = conversation.messages.findIndex(m => m.id === msg.id);
+
+            // Find preceding user message if this is a model response
+            let precedingUserMsg = undefined;
+            if (msg.role === 'model' && origIndex > 0) {
+              precedingUserMsg = conversation.messages.slice(0, origIndex).reverse().find(m => m.role === 'user');
+            }
+
+            const promptToRetry = precedingUserMsg 
+              ? (precedingUserMsg.publicText || precedingUserMsg.parts?.filter(p => !p.thought && p.text).map(p => p.text).join('') || '')
+              : (msg.role === 'user' ? (msg.publicText || msg.parts?.filter(p => !p.thought && p.text).map(p => p.text).join('') || '') : '');
+
+            const attachmentsToRetry = (precedingUserMsg || (msg.role === 'user' ? msg : undefined))?.parts
+              ?.filter(p => p.inlineData)
+              ?.map(p => ({ mimeType: p.inlineData!.mimeType, data: p.inlineData!.data })) || [];
+
+            const retryTargetIndex = precedingUserMsg 
+              ? conversation.messages.findIndex(m => m.id === precedingUserMsg.id) 
+              : origIndex;
+
+            return (
+              <MessageBubble 
+                key={msg.id}
+                msg={msg}
+                isLast={i === visibleMessages.length - 1}
+                isGenerating={isGenerating}
+                modelName={modelName}
+                onCopy={onCopy}
+                precedingUserPrompt={promptToRetry}
+                onRetry={() => {
+                  if (promptToRetry || attachmentsToRetry.length > 0) {
+                    onResend(promptToRetry, retryTargetIndex, attachmentsToRetry);
+                  }
+                }}
+                onResend={(content) => {
+                  onResend(content, origIndex);
+                }}
+                onFavorite={onFavorite}
+                onImageClick={onImageClick}
+                onDelete={() => store.removeMessage(conversation.id, msg.id)}
+                onReact={(reaction) => store.updateMessage(conversation.id, msg.id, { reaction })}
+              />
+            );
+          })}
           <div ref={bottomRef} />
         </motion.div>
       )}

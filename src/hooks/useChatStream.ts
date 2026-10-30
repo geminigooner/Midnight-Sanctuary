@@ -164,11 +164,9 @@ export function useChatStream({
 
     let currentMessages = [...((targetConversation || conversationRef.current)?.messages || [])];
     
-    if (replaceIndex !== undefined && replaceIndex > 0) {
+    if (replaceIndex !== undefined && replaceIndex >= 0) {
       currentMessages = currentMessages.slice(0, replaceIndex);
       onUpdate(requestConversationId, { messages: currentMessages });
-    } else if (replaceIndex === 0) {
-      console.warn("sendMessage blocked replaceIndex=0 to prevent clearing chat");
     }
     
     const parts: any[] = [];
