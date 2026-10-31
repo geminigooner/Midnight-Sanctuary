@@ -574,7 +574,7 @@ export function useChatStream({
             updateModelMessage(currentModelText, currentModelThought, 'complete');
           } else if (chunk.type === 'backend') {
             currentModelBackend = chunk.name;
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
+            updateModelMessage(currentModelText, currentModelThought, 'thinking');
           }
         }
       }

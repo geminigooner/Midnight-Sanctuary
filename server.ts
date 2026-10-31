@@ -131,7 +131,7 @@ app.post('/api/chat', async (req, res) => {
       if (!res.writableEnded) abortController.abort();
     });
 
-    const stream = createChatStream(req.body, apiKey, abortController.signal);
+    const stream = createChatStream(req.body, apiKey || '', abortController.signal);
     const reader = stream.getReader();
     
     while (true) {
