@@ -17,7 +17,7 @@ export function MemoriesArchive() {
 
   const activeModelId = settings.model || 'models/gemini-3-flash-preview';
   const modelDef = resolveModelIdentity(activeModelId);
-  const activeModelDisplayName = modelDef?.displayName || activeModelId.split('/').pop() || 'Current Model';
+  const activeModelDisplayName = modelDef?.displayName || activeModelId?.split('/').pop() || 'Current Model';
   const currentNamespace = normalizeMemoryNamespace(activeModelId);
   
   useEffect(() => {

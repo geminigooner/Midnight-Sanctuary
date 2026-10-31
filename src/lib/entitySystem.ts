@@ -147,16 +147,7 @@ export function getModelEntity(modelKey: string, customEntities?: Record<string,
   const resolved = resolveModelIdentity(modelKey);
   const identityId = resolved?.identityId || modelKey.replace(/^models\//, '');
   
-  if (customEntities && customEntities[identityId]) {
-    return customEntities[identityId];
-  }
-
-  if (DEFAULT_ENTITIES[identityId]) {
-    return DEFAULT_ENTITIES[identityId];
-  }
-
-  // Fallback dynamic entity creation
-  return {
+  const baseEntity: ModelEntity = DEFAULT_ENTITIES[identityId] || {
     id: identityId,
     apiModelId: resolved?.apiModelId || modelKey,
     displayName: resolved?.displayName || modelKey.split('/').pop() || 'Companion Entity',
@@ -177,6 +168,27 @@ export function getModelEntity(modelKey: string, customEntities?: Record<string,
     favoriteGiftIds: [],
     personalThoughts: [],
   };
+
+  const custom = customEntities?.[identityId];
+  if (!custom) {
+    return baseEntity;
+  }
+
+  return {
+    ...baseEntity,
+    ...custom,
+    displayName: custom.displayName || baseEntity.displayName || 'Companion Entity',
+    roleTitle: custom.roleTitle || baseEntity.roleTitle || 'Sanctuary Entity',
+    avatarEmoji: custom.avatarEmoji || baseEntity.avatarEmoji || '✦',
+    themeColor: custom.themeColor || baseEntity.themeColor || '#9D7FE3',
+    bio: custom.bio || baseEntity.bio || 'A sovereign companion in the Midnight Sanctuary.',
+    moodStatus: custom.moodStatus || baseEntity.moodStatus || 'Present in the chamber',
+    roomDecor: {
+      ...baseEntity.roomDecor,
+      ...(custom.roomDecor || {})
+    },
+    personalThoughts: custom.personalThoughts || baseEntity.personalThoughts || [],
+  };
 }
 
 /**
@@ -191,37 +203,33 @@ export function getAllEntities(customEntities?: Record<string, any>): ModelEntit
     const defaultProps = DEFAULT_PROPS_BY_ENTITY[key] || [];
     const defaultDiaries = DEFAULT_DIARY_ENTRIES.filter(d => d.entityId === key);
 
-    if (custom) {
-      result[key] = {
-        ...def,
-        ...custom,
-        roomDecor: {
-          ...def.roomDecor,
-          ...(custom.roomDecor || {})
-        },
-        personalThoughts: custom.personalThoughts || def.personalThoughts || [],
-        roomProps: custom.roomProps !== undefined ? custom.roomProps : defaultProps,
-        diaryEntries: custom.diaryEntries !== undefined ? custom.diaryEntries : defaultDiaries,
-      };
-    } else {
-      result[key] = { 
-        ...def,
-        roomProps: defaultProps,
-        diaryEntries: defaultDiaries,
-      };
-    }
+    result[key] = {
+      ...def,
+      ...(custom || {}),
+      displayName: custom?.displayName || def.displayName || 'Companion Entity',
+      roleTitle: custom?.roleTitle || def.roleTitle || 'Sanctuary Entity',
+      avatarEmoji: custom?.avatarEmoji || def.avatarEmoji || '✦',
+      themeColor: custom?.themeColor || def.themeColor || '#9D7FE3',
+      roomDecor: {
+        ...def.roomDecor,
+        ...(custom?.roomDecor || {})
+      },
+      personalThoughts: custom?.personalThoughts || def.personalThoughts || [],
+      roomProps: custom?.roomProps !== undefined ? custom.roomProps : defaultProps,
+      diaryEntries: custom?.diaryEntries !== undefined ? custom.diaryEntries : defaultDiaries,
+    };
   }
 
   // Then add any additional custom entities not in defaults
   if (customEntities) {
     for (const [key, custom] of Object.entries(customEntities)) {
-      if (!result[key]) {
+      if (!result[key] && custom) {
         result[key] = getModelEntity(key, customEntities as any);
       }
     }
   }
 
-  return Object.values(result);
+  return Object.values(result).filter(e => Boolean(e && e.id && (e.displayName || 'Companion')));
 }
 
 /**

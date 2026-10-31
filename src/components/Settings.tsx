@@ -175,8 +175,8 @@ export function Settings() {
                           }`}
                         >
                           <div className="truncate pr-2">
-                            <p className="font-bold text-sm text-[#2C194D] truncate">{m.displayName}</p>
-                            <p className="text-[10px] text-[#2C194D]/60 truncate">{m.name.split('/').pop()}</p>
+                            <p className="font-bold text-sm text-[#2C194D] truncate">{m.displayName || 'Model'}</p>
+                            <p className="text-[10px] text-[#2C194D]/60 truncate">{m.name?.split('/').pop() || m.displayName || 'Model'}</p>
                           </div>
                           <button
                             onClick={(e) => {

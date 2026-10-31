@@ -14,6 +14,7 @@ import {
   saveProfileDoc
 } from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
+import { getModelEntity } from './entitySystem';
 
 export function useAppStore(passedUser?: any) {
   const [authUser, setAuthUser] = useState<any>(passedUser || null);
@@ -351,7 +352,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
 
       const updatedEntity = {
         ...currentEntity,
@@ -391,7 +392,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevEntries = currentEntity.diaryEntries || [];
 
       const newEntry = {
@@ -427,7 +428,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevEntries = currentEntity.diaryEntries || [];
 
       const updatedEntries = prevEntries.map((e: any) => 
@@ -454,7 +455,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevEntries = currentEntity.diaryEntries || [];
 
       const updatedEntries = prevEntries.filter((e: any) => e.id !== entryId);
@@ -479,7 +480,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevProps = currentEntity.roomProps || [];
 
       const newProp = {
@@ -516,7 +517,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevProps = currentEntity.roomProps || [];
 
       const updatedProps = prevProps.map((p: any) => 
@@ -543,7 +544,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevProps = currentEntity.roomProps || [];
 
       const updatedProps = prevProps.filter((p: any) => p.id !== propId);
@@ -568,7 +569,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const existingArtwork = currentEntity.roomDecor?.customArtwork || [];
 
       const newArt = {
@@ -655,7 +656,7 @@ export function useAppStore(passedUser?: any) {
     setSettings(prev => {
       const canonical = modelKey.replace(/^models\//, '');
       const existingEntities = prev.customEntities || {};
-      const currentEntity = existingEntities[canonical] || {};
+      const currentEntity = getModelEntity(canonical, prev.customEntities);
       const prevThoughts = currentEntity.personalThoughts || [];
 
       const newThought = {

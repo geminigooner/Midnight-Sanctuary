@@ -30,7 +30,7 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
       onSelectCompanion(entity);
     } else {
       // Create a fresh conversation with this selected model
-      const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName}`);
+      const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName || 'Companion'}`);
       store.setCurrentId(newConv.id);
     }
     onClose();
@@ -133,7 +133,7 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
                     className="px-4 py-2 rounded-xl bg-[#F198B7] text-[#2C194D] font-black text-xs border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#F198B7]/90 active:translate-y-0.5 transition-all flex items-center gap-1.5"
                   >
                     <MessageSquare size={13} />
-                    <span>Talk to {entity.displayName.split(' ')[0]}</span>
+                    <span>Talk to {(entity.displayName || 'Companion').split(' ')[0]}</span>
                   </button>
 
                   <button

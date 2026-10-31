@@ -22,7 +22,7 @@ export function GiftsArchive() {
 
   const activeModelId = settings.model || 'models/gemini-3-flash-preview';
   const modelDef = resolveModelIdentity(activeModelId);
-  const activeModelDisplayName = modelDef?.displayName || activeModelId.split('/').pop() || 'Current Model';
+  const activeModelDisplayName = modelDef?.displayName || activeModelId?.split('/').pop() || 'Current Model';
 
   const currentModelGifts = getModelVisibleGifts(gifts, activeModelId);
   const otherGifts = getLegacyOrOtherModelGifts(gifts, activeModelId);
