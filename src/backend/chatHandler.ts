@@ -418,8 +418,11 @@ export function createChatStream(reqBody: any, apiKey: string, abortSignal?: Abo
   }
 
   const modelDef = modelRegistry.get(model);
+  const isPro31 = model.toLowerCase().includes('gemini-3.1-pro') || model.toLowerCase().includes('3.1-pro');
   const availableKeys = Array.from(new Set([
+    ...(isPro31 ? [process.env.PRO_API_KEY] : []),
     apiKey,
+    process.env.PRO_API_KEY,
     process.env.GEMINI_LEGACY_API_KEY,
     process.env.GENAI_API_KEY,
     process.env.GEMINI_API_KEY,

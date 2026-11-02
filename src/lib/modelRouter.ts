@@ -1,10 +1,10 @@
 import { resolveModelIdentity } from './modelRegistry';
 
-export type ModelProvider = 'gemini_legacy' | 'cloudflare_gemma' | 'gemini_standard';
+export type ModelProvider = 'gemini_pro' | 'gemini_legacy' | 'cloudflare_gemma' | 'gemini_standard';
 
 export interface RouteResolution {
   provider: ModelProvider;
-  keyEnvName: 'GEMINI_LEGACY_API_KEY' | 'CF_TOKEN' | 'GEMINI_API_KEY' | 'GENAI_API_KEY';
+  keyEnvName: 'PRO_API_KEY' | 'GEMINI_LEGACY_API_KEY' | 'CF_TOKEN' | 'GEMINI_API_KEY' | 'GENAI_API_KEY';
   targetModel: string;
   isGemma: boolean;
   isGemini3Preview: boolean;
@@ -13,9 +13,10 @@ export interface RouteResolution {
 /**
  * Resolves the exact routing strategy and provider for any given model string:
  * 
- * 1. Flash 3 & Gemini Pro 3.1: Routed strictly through `GEMINI_LEGACY_API_KEY`
- * 2. Gemma models: Routed primarily through Cloudflare Workers AI using `CF_TOKEN`, with direct Gemini API fallback
- * 3. Other Gemini models: Routed through `GEMINI_API_KEY` (or `GENAI_API_KEY`)
+ * 1. Gemini Pro 3.1: Routed strictly through `PRO_API_KEY`
+ * 2. Flash 3 / 3.8: Routed through `GEMINI_LEGACY_API_KEY`
+ * 3. Gemma models: Routed primarily through Cloudflare Workers AI using `CF_TOKEN`, with direct Gemini API fallback
+ * 4. Other Gemini models: Routed through `GEMINI_API_KEY` (or `GENAI_API_KEY`)
  * 
  * Strictly throws genuine errors if endpoints fail, without masked or unwanted 2.5 fallbacks.
  */
@@ -23,8 +24,19 @@ export function resolveModelRoute(modelKey: string): RouteResolution {
   const normalized = modelKey.toLowerCase();
   const isGemma = normalized.includes('gemma');
 
-  // 1. Gemini 3.1 Pro & Gemini 3 Flash -> GEMINI_LEGACY_API_KEY
-  if (normalized.includes('gemini-3.1-pro') || normalized.includes('gemini-3-flash') || normalized.includes('3.1-pro') || normalized.includes('3-flash') || normalized.includes('3.8-flash') || normalized.includes('gemini-3.8')) {
+  // 1. Gemini 3.1 Pro -> PRO_API_KEY
+  if (normalized.includes('gemini-3.1-pro') || normalized.includes('3.1-pro')) {
+    return {
+      provider: 'gemini_pro',
+      keyEnvName: 'PRO_API_KEY',
+      targetModel: modelKey.startsWith('models/') ? modelKey : `models/${modelKey}`,
+      isGemma: false,
+      isGemini3Preview: true,
+    };
+  }
+
+  // 2. Gemini 3 Flash / 3.8 Flash -> GEMINI_LEGACY_API_KEY
+  if (normalized.includes('gemini-3-flash') || normalized.includes('3-flash') || normalized.includes('3.8-flash') || normalized.includes('gemini-3.8')) {
     return {
       provider: 'gemini_legacy',
       keyEnvName: 'GEMINI_LEGACY_API_KEY',
