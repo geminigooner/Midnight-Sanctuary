@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan to isolate the Gemini AI service layer (src/backend/gemini.service.ts), externalize conversation/profile/memory/gift state retrieval to Firestore with seamless fallback (src/backend/firestoreContext.service.ts), and strip all prompt engineering and <think> tag parsing out of the React frontend.",
+  "updatedAt": "2026-11-06T10:32:02.240244641Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

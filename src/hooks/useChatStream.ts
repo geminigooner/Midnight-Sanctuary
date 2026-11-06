@@ -283,7 +283,14 @@ export function useChatStream({
 
     try {
       let hasToolCalls = false;
-      const generator = streamChat(currentMessages, effectiveSettings, gifts, profile, currentAbortController.signal);
+      const generator = streamChat(
+        currentMessages,
+        effectiveSettings,
+        gifts,
+        profile,
+        currentAbortController.signal,
+        requestConversationId
+      );
       
       onAddMessage(requestConversationId, { 
         id: modelMsgId, 
@@ -303,63 +310,33 @@ export function useChatStream({
       let apiThoughtAccumulator = '';
       let lastUpdateTime = 0;
 
-      const updateWithParsedThinking = (textChunk: string, force = false) => {
-         if (textChunk) rawTextAccumulator += textChunk;
-         
-         let parsedThought = apiThoughtAccumulator;
-         let parsedText = rawTextAccumulator;
-         let status = 'complete';
-         
-         let currentText = rawTextAccumulator;
-         const extractedThoughts: string[] = [];
-         
-         while (true) {
-             const startIndex = currentText.indexOf('<think>');
-             if (startIndex === -1) break;
-             
-             const endIndex = currentText.indexOf('</think>', startIndex);
-             if (endIndex !== -1) {
-                 extractedThoughts.push(currentText.substring(startIndex + 7, endIndex));
-                 currentText = currentText.substring(0, startIndex) + currentText.substring(endIndex + 8);
-             } else {
-                 extractedThoughts.push(currentText.substring(startIndex + 7));
-                 currentText = currentText.substring(0, startIndex);
-                 status = 'thinking';
-                 break;
-             }
-         }
-         
-         if (extractedThoughts.length > 0) {
-             parsedThought = (apiThoughtAccumulator ? apiThoughtAccumulator + '\n' : '') + extractedThoughts.join('\n\n');
-         }
-         parsedText = currentText;
-         
-         currentModelText = parsedText.trimStart();
-         currentModelThought = parsedThought.trimStart();
-         if (!currentModelText) {
-           status = 'thinking';
-         }
-         
-         const nowTime = Date.now();
-         if (force || nowTime - lastUpdateTime > 50) {
-           updateModelMessage(currentModelText, currentModelThought, status as any);
-           lastUpdateTime = nowTime;
-         }
+      const flushStreamState = (force = false) => {
+        currentModelText = rawTextAccumulator.trimStart();
+        currentModelThought = apiThoughtAccumulator.trimStart();
+        const status = currentModelText ? 'complete' : 'thinking';
+
+        const nowTime = Date.now();
+        if (force || nowTime - lastUpdateTime > 50) {
+          updateModelMessage(currentModelText, currentModelThought, status as any);
+          lastUpdateTime = nowTime;
+        }
       };
 
       for await (const chunk of generator) {
         resetIdleTimeout();
         if (typeof chunk === 'string') {
           if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-          updateWithParsedThinking(chunk);
+          rawTextAccumulator += chunk;
+          flushStreamState();
         } else if (chunk && typeof chunk === 'object') {
           if (chunk.type === 'thought') {
             apiThoughtAccumulator += chunk.text;
-            updateWithParsedThinking('', true);
+            flushStreamState(true);
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
           } else if (chunk.type === 'text') {
             if (isFirstChunk) { setPresence('responding'); isFirstChunk = false; }
-            updateWithParsedThinking(chunk.text);
+            rawTextAccumulator += chunk.text;
+            flushStreamState();
           } else if (chunk.type === 'gift') {
             hasToolCalls = true;
             onAddGift({

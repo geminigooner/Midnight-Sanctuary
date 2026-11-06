@@ -1,13 +1,17 @@
 import express from 'express';
-import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { performWebSearch } from './src/backend/searchService';
-import { createChatStream } from './src/backend/chatHandler';
 import { generateImage } from './src/backend/imageService';
-import { verifyRequest } from './src/backend/verifyAuth';
+import { verifyRequest, verifyRequestWithUser } from './src/backend/verifyAuth';
 import { modelRegistry } from './src/lib/modelRegistry';
-import { resolveModelRoute } from './src/lib/modelRouter';
+import {
+  createChatStreamFromContext,
+  generateEmbedding,
+  listAvailableModels,
+  resolveAvailableApiKeys,
+} from './src/backend/gemini.service';
+import { resolveExternalChatContext } from './src/backend/firestoreContext.service';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -36,24 +40,8 @@ app.get('/api/models', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!process.env.GENAI_API_KEY) {
-    return res.status(500).json({ error: 'GENAI_API_KEY is not configured in the environment.' });
-  }
-
-  const ai = new GoogleGenAI({ apiKey: process.env.GENAI_API_KEY, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
   try {
-    const response = await ai.models.list();
-    const models = [];
-    for await (const model of response) {
-      if (model.supportedActions && model.supportedActions.includes('generateContent')) {
-        models.push({
-          name: model.name,
-          displayName: model.displayName,
-          description: model.description,
-          inputTokenLimit: model.inputTokenLimit,
-        });
-      }
-    }
+    const models = await listAvailableModels();
     res.json(models);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Unknown API Error' });
@@ -65,17 +53,8 @@ app.post('/api/embed', async (req, res) => {
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Text string is required' });
   }
-  const apiKey = process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'API key not configured' });
-  }
   try {
-    const ai = new GoogleGenAI({ apiKey, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' } });
-    const response = await ai.models.embedContent({
-      model: 'text-embedding-004',
-      contents: text.trim(),
-    });
-    const embeddingValues = (response as any).embedding?.values || (response as any).embeddings?.[0]?.values || [];
+    const embeddingValues = await generateEmbedding(text);
     res.json({ embedding: embeddingValues });
   } catch (err: any) {
     console.error('Embedding endpoint error:', err);
@@ -100,40 +79,40 @@ app.post('/api/search', async (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
-  if (!(await verifyRequest(req))) {
+  const authResult = await verifyRequestWithUser(req);
+  if (!authResult.valid) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const model = req.body?.model || '';
-  const modelLower = model.toLowerCase();
-  const isGemma = modelLower.includes('gemma');
-  const isGemini3Paid = modelLower.includes('gemini-3.1-pro') || modelLower.includes('gemini-3-flash') || modelLower.includes('3.1-pro') || modelLower.includes('3-flash') || modelLower.includes('3.8-flash') || modelLower.includes('gemini-3.8');
-  
-  // Single source of truth for key selection: modelRouter.resolveModelRoute()
-  const route = resolveModelRoute(model);
-  // Gemma's primary path is Cloudflare (CF_TOKEN, read in chatHandler); the direct Gemini fallback needs a Gemini key.
-  const keyName = route.isGemma ? 'GEMINI_API_KEY' : route.keyEnvName;
-  const apiKey = route.isGemma
-    ? (process.env.GEMINI_API_KEY || process.env.GENAI_API_KEY || process.env.PRO_API_KEY || process.env.GEMINI_LEGACY_API_KEY)
-    : (process.env[route.keyEnvName] || process.env.PRO_API_KEY || process.env.GENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.GEMINI_LEGACY_API_KEY);
-  
-  if (!apiKey && !isGemma) {
-    return res.status(500).json({ error: `${keyName} (or backup key) is not configured in the environment for model ${model}.` });
-  }
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
 
   try {
+    // 1. Hydrate external conversation & user context from Firestore (with seamless client fallback)
+    const context = await resolveExternalChatContext(
+      authResult.uid,
+      authResult.idToken,
+      req.body
+    );
+
+    const { availableKeys, keyEnvName, isGemma } = resolveAvailableApiKeys(context.model);
+    if (availableKeys.length === 0 && !isGemma) {
+      return res.status(500).json({
+        error: `${keyEnvName} (or backup key) is not configured in the environment for model ${context.model}.`,
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
     const abortController = new AbortController();
     res.on('close', () => {
       if (!res.writableEnded) abortController.abort();
     });
 
-    const stream = createChatStream(req.body, apiKey || '', abortController.signal);
+    // 2. Delegate prompt construction, API invocation, and SSE streaming to gemini.service
+    const stream = await createChatStreamFromContext(context, abortController.signal);
     const reader = stream.getReader();
-    
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -142,9 +121,20 @@ app.post('/api/chat', async (req, res) => {
     res.end();
   } catch (err: any) {
     console.error('API Error:', err);
+    const model = req.body?.model || '';
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'text/event-stream');
+    }
     if (err?.status === 429 || (err.message && err.message.includes('429'))) {
-      const companionName = modelRegistry.getDisplayName(model) || (model.toLowerCase().includes('gemma') ? 'Gemma' : 'Gemini');
-      res.write(`data: ${JSON.stringify({ type: 'rate_limit', message: `${companionName} needs a little breather — try again in a bit` })}\n\n`);
+      const companionName =
+        modelRegistry.getDisplayName(model) ||
+        (model.toLowerCase().includes('gemma') ? 'Gemma' : 'Gemini');
+      res.write(
+        `data: ${JSON.stringify({
+          type: 'rate_limit',
+          message: `${companionName} needs a little breather — try again in a bit`,
+        })}\n\n`
+      );
     } else {
       res.write(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);
     }

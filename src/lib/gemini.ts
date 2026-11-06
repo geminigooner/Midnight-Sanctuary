@@ -1,9 +1,5 @@
-import { AppSettings, Message, Gift } from './types';
+import { AppSettings, Message, Gift, UserProfile } from './types';
 import { auth, signOut } from './firebase';
-import { getContextMemories, isUserMemory } from './memorySystem';
-import { getModelVisibleGifts } from './giftSystem';
-import { modelRegistry } from './modelRegistry';
-import { retrieveRelevantMemories } from './vectorMemory';
 
 export class RepetitionError extends Error {
   constructor(message: string) {
@@ -30,338 +26,164 @@ export type ChatStreamEvent =
   | { type: 'thought'; text: string }
   | { type: 'text'; text: string }
   | { type: 'gift'; content: string; gift_type: string; reason?: string }
-  | { type: 'scribble_gift'; title: string; description?: string; mood_style?: string; svg_markup: string; reason?: string; modelId?: string }
-  | { type: 'music_track'; title: string; description?: string; genre?: string; tempo?: number; key?: string; notes: any[]; reason?: string; modelId?: string }
+  | {
+      type: 'scribble_gift';
+      title: string;
+      description?: string;
+      mood_style?: string;
+      svg_markup: string;
+      reason?: string;
+      modelId?: string;
+    }
+  | {
+      type: 'music_track';
+      title: string;
+      description?: string;
+      genre?: string;
+      tempo?: number;
+      key?: string;
+      notes: any[];
+      reason?: string;
+      modelId?: string;
+    }
   | { type: 'memory'; content: string; why_it_matters?: string }
   | { type: 'lock_memory'; content: string; lock_reason: string; isLocked?: boolean }
-  | { type: 'update_quarters'; avatar_url?: string; avatar_emoji?: string; bio?: string; mood_status?: string; current_activity?: string; ambient_quote?: string; tagline?: string; decor_theme?: string; modelId?: string }
+  | {
+      type: 'update_quarters';
+      avatar_url?: string;
+      avatar_emoji?: string;
+      bio?: string;
+      mood_status?: string;
+      current_activity?: string;
+      ambient_quote?: string;
+      tagline?: string;
+      decor_theme?: string;
+      modelId?: string;
+    }
   | { type: 'record_thought'; thought: string; modelId?: string }
   | { type: 'user_note'; note: string }
   | { type: 'eventLog'; description: string }
   | { type: 'stick_sticker'; sticker_id: string; target_id: string; note?: string; modelId?: string }
-  | { type: 'craft_sticker'; name: string; emoji: string; description: string; sparkle_color: string; glow_effect?: string; badge_shape?: string; custom_svg?: string; modelId?: string }
+  | {
+      type: 'craft_sticker';
+      name: string;
+      emoji: string;
+      description: string;
+      sparkle_color: string;
+      glow_effect?: string;
+      badge_shape?: string;
+      custom_svg?: string;
+      modelId?: string;
+    }
   | { type: 'create_room_artwork'; title: string; visual_description: string; theme?: string; modelId?: string }
   | { type: 'image_generating'; prompt: string; modelTarget?: string }
-  | { type: 'image_generated'; success: boolean; imageUrl: string; provider: string; modelUsed: string; prompt: string; modelId?: string; error?: string }
+  | {
+      type: 'image_generated';
+      success: boolean;
+      imageUrl: string;
+      provider: string;
+      modelUsed: string;
+      prompt: string;
+      modelId?: string;
+      error?: string;
+    }
   | { type: 'history_append'; messages: any[] }
   | { type: 'model_parts'; parts: any[] }
   | { type: 'finish_reason'; reason: string }
   | { type: 'backend'; name: string }
-  | { type: 'search_result'; query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[]; error?: string }
+  | {
+      type: 'search_result';
+      query: string;
+      results: { title: string; link: string; snippet: string; displayLink?: string }[];
+      error?: string;
+    }
   | { type: 'client_tool_call'; name: string; callId: string };
 
-import { UserProfile } from './types';
-
-// Max gifts placed in the Gifts Archive text per request.
-const GIFT_ARCHIVE_CAP = 15;
-
-// Drop duplicate gifts (same id) and return them sorted oldest -> newest by timestamp.
-function dedupeGiftsById(list: Gift[]): Gift[] {
-  const seen = new Set<string>();
-  const out: Gift[] = [];
-  for (const g of list) {
-    const key = g.id ?? '';
-    if (key) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-    }
-    out.push(g);
-  }
-  return out.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-}
-
+/**
+ * Thin SSE transport client.
+ * Completely blind to prompt engineering, system instruction assembly, or model routing logic.
+ * The server hydrates context from Firestore (with client fallback) and streams normalized SSE events.
+ */
 export async function* streamChat(
   messages: Message[],
   settings: AppSettings,
   gifts: Gift[],
   profile: UserProfile | null,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  conversationId?: string
 ): AsyncGenerator<ChatStreamEvent, void, unknown> {
-  let fullSystemInstruction = settings.systemInstruction || '';
-  let identityParts = [];
-
-  if (profile) {
-    const profileLines: string[] = ["USER PROFILE"];
-    if (profile.name) profileLines.push(`Name: ${profile.name}`);
-    if (profile.pronouns) profileLines.push(`Pronouns: ${profile.pronouns}`);
-    if (profile.location) profileLines.push(`Location: ${profile.location}`);
-    if (profile.occupation) profileLines.push(`Occupation / Calling: ${profile.occupation}`);
-    if (profile.about) profileLines.push(`About Me: ${profile.about}`);
-    if (profile.currentVibe) profileLines.push(`Current Vibe: ${profile.currentVibe}`);
-    if (profile.favorites) profileLines.push(`Favorites & Interests: ${profile.favorites}`);
-    if (profile.askMeAbout) profileLines.push(`Ask Me About: ${profile.askMeAbout}`);
-    if (profile.pleaseKnow) profileLines.push(`Please Know: ${profile.pleaseKnow}`);
-
-    let profileSection = `## User Profile Context\n${profileLines.join('\n')}`;
-
-    if (profile.gemmaNotes && profile.gemmaNotes.length > 0) {
-      const notesLines = profile.gemmaNotes.map(n => `- ${n.text}`);
-      profileSection += `\n\n## What you've noticed about them\n${notesLines.join('\n')}`;
-    }
-
-    identityParts.push(profileSection);
-  }
-
-  if (settings.aboutMe?.trim()) {
-    identityParts.push(`## About Me:\n${settings.aboutMe.trim()}`);
-  }
-  
-  if (settings.conversationPreferences?.trim()) {
-    identityParts.push(`## Conversation Preferences:\n${settings.conversationPreferences.trim()}`);
-  }
-
-  if (settings.memoriesEnabled && settings.memories && settings.memories.length > 0) {
-    const relevantMemories = getContextMemories(settings.memories, settings.model);
-
-    if (relevantMemories.length > 0) {
-      // Find last user query to score semantic relevance
-      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-      const lastUserText = lastUserMsg?.parts?.map(p => p.text || '').join(' ') || '';
-
-      let topMemories = relevantMemories;
-      if (lastUserText.trim().length > 0 && relevantMemories.length > 5) {
-        try {
-          const scored = await retrieveRelevantMemories(lastUserText, relevantMemories, 8);
-          if (scored.length > 0) {
-            topMemories = scored.map(s => s.memory);
-          }
-        } catch (e) {
-          console.warn('[Semantic Memory] Error retrieving top memories:', e);
-        }
-      }
-
-      const memoryText = topMemories.map(m => {
-        const prefix = isUserMemory(m) ? '[User Saved]' : '[My Memory]';
-        return `- ${prefix} ${m.content}`;
-      }).join('\n');
-      identityParts.push(`## Context & Saved Memories (Semantic Deep Recall):\n${memoryText}`);
-    }
-  }
-
-  // Dedupe by id and sort chronologically (oldest first) so slices below mean "most recent".
-  const allModelGifts = dedupeGiftsById(getModelVisibleGifts(gifts, settings.model));
-  // Archive text: only the ~15 most recent gifts.
-  const modelGifts = allModelGifts.slice(-GIFT_ARCHIVE_CAP);
-  const modelDisplayName = modelRegistry.getDisplayName(settings.model);
-
-  if (modelGifts && modelGifts.length > 0) {
-    const giftsText = modelGifts.map(g => `- [${g.timestamp ? new Date(g.timestamp).toISOString() : 'time unknown'}] From ${g.from === 'user' ? 'User' : modelDisplayName}: ${g.content} (Type: ${g.gift_type})${g.reason ? ` - ${g.reason}` : ''}`).join('\n');
-    identityParts.push(`## Gifts Archive (Given and Received between you and User):\n${giftsText}`);
-  }
-
-  if (settings.eventLog && settings.eventLog.length > 0) {
-    // Only include the most recent 50 events to avoid flooding the context, sorted chronologically
-    const recentEvents = [...settings.eventLog].sort((a, b) => a.timestamp - b.timestamp).slice(-50);
-    const eventText = recentEvents.map(e => `- [${new Date(e.timestamp).toISOString()}] ${e.description}`).join('\n');
-    identityParts.push(`## Relationship & Interaction Log (Recent Events):\n${eventText}`);
-  }
-
-  identityParts.push(`## Memory & Note Saving Rules:\nWhen saving a memory via save_memory or noting an observation via note_about_user, you MUST summarize the insight into a single concise, 1-sentence factual statement (maximum 15-20 words). Never save lengthy paragraphs, conversational transcripts, or multi-sentence descriptions.`);
-
-  if (identityParts.length > 0) {
-    const identityContext = identityParts.join('\n\n');
-    fullSystemInstruction = fullSystemInstruction 
-      ? `${identityContext}\n\n---\n\n${fullSystemInstruction}`
-      : identityContext;
-  }
-
-  const isGemma = settings.model.includes('gemma');
-  
-  if (isGemma) {
-      identityParts.push(`## THINKING DIRECTIVE\nYou are capable of advanced reasoning. However, do NOT overuse the <think> tag. Only use <think> blocks when you truly need to solve a complex logical problem, interpret something difficult, or process dense math/code. For general conversation, emotional responses, or straightforward answers, respond directly without thinking tags to save output tokens.`);
-  }
-
-
-  const lastUserMsgId = [...messages].reverse().find(m => m.role === 'user')?.id;
-
-  const serializedMessages = messages
-    .map(m => {
-      if (m.role === 'model') {
-        if (isGemma) {
-          // Gemma contract: historical model turns carry ONLY the final answer.
-          // No thoughts, no thoughtSignature (a Gemini-3 mechanism Gemma doesn't use)
-          // no streaming fragments — publicText is already the joined final text.
-          const parts: any[] = [];
-          const finalText = (m.publicText ?? '').trim();
-          if (finalText) parts.push({ text: finalText });
-          for (const p of m.parts || []) {
-            if (p.functionCall) parts.push({ functionCall: p.functionCall });
-          }
-          return { role: m.role, parts };
-        }
-
-        // For Gemini (Gemini 2.5, Gemini 3, etc.):
-        // Preserve exact API response parts, including thoughtSignature metadata,
-        // thoughts, and function calls required for Gemini 3 interactions and tool calling.
-        if (m.parts && m.parts.length > 0) {
-          const parts: any[] = [];
-          for (const p of m.parts) {
-            const cleanPart: any = {};
-            if (p.thoughtSignature) cleanPart.thoughtSignature = p.thoughtSignature;
-            if (p.thought !== undefined) cleanPart.thought = p.thought;
-            if (p.functionCall) cleanPart.functionCall = p.functionCall;
-            if (p.inlineData) cleanPart.inlineData = p.inlineData;
-            if (typeof p.text === 'string' && (p.text.length > 0 || p.thought)) {
-              cleanPart.text = p.text;
-            }
-            for (const key of Object.keys(p)) {
-              if (!['thoughtSignature', 'thought', 'functionCall', 'inlineData', 'text'].includes(key)) {
-                cleanPart[key] = p[key];
-              }
-            }
-            if (
-              cleanPart.functionCall ||
-              cleanPart.thoughtSignature ||
-              cleanPart.inlineData ||
-              (cleanPart.text && cleanPart.text.trim().length > 0) ||
-              cleanPart.thought
-            ) {
-              parts.push(cleanPart);
-            }
-          }
-          if (parts.length > 0) {
-            return { role: m.role, parts };
-          }
-        }
-
-        const parts: any[] = [];
-        const finalText = (m.publicText ?? '').trim();
-        if (finalText) parts.push({ text: finalText });
-        for (const p of m.parts || []) {
-          // keep thoughtSignature on function-call parts (Gemini 3 requires it on replay)
-          if (p.functionCall) parts.push({ ...(p.thoughtSignature ? { thoughtSignature: p.thoughtSignature } : {}), functionCall: p.functionCall });
-        }
-        return { role: m.role, parts };
-      }
-      return {
-        role: m.role,
-        parts: (m.parts || [])
-          .map(p => {
-            if (p.functionResponse) return { functionResponse: p.functionResponse };
-            if (p.inlineData) {
-              if (m.id === lastUserMsgId) return { inlineData: p.inlineData };
-              return { text: '[Image omitted from history to save payload size]' };
-            }
-            if (p.text && p.text.trim().length > 0) return { text: p.text };
-            return null;
-          })
-          .filter(Boolean) as any[]
-      };
-    })
-    .filter(m => m.parts.length > 0)
-    .reduce((acc, current) => {
-      if (acc.length > 0 && acc[acc.length - 1].role === current.role) {
-        acc[acc.length - 1].parts.push(...current.parts);
-      } else {
-        acc.push(current);
-      }
-      return acc;
-    }, [] as any[]);
-
-  const giftImages = allModelGifts.filter(g => g.inlineData?.data).slice(-3); // newest 3 by timestamp (allModelGifts is sorted oldest->newest)
-  let syntheticTurn: any = null;
-
-  if (giftImages.length > 0) {
-    const recent = giftImages;
-    syntheticTurn = { role: 'user', parts: [] };
-    for (const g of recent) {
-      syntheticTurn.parts.push({
-        inlineData: { mimeType: g.inlineData!.mimeType, data: g.inlineData!.data }
-      });
-    }
-  }
-
-  if (profile?.photo) {
-    if (!syntheticTurn) syntheticTurn = { role: 'user', parts: [] };
-    syntheticTurn.parts.push({
-      text: `This is a photo of ${profile.name}.`
-    });
-    syntheticTurn.parts.push({
-      inlineData: { mimeType: profile.photo.mimeType, data: profile.photo.data }
-    });
-  }
-
-  if (syntheticTurn) {
-    // Append these context parts to the LAST regular user message (not functionResponse turn)
-    let lastUserIndex = -1;
-    for (let i = serializedMessages.length - 1; i >= 0; i--) {
-      if (serializedMessages[i].role === 'user' && !serializedMessages[i].parts.some((p: any) => p.functionResponse)) {
-        lastUserIndex = i;
-        break;
-      }
-    }
-    if (lastUserIndex !== -1) {
-      serializedMessages[lastUserIndex].parts.unshift(...syntheticTurn.parts);
-    } else {
-      serializedMessages.unshift(syntheticTurn);
-    }
-  }
-
-  console.log(`[Diagnostics] Sanitized API History: ${serializedMessages.length} turns (content redacted)`);
-
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Unauthorized: Please sign in.');
 
+  // Only keep inlineData on the very last user message to keep fallback transport lightweight
+  const lastUserMsgId = [...messages].reverse().find((m) => m.role === 'user')?.id;
+  const leanMessages = messages.map((m) => ({
+    id: m.id,
+    role: m.role,
+    timestamp: m.timestamp,
+    publicText: m.publicText,
+    parts: (m.parts || []).map((p: any) => {
+      if (p?.inlineData && m.id !== lastUserMsgId) {
+        return { text: '[Image attachment]' };
+      }
+      return p;
+    }),
+  }));
 
   const payloadBody = {
-    messages: serializedMessages,
-    systemInstruction: fullSystemInstruction,
+    conversationId,
+    model: settings.model,
     temperature: settings.temperature,
     topP: settings.topP,
     maxOutputTokens: settings.maxOutputTokens,
-    model: settings.model,
     forceCloudflare: settings.forceCloudflare,
     thinkingLevel: settings.thinkingLevel,
-    includeThoughts: settings.includeThoughts
+    includeThoughts: settings.includeThoughts,
+    messages: leanMessages,
+    clientContext: {
+      settings,
+      gifts,
+      profile,
+    },
   };
+
   const payloadString = JSON.stringify(payloadBody);
   const payloadBytes = new TextEncoder().encode(payloadString).length;
-  
-  let attachmentCount = 0;
-  let attachmentSizes = [];
-  for (const m of serializedMessages) {
-    for (const p of m.parts) {
-      if (p.inlineData && p.inlineData.data) {
-        attachmentCount++;
-        attachmentSizes.push(p.inlineData.data.length);
-      }
-    }
-  }
 
-  console.log(`[Diagnostics] Request Prep: Provider=${settings.model}, Messages=${serializedMessages.length}, Attachments=${attachmentCount}, PayloadSize=${(payloadBytes/1024).toFixed(2)}KB`);
-  if (attachmentSizes.length > 0) {
-    console.log(`[Diagnostics] Attachment Sizes: ${attachmentSizes.map(s => (s/1024).toFixed(2) + 'KB').join(', ')}`);
-  }
-
-  const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5MB safe limit
+  const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024;
   if (payloadBytes > MAX_PAYLOAD_BYTES) {
-    throw new Error(`Request too large: ${(payloadBytes/1024/1024).toFixed(2)}MB exceeds safe limit of ${(MAX_PAYLOAD_BYTES/1024/1024).toFixed(2)}MB. Please remove some attachments or clear history.`);
+    throw new Error(
+      `Request too large: ${(payloadBytes / 1024 / 1024).toFixed(2)}MB exceeds safe limit of ${(
+        MAX_PAYLOAD_BYTES /
+        1024 /
+        1024
+      ).toFixed(2)}MB. Please remove some attachments or clear history.`
+    );
   }
 
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: payloadString,
-    signal: abortSignal
+    signal: abortSignal,
   });
-
-  console.log(`[Diagnostics] HTTP Status: ${response.status}`);
-  console.log(`[Diagnostics] Content-Type: ${response.headers.get('Content-Type')}`);
 
   if (!response.ok) {
     if (response.status === 401) {
       await signOut(auth);
-      throw new Error("Session expired. Please sign in again.");
+      throw new Error('Session expired. Please sign in again.');
     }
-    const errText = await response.text().catch(() => "");
-    if (errText.includes("<!DOCTYPE html>")) {
+    const errText = await response.text().catch(() => '');
+    if (errText.includes('<!DOCTYPE html>')) {
       throw new Error(`Network Error: The request was blocked by the host (Status ${response.status})`);
     }
     let errObj: any = {};
-    try { errObj = JSON.parse(errText); } catch(e) {}
+    try {
+      errObj = JSON.parse(errText);
+    } catch {}
     throw new Error(errObj.error || errObj.message || errText || `API Error: ${response.status}`);
   }
 
@@ -376,21 +198,20 @@ export async function* streamChat(
   }
 
   const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-  
+  if (!reader) throw new Error('No response body');
+
   const decoder = new TextDecoder();
   let buffer = '';
-  let fullText = '';
-
   let sawDone = false;
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    
+
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
-    
+    buffer = lines.pop() || '';
+
     for (const line of lines) {
       if (line.startsWith('data: ')) {
         const dataStr = line.slice(6);
@@ -401,29 +222,41 @@ export async function* streamChat(
         try {
           const data = JSON.parse(dataStr);
           if (data.error === 'repetition_loop') {
-            throw new RepetitionError(data.text || "\n\n[Generation stopped: repetition loop detected.]");
+            throw new RepetitionError(
+              data.text || '\n\n[Generation stopped: repetition loop detected.]'
+            );
           }
           if (data.type === 'rate_limit') {
-            throw new RateLimitError(data.message || "Rate limit exceeded");
+            throw new RateLimitError(data.message || 'Rate limit exceeded');
           }
           if (data.error) {
-            throw new APIError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+            throw new APIError(
+              typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+            );
           }
-          if (data.type === 'gift' || data.type === 'scribble_gift' || data.type === 'music_track' || data.type === 'memory' || data.type === 'lock_memory' || data.type === 'update_quarters' || data.type === 'record_thought' || data.type === 'user_note' || data.type === 'eventLog' || data.type === 'stick_sticker' || data.type === 'craft_sticker' || data.type === 'create_room_artwork' || data.type === 'image_generating' || data.type === 'image_generated' || data.type === 'search_result' || data.type === 'client_tool_call' || data.type === 'thought' || data.type === 'history_append' || data.type === 'model_parts' || data.type === 'finish_reason' || data.type === 'backend') {
+          if (data.type === 'text') {
+            yield { type: 'text', text: data.text };
+          } else if (data.type) {
             yield data as ChatStreamEvent;
           } else if (data.text) {
-            fullText += data.text;
             yield { type: 'text', text: data.text };
           }
         } catch (e) {
-          if (e instanceof RepetitionError || e instanceof APIError || e instanceof RateLimitError) throw e;
-          // Ignore parse errors on partial chunks
+          if (
+            e instanceof RepetitionError ||
+            e instanceof APIError ||
+            e instanceof RateLimitError
+          ) {
+            throw e;
+          }
         }
       }
     }
   }
+
   if (!sawDone) {
-    // Connection closed before the server finished: report it instead of looking like a complete reply.
-    throw new APIError('Connection to the server dropped before the reply finished. Please try again.');
+    throw new APIError(
+      'Connection to the server dropped before the reply finished. Please try again.'
+    );
   }
 }

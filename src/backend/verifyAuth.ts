@@ -1,6 +1,13 @@
 import firebaseConfig from '../../firebase-applet-config.json';
 
-export async function verifyRequest(req: any): Promise<boolean> {
+export interface VerifiedAuthResult {
+  valid: boolean;
+  uid?: string;
+  email?: string;
+  idToken?: string;
+}
+
+export async function verifyRequestWithUser(req: any): Promise<VerifiedAuthResult> {
   try {
     let authHeader = '';
     if (typeof req.headers?.get === 'function') {
@@ -12,45 +19,58 @@ export async function verifyRequest(req: any): Promise<boolean> {
     }
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error("verifyAuth: No Bearer token found in headers.");
-      return false;
+      console.error('verifyAuth: No Bearer token found in headers.');
+      return { valid: false };
     }
 
     const token = authHeader.split('Bearer ')[1];
     if (!token) {
-      console.error("verifyAuth: Token string is empty.");
-      return false;
+      console.error('verifyAuth: Token string is empty.');
+      return { valid: false };
     }
 
     // Verify token securely using Firebase Identity Toolkit REST API
-    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: token })
-    });
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseConfig.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: token }),
+      }
+    );
 
     if (!response.ok) {
-      console.error("verifyAuth: Token verification failed.", await response.text());
-      return false;
+      console.error('verifyAuth: Token verification failed.', await response.text());
+      return { valid: false };
     }
 
     const data = await response.json();
     if (!data.users || data.users.length === 0) {
-      console.error("verifyAuth: No user data returned for token.");
-      return false;
+      console.error('verifyAuth: No user data returned for token.');
+      return { valid: false };
     }
 
     const user = data.users[0];
-    
+
     // Check if it's strictly you
     if (user.email === 'ahatley094@gmail.com') {
-      return true;
+      return {
+        valid: true,
+        uid: user.localId,
+        email: user.email,
+        idToken: token,
+      };
     }
 
-    console.error("verifyAuth: Intruder alert. Blocked email:", user.email);
-    return false;
+    console.error('verifyAuth: Intruder alert. Blocked email:', user.email);
+    return { valid: false };
   } catch (error) {
-    console.error("Auth verification error:", error);
-    return false;
+    console.error('Auth verification error:', error);
+    return { valid: false };
   }
+}
+
+export async function verifyRequest(req: any): Promise<boolean> {
+  const result = await verifyRequestWithUser(req);
+  return result.valid;
 }
