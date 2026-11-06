@@ -62,17 +62,19 @@ export interface Message {
 }
 
 export function getPublicMessageText(msg: Message): string {
-  if (msg.publicText !== undefined) return msg.publicText;
-  // Fallback for older messages
+  if (typeof msg.publicText === 'string' && msg.publicText.length > 0) return msg.publicText;
+  // Fallback to parts if publicText is undefined or empty
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  return parts.filter(p => !p.thought && p.text).map(p => p.text).join('') || '';
+  const fromParts = parts.filter(p => !p.thought && p.text).map(p => p.text).join('');
+  return fromParts || msg.publicText || '';
 }
 
 export function getThoughtMessageText(msg: Message): string {
-  if (msg.thoughtText !== undefined) return msg.thoughtText;
-  // Fallback for older messages
+  if (typeof msg.thoughtText === 'string' && msg.thoughtText.length > 0) return msg.thoughtText;
+  // Fallback to parts if thoughtText is undefined or empty
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  return parts.filter(p => p.thought && p.text).map(p => p.text).join('') || '';
+  const fromParts = parts.filter(p => p.thought && p.text).map(p => p.text).join('');
+  return fromParts || msg.thoughtText || '';
 }
 
 export function getApiMessageParts(msg: Message): MessagePart[] {

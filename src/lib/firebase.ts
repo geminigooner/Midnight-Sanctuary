@@ -23,11 +23,15 @@ const dbId = firebaseConfig.firestoreDatabaseId || undefined;
 try {
   if (dbId) {
     firestoreInstance = initializeFirestore(app, {
-      localCache: persistentLocalCache({}),
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
     }, dbId);
   } else {
     firestoreInstance = initializeFirestore(app, {
-      localCache: persistentLocalCache({}),
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
     });
   }
 } catch {

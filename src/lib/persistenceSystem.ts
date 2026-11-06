@@ -52,7 +52,7 @@ export function subscribeToState(
   let isSubscribed = true;
 
   const liveState: GranularLoadedState = {
-    conversations: [],
+    conversations: undefined,
     settings: undefined,
     jewelMetrics: undefined,
     gifts: [],
@@ -63,7 +63,7 @@ export function subscribeToState(
   const notify = () => {
     if (!isSubscribed) return;
     onData({
-      conversations: [...(liveState.conversations || [])],
+      conversations: liveState.conversations !== undefined ? [...liveState.conversations] : undefined,
       settings: liveState.settings,
       jewelMetrics: liveState.jewelMetrics,
       gifts: [...(liveState.gifts || [])],
@@ -73,6 +73,57 @@ export function subscribeToState(
   };
 
   const messageUnsubs = new Map<string, Unsubscribe>();
+  const subcollectionMessages = new Map<string, Message[]>();
+  const inlinePreviewMessages = new Map<string, Message[]>();
+
+  const sortMessagesDeterministically = (msgs: Message[]): Message[] => {
+    return [...msgs].sort((a, b) => {
+      const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+      if (timeDiff !== 0) return timeDiff;
+      if (a.role === 'user' && b.role === 'model') return -1;
+      if (a.role === 'model' && b.role === 'user') return 1;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+  };
+
+  const mergeConversationMessages = (convId: string, currentLocalMsgs: Message[] = []): Message[] => {
+    const subMsgs = subcollectionMessages.get(convId) || [];
+    const previewMsgs = inlinePreviewMessages.get(convId) || [];
+
+    // Combine subcollection messages with any inline preview messages not yet in subcollection
+    const byId = new Map<string, Message>();
+    for (const pm of previewMsgs) {
+      if (pm && pm.id) byId.set(pm.id, pm);
+    }
+    for (const sm of subMsgs) {
+      if (sm && sm.id) {
+        const existingPreview = byId.get(sm.id);
+        // Subcollection has full untruncated data (like inlineData / generatedImages)
+        byId.set(sm.id, existingPreview ? { ...existingPreview, ...sm } : sm);
+      }
+    }
+
+    // Merge with any active/streaming local messages
+    for (const lm of currentLocalMsgs) {
+      if (!lm || !lm.id) continue;
+      const existing = byId.get(lm.id);
+      if (!existing) {
+        byId.set(lm.id, lm);
+      } else {
+        const localTextLen = (lm.publicText?.length || 0) + (lm.parts?.[0]?.text?.length || 0);
+        const remoteTextLen = (existing.publicText?.length || 0) + (existing.parts?.[0]?.text?.length || 0);
+        if (
+          lm.thoughtStatus === 'thinking' ||
+          lm.thoughtStatus === 'error' ||
+          localTextLen > remoteTextLen
+        ) {
+          byId.set(lm.id, { ...existing, ...lm });
+        }
+      }
+    }
+
+    return sortMessagesDeterministically(Array.from(byId.values()));
+  };
 
   const settingsDocRef = doc(db, 'users', userId, 'settings', 'app');
   const convsColRef = collection(db, 'users', userId, 'conversations');
@@ -137,83 +188,49 @@ export function subscribeToState(
       const convMeta = cDoc.data();
       const existing = existingConvsMap.get(convId);
 
+      if (Array.isArray(convMeta.messages) && convMeta.messages.length > 0) {
+        inlinePreviewMessages.set(convId, convMeta.messages);
+      }
+
+      const mergedMsgs = mergeConversationMessages(convId, existing?.messages || []);
+
       const conv: Conversation = {
         id: convId,
         title: convMeta.title || existing?.title || 'Untitled Conversation',
         modelId: convMeta.modelId || existing?.modelId,
-        updatedAt: convMeta.updatedAt || convMeta.createdAt || Date.now(),
-        messages: (existing?.messages && existing.messages.length > 0)
-          ? existing.messages
-          : (Array.isArray(convMeta.messages) ? convMeta.messages : []),
+        updatedAt: convMeta.updatedAt || convMeta.createdAt || existing?.updatedAt || Date.now(),
+        messages: mergedMsgs,
         type: convMeta.type || existing?.type || 'direct',
         participantEntityIds: convMeta.participantEntityIds || existing?.participantEntityIds,
       };
       updatedConvs.push(conv);
 
-      // Deep message subcollection real-time listener
+      // Deep message subcollection real-time listener (without orderBy so docs lacking timestamp are never excluded)
       if (!messageUnsubs.has(convId)) {
         const msgsColRef = collection(db, 'users', userId, 'conversations', convId, 'messages');
-        const msgsQuery = query(msgsColRef, orderBy('timestamp', 'asc'));
-        
-        const unsubMsgs = onSnapshot(msgsQuery, (msgsSnap) => {
+
+        const unsubMsgs = onSnapshot(msgsColRef, (msgsSnap) => {
           if (!isSubscribed) return;
           const messages: Message[] = [];
           msgsSnap.forEach(mDoc => {
             messages.push({ ...(mDoc.data() as Message), id: mDoc.id });
           });
 
-          // Deterministic stable sorting for messages: timestamp, then user before model, then id
-          messages.sort((a, b) => {
-            const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
-            if (timeDiff !== 0) return timeDiff;
-            if (a.role === 'user' && b.role === 'model') return -1;
-            if (a.role === 'model' && b.role === 'user') return 1;
-            return (a.id || '').localeCompare(b.id || '');
-          });
+          subcollectionMessages.set(convId, sortMessagesDeterministically(messages));
 
-          let target = (liveState.conversations || []).find(c => c.id === convId);
-          if (!target) {
-            target = updatedConvs.find(c => c.id === convId);
-            if (target && !liveState.conversations?.some(c => c.id === convId)) {
-              liveState.conversations = [...(liveState.conversations || []), target];
+          if (liveState.conversations) {
+            const targetIdx = liveState.conversations.findIndex(c => c.id === convId);
+            if (targetIdx >= 0) {
+              const targetConv = liveState.conversations[targetIdx];
+              const nextMessages = mergeConversationMessages(convId, targetConv.messages || []);
+              const nextConvs = [...liveState.conversations];
+              nextConvs[targetIdx] = {
+                ...targetConv,
+                messages: nextMessages,
+              };
+              liveState.conversations = nextConvs;
+              notify();
             }
-          }
-
-          if (target) {
-            const localMsgs = target.messages || [];
-            const incomingIds = new Set(messages.map(m => m.id));
-
-            // Retain any pending local messages (user or assistant) that haven't arrived in Firestore snapshot yet
-            const pendingLocal = localMsgs.filter(m => !incomingIds.has(m.id));
-
-            // Merge incoming messages with local state if local is more active (e.g. streaming, error, richer text)
-            const merged = messages.map(m => {
-              const localMatch = localMsgs.find(lm => lm.id === m.id);
-              if (localMatch) {
-                const localTextLen = (localMatch.publicText?.length || 0) + (localMatch.parts?.[0]?.text?.length || 0);
-                const incomingTextLen = (m.publicText?.length || 0) + (m.parts?.[0]?.text?.length || 0);
-                if (
-                  localMatch.thoughtStatus === 'thinking' ||
-                  localMatch.thoughtStatus === 'error' ||
-                  localTextLen > incomingTextLen
-                ) {
-                  return { ...m, ...localMatch };
-                }
-              }
-              return m;
-            });
-
-            const combined = [...merged, ...pendingLocal];
-            combined.sort((a, b) => {
-              const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
-              if (timeDiff !== 0) return timeDiff;
-              if (a.role === 'user' && b.role === 'model') return -1;
-              if (a.role === 'model' && b.role === 'user') return 1;
-              return (a.id || '').localeCompare(b.id || '');
-            });
-
-            target.messages = combined;
-            notify();
           }
         }, (err) => {
           console.error(`[Realtime Sync] Messages snapshot error in conv ${convId}:`, err);
@@ -227,6 +244,8 @@ export function subscribeToState(
       if (!activeIds.has(id)) {
         unsub();
         messageUnsubs.delete(id);
+        subcollectionMessages.delete(id);
+        inlinePreviewMessages.delete(id);
       }
     }
 
@@ -392,17 +411,34 @@ export async function saveProfileDoc(userId: string, userProfile: UserProfile) {
   }), { merge: true });
 }
 
+function sanitizePreviewMessage(m: Message): Message {
+  const { parts, generatedImages, ...mRest } = m;
+  const cleanParts = (parts || []).map((p: any) => {
+    const { inlineData, thoughtSignature, ...pRest } = p || {};
+    if (inlineData) {
+      return { ...pRest, text: pRest.text || '[Image attachment]' };
+    }
+    return pRest;
+  });
+  const cleanGeneratedImages = Array.isArray(generatedImages)
+    ? generatedImages.filter(img => img && typeof img.imageUrl === 'string' && !img.imageUrl.startsWith('data:'))
+    : undefined;
+  return {
+    ...mRest,
+    parts: cleanParts,
+    ...(cleanGeneratedImages && cleanGeneratedImages.length > 0 ? { generatedImages: cleanGeneratedImages } : {}),
+  };
+}
+
 export async function saveConversationDoc(userId: string, conv: Conversation) {
   if (!userId || !conv || !conv.id) return;
   const convRef = doc(db, 'users', userId, 'conversations', conv.id);
   const { messages, ...meta } = conv;
 
   // Store the most recent messages directly on the conversation doc for instant 1st-frame snapshot loading
-  const previewMessages = Array.isArray(messages) ? messages.slice(-30).map(m => {
-    const { parts, ...mRest } = m;
-    const cleanParts = (parts || []).map((p: any) => p.inlineData ? { text: '[Image attachment]' } : p);
-    return { ...mRest, parts: cleanParts };
-  }) : [];
+  const previewMessages = Array.isArray(messages)
+    ? messages.slice(-25).map(sanitizePreviewMessage)
+    : [];
 
   await setDoc(convRef, removeUndefined({
     ...meta,
@@ -439,11 +475,7 @@ export async function saveMessageDoc(userId: string, convId: string, message: Me
   };
 
   if (Array.isArray(allMessages) && allMessages.length > 0) {
-    convUpdate.messages = allMessages.slice(-30).map(m => {
-      const { parts, ...mRest } = m;
-      const cleanParts = (parts || []).map((p: any) => p.inlineData ? { text: '[Image attachment]' } : p);
-      return { ...mRest, parts: cleanParts };
-    });
+    convUpdate.messages = allMessages.slice(-25).map(sanitizePreviewMessage);
   }
 
   await Promise.all([
@@ -504,10 +536,25 @@ export async function saveFullGranularState(userId: string, payload: {
     promises.push(saveSettingsDoc(userId, payload.settings, payload.jewelMetrics, payload.userProfile));
   }
 
-  // NOTE: Conversations and their messages are saved individually in real-time via
-  // saveConversationDoc and saveMessageDoc. We intentionally do not iterate and re-save
-  // all conversations on every debounced settings save to prevent timestamp jitter
-  // and chaotic re-sorting of the chat list.
+  // Ensure any active conversations are persisted while strictly preserving each conversation's existing updatedAt
+  if (Array.isArray(payload.conversations) && payload.conversations.length > 0) {
+    for (const conv of payload.conversations.slice(0, 15)) {
+      if (conv?.id) {
+        const convRef = doc(db, 'users', userId, 'conversations', conv.id);
+        const { messages, ...meta } = conv;
+        const previewMessages = Array.isArray(messages)
+          ? messages.slice(-25).map(sanitizePreviewMessage)
+          : [];
+        promises.push(
+          setDoc(convRef, removeUndefined({
+            ...meta,
+            messages: previewMessages,
+            updatedAt: conv.updatedAt || Date.now(),
+          }), { merge: true })
+        );
+      }
+    }
+  }
 
   if (Array.isArray(payload.gifts) && payload.gifts.length > 0) {
     for (const gift of payload.gifts) {

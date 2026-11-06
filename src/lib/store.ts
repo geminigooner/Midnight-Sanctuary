@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message, UserProfile } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { db, auth, signOut, onAuthStateChanged } from './firebase';
@@ -69,6 +69,8 @@ export function useAppStore(passedUser?: any) {
   });
 
   const [dataLoaded, setDataLoaded] = useState(false);
+  const deletedConvIdsRef = useRef<Set<string>>(new Set());
+  const deletedMsgIdsRef = useRef<Set<string>>(new Set());
 
   // Synchronize profile with local storage cache
   useEffect(() => {
@@ -85,18 +87,26 @@ export function useAppStore(passedUser?: any) {
   useEffect(() => {
     try {
       if (conversations.length > 0) {
-        // Strip heavy inlineData base64 attachments from localStorage to prevent quota exceeded errors
+        // Strip heavy inlineData base64 attachments, base64 generatedImages, and thoughtSignatures from localStorage to prevent quota exceeded errors
         const leanConversations = conversations.slice(0, 30).map(c => ({
           ...c,
           messages: (c.messages || []).slice(-40).map(m => {
-            const { parts, ...rest } = m;
+            const { parts, generatedImages, ...rest } = m;
             const leanParts = (parts || []).map(p => {
-              if (p.inlineData) {
-                return { text: '[Image attachment]' };
+              const { inlineData, thoughtSignature, ...pRest } = p || {};
+              if (inlineData) {
+                return { ...pRest, text: pRest.text || '[Image attachment]' };
               }
-              return p;
+              return pRest;
             });
-            return { ...rest, parts: leanParts };
+            const leanGeneratedImages = Array.isArray(generatedImages)
+              ? generatedImages.filter(img => img && typeof img.imageUrl === 'string' && !img.imageUrl.startsWith('data:'))
+              : undefined;
+            return {
+              ...rest,
+              parts: leanParts,
+              ...(leanGeneratedImages && leanGeneratedImages.length > 0 ? { generatedImages: leanGeneratedImages } : {})
+            };
           })
         }));
         localStorage.setItem('sanctuary_conversations_cache', JSON.stringify(leanConversations));
@@ -108,26 +118,42 @@ export function useAppStore(passedUser?: any) {
 
   // Synchronize active conversation ID with local storage
   useEffect(() => {
-    if (currentId) {
-      try {
+    try {
+      if (currentId) {
         localStorage.setItem('sanctuary_current_conv_id', currentId);
-      } catch {}
-    }
+      } else {
+        localStorage.removeItem('sanctuary_current_conv_id');
+      }
+    } catch {}
   }, [currentId]);
+
+  // Recover currentId if it points to a stale/non-existent conversation ID after conversations load
+  useEffect(() => {
+    if (dataLoaded && currentId && conversations.length > 0) {
+      const exists = conversations.some(c => c.id === currentId);
+      if (!exists) {
+        setCurrentId(conversations[0].id);
+      }
+    }
+  }, [dataLoaded, currentId, conversations]);
 
   useEffect(() => {
     if (!user) return;
     
     const unsubscribe = subscribeToState(user.uid, (data) => {
       if (data) {
-        if (data.conversations) {
-          const incoming = data.conversations;
+        if (data.conversations !== undefined) {
+          const incoming = data.conversations.filter(
+            (c: any) => c && c.id && !deletedConvIdsRef.current.has(c.id)
+          );
           setConversations(prev => {
             const prevMap = new Map(prev.map(c => [c.id, c]));
             const incomingIds = new Set(incoming.map((c: any) => c.id));
 
             // Retain locally-created conversations that haven't hit Firestore snapshot yet
-            const localOnly = prev.filter(c => !incomingIds.has(c.id));
+            const localOnly = prev.filter(
+              c => !incomingIds.has(c.id) && !deletedConvIdsRef.current.has(c.id)
+            );
             if (localOnly.length > 0 && user?.uid) {
               localOnly.forEach(localConv => {
                 saveConversationDoc(user.uid, localConv).catch(err => {
@@ -138,19 +164,29 @@ export function useAppStore(passedUser?: any) {
 
             const mergedIncoming = incoming.map((c: any) => {
               const prevConv = prevMap.get(c.id);
-              let msgs = c.messages || [];
+              let msgs = (c.messages || []).filter(
+                (m: any) => m && m.id && !deletedMsgIdsRef.current.has(m.id)
+              );
 
               // Never let an empty or in-flight snapshot wipe out local messages
               if (msgs.length === 0 && prevConv?.messages && prevConv.messages.length > 0) {
-                msgs = prevConv.messages;
+                msgs = prevConv.messages.filter(
+                  (m: any) => m && m.id && !deletedMsgIdsRef.current.has(m.id)
+                );
               } else if (prevConv?.messages && prevConv.messages.length > 0) {
                 // If local has messages that are streaming or pending, preserve them
                 const incomingMsgIds = new Set(msgs.map((m: any) => m.id));
-                const localPending = prevConv.messages.filter((m: any) => !incomingMsgIds.has(m.id) || m.thoughtStatus === 'thinking');
+                const localPending = prevConv.messages.filter(
+                  (m: any) =>
+                    m &&
+                    m.id &&
+                    !deletedMsgIdsRef.current.has(m.id) &&
+                    (!incomingMsgIds.has(m.id) || m.thoughtStatus === 'thinking')
+                );
                 if (localPending.length > 0) {
                   const combined = msgs.map((m: any) => {
                     const match = localPending.find((lm: any) => lm.id === m.id);
-                    return match || m;
+                    return match ? { ...m, ...match } : m;
                   });
                   const unadded = localPending.filter((lm: any) => !msgs.some((m: any) => m.id === lm.id));
                   msgs = [...combined, ...unadded].sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -734,6 +770,7 @@ export function useAppStore(passedUser?: any) {
   }, [settings.model, user]);
 
   const deleteConversation = useCallback((id: string) => {
+    deletedConvIdsRef.current.add(id);
     setConversations(prev => {
       const next = prev.filter(c => c.id !== id);
       if (currentId === id) {
@@ -763,8 +800,30 @@ export function useAppStore(passedUser?: any) {
 
   const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
     setConversations(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c);
+      let removedMsgIds: string[] = [];
+      const next = prev.map(c => {
+        if (c.id === id) {
+          if (Array.isArray(updates.messages) && Array.isArray(c.messages)) {
+            const nextMsgIds = new Set(updates.messages.map(m => m.id));
+            removedMsgIds = c.messages
+              .filter(m => m && m.id && !nextMsgIds.has(m.id))
+              .map(m => m.id);
+          }
+          return { ...c, ...updates, updatedAt: Date.now() };
+        }
+        return c;
+      });
       const target = next.find(c => c.id === id);
+      if (removedMsgIds.length > 0) {
+        removedMsgIds.forEach(msgId => {
+          deletedMsgIdsRef.current.add(msgId);
+          if (user) {
+            deleteMessageDoc(user.uid, id, msgId).catch(err => {
+              console.error('[Sanctuary Store] Error deleting truncated message doc:', err);
+            });
+          }
+        });
+      }
       if (target && user) {
         saveConversationDoc(user.uid, target).catch(err => {
           console.error('[Sanctuary Store] Error updating conversation doc:', err);
@@ -852,7 +911,13 @@ export function useAppStore(passedUser?: any) {
         }
         return c;
       });
-      if (user && (updates.thoughtStatus === 'complete' || updates.thoughtStatus === 'error') && targetMsg) {
+      if (
+        user &&
+        targetMsg &&
+        (updates.thoughtStatus === 'complete' ||
+          updates.thoughtStatus === 'error' ||
+          updates.reaction !== undefined)
+      ) {
         saveMessageDoc(user.uid, conversationId, targetMsg, convMsgs)
           .catch(e => console.error('[Diagnostic] Granular message update error:', e));
       }
@@ -861,6 +926,7 @@ export function useAppStore(passedUser?: any) {
   }, [user]);
 
   const removeMessage = useCallback((conversationId: string, messageId: string) => {
+    deletedMsgIdsRef.current.add(messageId);
     setConversations(prev => prev.map(c => 
       c.id === conversationId ? { 
         ...c, 

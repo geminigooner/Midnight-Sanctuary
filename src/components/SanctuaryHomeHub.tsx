@@ -295,7 +295,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
       </div>
 
       {/* ── RECENT SANCTUARY SESSIONS (RESUME) ── */}
-      {conversations.filter(c => (c.messages || []).length > 0).length > 0 && (
+      {conversations.length > 0 && (
         <div className="w-full max-w-2xl mb-8">
           <div className="flex items-center justify-between mb-3 px-1">
             <span className="text-xs font-extrabold text-[#f7e5cb] tracking-wider uppercase flex items-center gap-1.5">
@@ -307,8 +307,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
 
           <div className="space-y-3">
             {conversations
-              .filter(c => (c.messages || []).length > 0)
-              .slice(0, 2)
+              .slice(0, 5)
               .map(conv => (
                 <motion.button
                   key={conv.id}
@@ -331,7 +330,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
                         {conv.title || 'Untitled Sanctuary'}
                       </div>
                       <div className="text-xs font-bold text-[#2d225c]/70">
-                        {conv.messages.length} messages · {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
+                        {(conv.messages || []).length} messages · {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
