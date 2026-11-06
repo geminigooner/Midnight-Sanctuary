@@ -31,16 +31,16 @@ export function ProfileModal() {
   // Sync inputs whenever profile loads or changes from Firestore or cache
   React.useEffect(() => {
     if (profile) {
-      if (profile.name) setName(profile.name);
-      if (profile.pronouns) setPronouns(profile.pronouns);
-      if (profile.location) setLocation(profile.location);
-      if (profile.occupation) setOccupation(profile.occupation);
-      if (profile.about) setAbout(profile.about);
-      if (profile.currentVibe) setCurrentVibe(profile.currentVibe);
-      if (profile.favorites) setFavorites(profile.favorites);
-      if (profile.askMeAbout) setAskMeAbout(profile.askMeAbout);
-      if (profile.pleaseKnow) setPleaseKnow(profile.pleaseKnow);
-      if (profile.photo) setPhoto(profile.photo);
+      if (profile.name !== undefined) setName(profile.name);
+      if (profile.pronouns !== undefined) setPronouns(profile.pronouns);
+      if (profile.location !== undefined) setLocation(profile.location);
+      if (profile.occupation !== undefined) setOccupation(profile.occupation);
+      if (profile.about !== undefined) setAbout(profile.about);
+      if (profile.currentVibe !== undefined) setCurrentVibe(profile.currentVibe);
+      if (profile.favorites !== undefined) setFavorites(profile.favorites);
+      if (profile.askMeAbout !== undefined) setAskMeAbout(profile.askMeAbout);
+      if (profile.pleaseKnow !== undefined) setPleaseKnow(profile.pleaseKnow);
+      if (profile.photo !== undefined) setPhoto(profile.photo);
     }
   }, [profile]);
 
@@ -62,6 +62,7 @@ export function ProfileModal() {
 
   const handleSave = () => {
     store.updateProfile({
+      id: profile?.id || store.user?.uid || 'default-profile',
       name: name.trim() || 'User',
       pronouns: pronouns.trim(),
       location: location.trim(),
@@ -73,7 +74,8 @@ export function ProfileModal() {
       pleaseKnow: pleaseKnow.trim(),
       photo,
       backgroundImage: profile?.backgroundImage,
-      gemmaNotes: profile?.gemmaNotes || []
+      gemmaNotes: profile?.gemmaNotes || [],
+      updatedAt: Date.now()
     });
     setIsSaved(true);
     setTimeout(() => {

@@ -6,6 +6,7 @@ import { streamChat } from '../lib/gemini';
 import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
 import { triggerHaptic } from '../lib/haptics';
+import { getModelEntity } from '../lib/entitySystem';
 
 export interface UseChatStreamOptions {
   conversation: Conversation | undefined;
@@ -221,6 +222,8 @@ export function useChatStream({
     };
     resetIdleTimeout();
 
+    const activeEntity = getModelEntity(effectiveSettings.model, effectiveSettings.customEntities);
+
     const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
       if (!modelMsgAdded) {
         onAddMessage(requestConversationId, {
@@ -230,6 +233,9 @@ export function useChatStream({
           publicText: '',
           thoughtText: '',
           thoughtStatus: status,
+          authorEntityId: activeEntity.id,
+          authorDisplayName: activeEntity.displayName,
+          authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
           timestamp: Date.now(),
         });
         modelMsgAdded = true;
@@ -263,6 +269,9 @@ export function useChatStream({
         publicText: text,
         thoughtText: thought,
         thoughtStatus: status,
+        authorEntityId: activeEntity.id,
+        authorDisplayName: activeEntity.displayName,
+        authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
         finishReason: currentModelFinishReason,
         backend: currentModelBackend,
         searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
@@ -282,7 +291,10 @@ export function useChatStream({
         parts: [{ text: '' }],
         publicText: '',
         thoughtText: '',
-        thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
+        thoughtStatus: 'thinking',
+        authorEntityId: activeEntity.id,
+        authorDisplayName: activeEntity.displayName,
+        authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
         timestamp: Math.max(Date.now(), now + 1)
       });
       modelMsgAdded = true;
@@ -324,6 +336,9 @@ export function useChatStream({
          
          currentModelText = parsedText.trimStart();
          currentModelThought = parsedThought.trimStart();
+         if (!currentModelText) {
+           status = 'thinking';
+         }
          
          const nowTime = Date.now();
          if (force || nowTime - lastUpdateTime > 50) {
@@ -566,7 +581,10 @@ export function useChatStream({
               parts: [{ text: '' }],
               publicText: '',
               thoughtText: '',
-              thoughtStatus: effectiveSettings.model.includes('gemma') || effectiveSettings.model.includes('gemini-3') ? 'thinking' : 'complete',
+              thoughtStatus: 'thinking',
+              authorEntityId: activeEntity.id,
+              authorDisplayName: activeEntity.displayName,
+              authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
               timestamp: Date.now(),
             });
             modelMsgAdded = true;

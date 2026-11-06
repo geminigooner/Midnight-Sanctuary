@@ -56,6 +56,7 @@ export interface Message {
   scribbles?: SvgScribbleData[];
   musicTracks?: MusicTrackData[];
   // Multi-Entity & Group metadata
+  conversationId?: string;
   authorEntityId?: string;
   authorDisplayName?: string;
   authorAvatar?: string;
@@ -86,6 +87,7 @@ export interface Conversation {
   title: string;
   messages: Message[];
   modelId?: string;
+  createdAt?: number;
   updatedAt: number;
   type?: 'direct' | 'group';
   participantEntityIds?: string[];
@@ -188,6 +190,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export interface UserProfile {
+  id?: string;
   name: string;
   pronouns?: string;
   location?: string;
@@ -199,5 +202,6 @@ export interface UserProfile {
   pleaseKnow?: string;
   photo?: { mimeType: string; data: string };
   backgroundImage?: { mimeType: string; data: string };
-  gemmaNotes?: { text: string; timestamp: number }[];
+  gemmaNotes?: { id?: string; text: string; timestamp: number }[];
+  updatedAt?: number;
 }

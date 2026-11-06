@@ -59,11 +59,11 @@ export function ChatHeader({
       <div className="flex-1 flex items-center justify-center min-w-0 px-1.5">
         <button
           onClick={() => ui.setEntityQuartersOpen(true)}
-          className="flex items-center gap-2 px-3 py-1 sm:py-1.5 rounded-2xl bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#FAF0E4] active:translate-y-0.5 transition-all max-w-[210px] sm:max-w-xs min-w-0 group"
+          className="flex items-center gap-2 px-3 py-1 sm:py-1.5 rounded-2xl bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#FAF0E4] active:translate-y-0.5 transition-all max-w-[225px] sm:max-w-xs min-w-0 group"
           title="View Companion Quarters & Room"
         >
           <div 
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl border-2 border-[#2C194D] flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden shadow-xs"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl border-2 border-[#2C194D] flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden shadow-xs relative"
             style={{ backgroundColor: companion?.themeColor || '#9D7FE3' }}
           >
             {companion?.avatarUrl ? (
@@ -84,9 +84,40 @@ export function ChatHeader({
               </span>
               <span className="text-[10px] text-[#F198B7] shrink-0">✦</span>
             </div>
-            <span className="text-[10px] text-[#2C194D]/75 font-semibold truncate leading-none">
-              {companion?.roleTitle || 'Sanctuary Anchor'}
-            </span>
+            {presence === 'responding' || presence === 'deep_thinking' ? (
+              <span className="text-[10px] text-[#2C194D] font-extrabold truncate leading-none flex items-center gap-1">
+                <span className="truncate">
+                  {companion?.typingIndicator
+                    ? companion.typingIndicator.charAt(0).toUpperCase() + companion.typingIndicator.slice(1)
+                    : 'Typing'}
+                </span>
+                <span className="inline-flex items-center space-x-0.5 shrink-0">
+                  <motion.span
+                    animate={{ opacity: [0.25, 1, 0.25] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: 0 }}
+                    className="w-1 h-1 bg-[#2C194D] rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.25, 1, 0.25] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
+                    className="w-1 h-1 bg-[#2C194D] rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.25, 1, 0.25] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
+                    className="w-1 h-1 bg-[#2C194D] rounded-full"
+                  />
+                </span>
+              </span>
+            ) : presence === 'listening' ? (
+              <span className="text-[10px] text-[#2C194D]/85 font-bold truncate leading-none">
+                Listening to you...
+              </span>
+            ) : (
+              <span className="text-[10px] text-[#2C194D]/75 font-semibold truncate leading-none">
+                {companion?.roleTitle || 'Sanctuary Anchor'}
+              </span>
+            )}
           </div>
         </button>
       </div>

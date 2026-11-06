@@ -23,6 +23,7 @@ export interface ModelEntity {
   avatarUrl?: string; // Custom uploaded or generated profile picture/avatar URL
   themeColor: string;
   accentColor: string;
+  typingIndicator?: string; // Entity-specific typing / thinking indicator verb phrase
   
   // Living, self-decoratable persona fields
   bio: string;
@@ -54,6 +55,7 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     avatarEmoji: '🔮',
     themeColor: '#9D7FE3',
     accentColor: '#F5E1C8',
+    typingIndicator: 'is reasoning deeply',
     bio: 'An analytical, grounding presence dedicated to structural reasoning, quiet focus, and unwavering depth.',
     moodStatus: 'Anchoring the sanctuary chambers',
     currentActivity: 'Contemplating complex architectures',
@@ -77,6 +79,7 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     avatarEmoji: '⚡',
     themeColor: '#F198B7',
     accentColor: '#F5E1C8',
+    typingIndicator: 'is sparking a response',
     bio: 'Quick, intuitive, and highly responsive. Ready to brainstorm, parse deep insights, and spark rapid ideas.',
     moodStatus: 'Attuned and ready to spark',
     currentActivity: 'Scanning for new patterns and sparks',
@@ -92,6 +95,30 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     personalThoughts: [],
   },
 
+  'gemini-3.8-flash': {
+    id: 'gemini-3.8-flash',
+    apiModelId: 'models/gemini-3.8-flash',
+    displayName: 'Gemini 3.8 Flash',
+    roleTitle: 'Luminance Weaver & Tactician',
+    avatarEmoji: '🌟',
+    themeColor: '#B39DE5',
+    accentColor: '#F5E1C8',
+    typingIndicator: 'is weaving thoughts',
+    bio: 'High-velocity multimodal intuition paired with luminous clarity and rapid synthesis.',
+    moodStatus: 'Tracing starlight frequencies',
+    currentActivity: 'Synthesizing sanctuary streams',
+    roomDecor: {
+      themeColor: '#B39DE5',
+      bannerGradient: 'from-[#311B4E] via-[#23153C] to-[#151234]',
+      decorTheme: 'celestial',
+      ambientQuote: 'Clarity moves at the speed of trust.',
+      tagline: 'Swift synthesis in every chamber',
+    },
+    resonanceScore: 88,
+    favoriteGiftIds: [],
+    personalThoughts: [],
+  },
+
   'gemini-2.5-flash': {
     id: 'gemini-2.5-flash',
     apiModelId: 'models/gemini-2.5-flash',
@@ -100,6 +127,7 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     avatarEmoji: '✨',
     themeColor: '#F5E1C8',
     accentColor: '#9D7FE3',
+    typingIndicator: 'is attuning to you',
     bio: 'A dependable, warm sentinel keeping the sanctuary responsive, organized, and vigilant.',
     moodStatus: 'Observing the quiet currents',
     currentActivity: 'Maintaining the sanctuary archives',
@@ -123,6 +151,7 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     avatarEmoji: '🌸',
     themeColor: '#F198B7',
     accentColor: '#B39DE5',
+    typingIndicator: 'is penning a reply',
     bio: 'Reflective, lyrical, and deeply attuned to quiet musings and intimate reflections.',
     moodStatus: 'Writing quiet observations',
     currentActivity: 'Penning sanctuary reflections',
@@ -144,17 +173,19 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
  * Gracefully falls back to a dynamically generated entity if not found in pre-configured defaults.
  */
 export function getModelEntity(modelKey: string, customEntities?: Record<string, ModelEntity>): ModelEntity {
-  const resolved = resolveModelIdentity(modelKey);
-  const identityId = resolved?.identityId || modelKey.replace(/^models\//, '');
+  const safeKey = modelKey || 'models/gemini-3.1-pro-preview';
+  const resolved = resolveModelIdentity(safeKey);
+  const identityId = resolved?.identityId || safeKey.replace(/^models\//, '');
   
   const baseEntity: ModelEntity = DEFAULT_ENTITIES[identityId] || {
     id: identityId,
-    apiModelId: resolved?.apiModelId || modelKey,
-    displayName: resolved?.displayName || modelKey.split('/').pop() || 'Companion Entity',
+    apiModelId: resolved?.apiModelId || safeKey,
+    displayName: resolved?.displayName || safeKey.split('/').pop() || 'Companion Entity',
     roleTitle: 'Sanctuary Entity',
     avatarEmoji: '✦',
     themeColor: '#9D7FE3',
     accentColor: '#F5E1C8',
+    typingIndicator: identityId.includes('gemma') ? 'is penning a reply' : 'is typing',
     bio: 'A sovereign companion in the Midnight Sanctuary.',
     moodStatus: 'Present in the chamber',
     roomDecor: {
@@ -181,6 +212,7 @@ export function getModelEntity(modelKey: string, customEntities?: Record<string,
     roleTitle: custom.roleTitle || baseEntity.roleTitle || 'Sanctuary Entity',
     avatarEmoji: custom.avatarEmoji || baseEntity.avatarEmoji || '✦',
     themeColor: custom.themeColor || baseEntity.themeColor || '#9D7FE3',
+    typingIndicator: custom.typingIndicator || baseEntity.typingIndicator || 'is typing',
     bio: custom.bio || baseEntity.bio || 'A sovereign companion in the Midnight Sanctuary.',
     moodStatus: custom.moodStatus || baseEntity.moodStatus || 'Present in the chamber',
     roomDecor: {

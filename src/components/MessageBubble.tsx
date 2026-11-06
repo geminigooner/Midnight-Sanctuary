@@ -23,7 +23,11 @@ export const MessageBubble = React.memo(function MessageBubble({
    onImageClick,
    onDelete,
    onReact,
-   modelName
+   modelName,
+   avatarEmoji,
+   avatarUrl,
+   typingIndicator,
+   themeColor
 }: { 
    msg: Message;
   isLast: boolean;
@@ -37,6 +41,10 @@ export const MessageBubble = React.memo(function MessageBubble({
   onDelete?: () => void;
   onReact?: (reaction: string) => void;
   modelName?: string;
+  avatarEmoji?: string;
+  avatarUrl?: string;
+  typingIndicator?: string;
+  themeColor?: string;
 }) {
   const ui = useUI();
   const [editing, setEditing] = useState(false);
@@ -173,17 +181,47 @@ export const MessageBubble = React.memo(function MessageBubble({
           </div>
         ) : (
           <div className={`prose prose-p:leading-relaxed prose-pre:bg-[#151234] prose-pre:text-[#F5E1C8] prose-pre:border-[3px] prose-pre:border-[#2C194D] prose-pre:rounded-xl prose-pre:overflow-x-auto min-w-0 max-w-none break-words [overflow-wrap:anywhere] text-[#2C194D] prose-headings:text-[#2C194D] prose-strong:text-[#2C194D] prose-a:text-[#F198B7] prose-code:text-[#F198B7] ${publicText.includes('[Generation stopped: repetition loop detected.]') ? 'text-[#F198B7]' : ''}`}>
-            {(!isUser && (isWaitingForToken || Boolean(thoughtText?.trim()) || msg.thoughtStatus === 'thinking')) && (
+            {(!isUser && (isWaitingForToken || Boolean(thoughtText?.trim()) || (isGenerating && isLast && msg.thoughtStatus === 'thinking'))) && (
               <ThoughtBubble
                 text={thoughtText || ''}
-                status={msg.thoughtStatus ?? 'complete'}
+                status={
+                  isWaitingForToken || (isGenerating && isLast && msg.thoughtStatus === 'thinking')
+                    ? 'thinking'
+                    : (msg.thoughtStatus ?? 'complete')
+                }
                 modelName={modelName}
+                avatarEmoji={avatarEmoji}
+                avatarUrl={avatarUrl}
+                typingIndicator={typingIndicator}
               />
             )}
             
-            {Boolean(publicText?.trim()) || (isWaitingForToken && !hasVisualContent) ? (
+            {Boolean(publicText?.trim()) ? (
               <div className="min-w-0 break-words">
                 <StreamingMarkdown content={publicText} isGenerating={isGenerating && isLast} />
+                {!isUser && isGenerating && isLast && (
+                  <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#2C194D]/10 border border-[#2C194D]/20 text-[11px] font-extrabold text-[#2C194D]">
+                    <span>{avatarEmoji || '✦'}</span>
+                    <span>{modelName || 'Companion'} {typingIndicator || 'is typing'}</span>
+                    <span className="flex items-center space-x-0.5 ml-0.5">
+                      <motion.span
+                        animate={{ y: [0, -2, 0], opacity: [0.35, 1, 0.35] }}
+                        transition={{ repeat: Infinity, duration: 1, delay: 0 }}
+                        className="w-1 h-1 bg-[#2C194D] rounded-full"
+                      />
+                      <motion.span
+                        animate={{ y: [0, -2, 0], opacity: [0.35, 1, 0.35] }}
+                        transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
+                        className="w-1 h-1 bg-[#2C194D] rounded-full"
+                      />
+                      <motion.span
+                        animate={{ y: [0, -2, 0], opacity: [0.35, 1, 0.35] }}
+                        transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
+                        className="w-1 h-1 bg-[#2C194D] rounded-full"
+                      />
+                    </span>
+                  </div>
+                )}
                 {publicText.includes('Unauthorized') && (
                   <div className="mt-3 pt-3 border-t-[2px] border-[#2C194D]/20">
                     <button
@@ -442,5 +480,9 @@ export const MessageBubble = React.memo(function MessageBubble({
   prev.msg === next.msg && 
   prev.isLast === next.isLast && 
   prev.isGenerating === next.isGenerating &&
-  prev.precedingUserPrompt === next.precedingUserPrompt
+  prev.precedingUserPrompt === next.precedingUserPrompt &&
+  prev.modelName === next.modelName &&
+  prev.avatarEmoji === next.avatarEmoji &&
+  prev.avatarUrl === next.avatarUrl &&
+  prev.typingIndicator === next.typingIndicator
 );

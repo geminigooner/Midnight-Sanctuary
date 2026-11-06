@@ -12,7 +12,9 @@ import {
   saveFullGranularState,
   saveConversationDoc,
   saveProfileDoc,
-  saveGiftDoc
+  saveGiftDoc,
+  ensureValidDocId,
+  normalizeMessageSchema
 } from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
 import { getModelEntity } from './entitySystem';
@@ -37,7 +39,24 @@ export function useAppStore(passedUser?: any) {
       const cached = localStorage.getItem('sanctuary_conversations_cache');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          const deduped = new Map<string, Conversation>();
+          parsed.forEach((c: any) => {
+            if (!c) return;
+            const safeConvId = ensureValidDocId(c.id, 'conv');
+            const convUpdatedAt = c.updatedAt || c.createdAt || Date.now();
+            deduped.set(safeConvId, {
+              ...c,
+              id: safeConvId,
+              createdAt: c.createdAt || convUpdatedAt,
+              updatedAt: convUpdatedAt,
+              messages: Array.isArray(c.messages)
+                ? c.messages.map((m: any, idx: number) => normalizeMessageSchema(m, safeConvId, idx, convUpdatedAt))
+                : []
+            });
+          });
+          return Array.from(deduped.values());
+        }
       }
     } catch (e) {
       console.warn('Failed to load cached conversations from localStorage:', e);
@@ -195,22 +214,51 @@ export function useAppStore(passedUser?: any) {
 
               return {
                 ...c,
+                id: ensureValidDocId(c.id, 'conv'),
+                createdAt: c.createdAt || c.updatedAt || Date.now(),
+                updatedAt: c.updatedAt || c.createdAt || Date.now(),
                 messages: msgs
               };
             });
 
-            return [...mergedIncoming, ...localOnly];
+            const byConvId = new Map<string, Conversation>();
+            for (const c of [...mergedIncoming, ...localOnly]) {
+              if (c && c.id && !byConvId.has(c.id)) {
+                byConvId.set(c.id, c);
+              }
+            }
+            const nextList = Array.from(byConvId.values());
+            nextList.sort((a, b) => {
+              const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
+              if (diff !== 0) return diff;
+              return (a.id || '').localeCompare(b.id || '');
+            });
+            return nextList;
           });
         }
         if (data.settings) {
-          setSettings(prev => ({ 
-            ...DEFAULT_SETTINGS, 
-            ...data.settings,
-            customEntities: {
-              ...(data.settings?.customEntities || {}),
-              ...(data.companions || {})
-            }
-          }));
+          setSettings(prev => {
+            const rawMemories = Array.isArray(data.settings?.memories) ? data.settings!.memories : (prev.memories || []);
+            const indexedMemories = rawMemories.map((m: any, idx: number) => ({
+              ...m,
+              id: m?.id || `mem-${idx}-${m?.createdAt || 0}`,
+            }));
+            const rawEvents = Array.isArray(data.settings?.eventLog) ? data.settings!.eventLog : (prev.eventLog || []);
+            const indexedEvents = rawEvents.map((ev: any, idx: number) => ({
+              ...ev,
+              id: ev?.id || `evt-${idx}-${ev?.timestamp || 0}`,
+            }));
+            return { 
+              ...DEFAULT_SETTINGS, 
+              ...data.settings,
+              memories: indexedMemories,
+              eventLog: indexedEvents,
+              customEntities: {
+                ...(data.settings?.customEntities || {}),
+                ...(data.companions || {})
+              }
+            };
+          });
         }
         if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
         if (data.gifts) {
@@ -220,7 +268,12 @@ export function useAppStore(passedUser?: any) {
             return [...data.gifts!, ...localOnlyGifts];
           });
         }
-        if (data.userProfile) setProfile(data.userProfile);
+        if (data.userProfile) {
+          setProfile({
+            ...data.userProfile,
+            id: data.userProfile.id || user.uid,
+          });
+        }
         
         setDataLoaded(true);
       } else {
@@ -752,12 +805,17 @@ export function useAppStore(passedUser?: any) {
 
   const createConversation = useCallback((customModelId?: string, customTitle?: string, initialMessages?: Message[]) => {
     const newId = uuidv4();
+    const now = Date.now();
+    const normalizedInitial = Array.isArray(initialMessages)
+      ? initialMessages.map((m, idx) => normalizeMessageSchema(m, newId, idx, now))
+      : [];
     const newConv: Conversation = {
       id: newId,
       title: customTitle || 'New Sanctuary',
-      messages: initialMessages || [],
-      modelId: customModelId || settings.model,
-      updatedAt: Date.now()
+      messages: normalizedInitial,
+      modelId: customModelId || settings.model || 'models/gemini-3.1-pro-preview',
+      createdAt: now,
+      updatedAt: now
     };
     setConversations(prev => [newConv, ...prev]);
     setCurrentId(newId);
@@ -834,20 +892,22 @@ export function useAppStore(passedUser?: any) {
   }, [user]);
 
   const addMessage = useCallback((conversationId: string, message: Message) => {
+    const safeConvId = ensureValidDocId(conversationId, 'conv');
+    const normalizedMsg = normalizeMessageSchema(message, safeConvId, 0);
     setConversations(prev => {
       let targetFound = false;
-      let activeMessages: Message[] = [message];
+      let activeMessages: Message[] = [normalizedMsg];
       const next = prev.map(c => {
-        if (c.id === conversationId) {
+        if (c.id === safeConvId) {
           targetFound = true;
           const currentMsgs = c.messages || [];
-          const existingIndex = currentMsgs.findIndex(m => m.id === message.id);
+          const existingIndex = currentMsgs.findIndex(m => m.id === normalizedMsg.id);
           let newMsgs: Message[];
           if (existingIndex >= 0) {
             newMsgs = [...currentMsgs];
-            newMsgs[existingIndex] = message;
+            newMsgs[existingIndex] = normalizedMsg;
           } else {
-            newMsgs = [...currentMsgs, message];
+            newMsgs = [...currentMsgs, normalizedMsg];
           }
           activeMessages = newMsgs;
           return {
@@ -860,12 +920,14 @@ export function useAppStore(passedUser?: any) {
       });
 
       if (!targetFound) {
+        const now = Date.now();
         const newConv: Conversation = {
-          id: conversationId,
-          title: message.parts?.[0]?.text?.slice(0, 30) || 'New Sanctuary',
-          messages: [message],
-          modelId: settings.model,
-          updatedAt: Date.now()
+          id: safeConvId,
+          title: normalizedMsg.parts?.[0]?.text?.slice(0, 30) || 'New Sanctuary',
+          messages: [normalizedMsg],
+          modelId: settings.model || 'models/gemini-3.1-pro-preview',
+          createdAt: now,
+          updatedAt: now
         };
         next.unshift(newConv);
         if (user) {
@@ -876,7 +938,7 @@ export function useAppStore(passedUser?: any) {
       }
 
       if (user) {
-        saveMessageDoc(user.uid, conversationId, message, activeMessages)
+        saveMessageDoc(user.uid, safeConvId, normalizedMsg, activeMessages)
           .catch(e => console.error('[Diagnostic] Granular message save error:', e));
       }
 
@@ -989,23 +1051,39 @@ export function useAppStore(passedUser?: any) {
     addRoomArtwork,
     profile,
     updateProfile: (newProfile: UserProfile) => {
-      setProfile(newProfile);
+      const indexedProfile: UserProfile = {
+        ...newProfile,
+        id: newProfile.id || user?.uid || 'default-profile',
+        updatedAt: Date.now(),
+      };
+      setProfile(indexedProfile);
       try {
-        localStorage.setItem('sanctuary_user_profile', JSON.stringify(newProfile));
+        localStorage.setItem('sanctuary_user_profile', JSON.stringify(indexedProfile));
       } catch (e) {
         console.warn('Failed to cache profile to localStorage:', e);
       }
       if (user) {
-        saveProfileDoc(user.uid, newProfile).catch(err => {
+        saveProfileDoc(user.uid, indexedProfile).catch(err => {
           console.error('[Sanctuary Store] Error persisting profile doc to Firestore:', err);
         });
       }
     },
     addGemmaNote: (note: string) => {
       setProfile(prev => {
+        const newNote = { id: uuidv4(), text: note, timestamp: Date.now() };
         const updated: UserProfile = prev
-          ? { ...prev, gemmaNotes: [{ text: note, timestamp: Date.now() }, ...(prev.gemmaNotes || [])] }
-          : { name: 'User', gemmaNotes: [{ text: note, timestamp: Date.now() }] };
+          ? {
+              ...prev,
+              id: prev.id || user?.uid || 'default-profile',
+              gemmaNotes: [newNote, ...(prev.gemmaNotes || [])],
+              updatedAt: Date.now()
+            }
+          : {
+              id: user?.uid || 'default-profile',
+              name: 'User',
+              gemmaNotes: [newNote],
+              updatedAt: Date.now()
+            };
         try {
           localStorage.setItem('sanctuary_user_profile', JSON.stringify(updated));
         } catch {}

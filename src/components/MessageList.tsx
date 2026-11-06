@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { Conversation, Message, DEFAULT_SETTINGS } from '../lib/types';
 import { MessageBubble } from './MessageBubble';
 import { resolveModelIdentity } from '../lib/modelSystem';
+import { getModelEntity } from '../lib/entitySystem';
 import { motion } from 'motion/react';
 import { useStore } from '../context/AppContext';
 import { EmptyChatGreeting } from './EmptyChatGreeting';
@@ -45,7 +46,13 @@ export function MessageList({
 
   const modelsList = Array.isArray(availableModels) ? availableModels : [];
   const activeModel = conversation?.modelId || settings?.model || DEFAULT_SETTINGS.model;
-  const modelName = modelsList.find(m => m.name === activeModel)?.displayName || resolveModelIdentity(activeModel)?.displayName || activeModel?.split('/').pop() || 'Model';
+  const defaultEntity = getModelEntity(activeModel, settings?.customEntities);
+  const fallbackModelName =
+    defaultEntity?.displayName ||
+    modelsList.find(m => m.name === activeModel)?.displayName ||
+    resolveModelIdentity(activeModel)?.displayName ||
+    activeModel?.split('/').pop() ||
+    'Companion';
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6 space-y-6 custom-scrollbar z-10 min-h-0 w-full min-w-0 max-w-full flex flex-col">
@@ -70,6 +77,10 @@ export function MessageList({
         >
           {visibleMessages.map((msg, i) => {
             const origIndex = conversation.messages.findIndex(m => m.id === msg.id);
+            const msgEntity = msg.authorEntityId
+              ? getModelEntity(msg.authorEntityId, settings?.customEntities)
+              : defaultEntity;
+            const resolvedModelName = msg.authorDisplayName || msgEntity?.displayName || fallbackModelName;
 
             // Find preceding user message if this is a model response
             let precedingUserMsg = undefined;
@@ -95,7 +106,11 @@ export function MessageList({
                 msg={msg}
                 isLast={i === visibleMessages.length - 1}
                 isGenerating={isGenerating}
-                modelName={modelName}
+                modelName={resolvedModelName}
+                avatarEmoji={msgEntity?.avatarEmoji}
+                avatarUrl={msgEntity?.avatarUrl}
+                typingIndicator={msgEntity?.typingIndicator}
+                themeColor={msgEntity?.themeColor}
                 onCopy={onCopy}
                 precedingUserPrompt={promptToRetry}
                 onRetry={() => {
