@@ -302,10 +302,11 @@ export function ChatInputDock({
                 <button 
                   disabled={!giftContent.trim() && !giftFile}
                   onClick={() => {
+                    const targetModel = conversation?.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
                     store.addGift({
                       from: 'user',
-                      targetModelId: store.settings.model,
-                      modelId: store.settings.model,
+                      targetModelId: targetModel,
+                      modelId: targetModel,
                       content: giftContent.trim(),
                       gift_type: giftFile ? 'image' : 'text',
                       reason: '',

@@ -21,6 +21,8 @@ export function ChatArea() {
   const [attachments, setAttachments] = useState<{ mimeType: string; data: string; previewUrl?: string }[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
+  const activeModelId = conversation?.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
+
   const {
     isGenerating,
     presence,
@@ -31,7 +33,7 @@ export function ChatArea() {
     stopGeneration,
   } = useChatStream({
     conversation,
-    settings: store.settings,
+    settings: { ...store.settings, model: activeModelId },
     gifts: store.gifts,
     profile: store.profile,
     jewelMetrics: store.jewelMetrics,
@@ -56,9 +58,9 @@ export function ChatArea() {
   }, []);
 
   const handleFavorite = useCallback((content: string) => {
-    const activeModelId = store.settings.model;
-    store.addMemory(content, 'chat_starred', 'user', activeModelId);
-  }, [store.settings.model, store.addMemory]);
+    const targetModelId = conversation?.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
+    store.addMemory(content, 'chat_starred', 'user', targetModelId);
+  }, [conversation?.modelId, store.settings.model, store.addMemory]);
 
   const handleSend = useCallback((textToSend?: string, replaceIndex?: number, additionalMessages?: Message[], sendAttachments?: any[]) => {
     const rawText = textToSend !== undefined ? textToSend : input;
@@ -69,8 +71,13 @@ export function ChatArea() {
     let activeConvId = store.currentId;
     let targetConv = store.conversations.find(c => c.id === activeConvId);
     if (!activeConvId || !targetConv) {
-      targetConv = store.createConversation();
+      targetConv = store.createConversation(store.settings.model || 'models/gemini-3.1-pro-preview');
       activeConvId = targetConv.id;
+    }
+
+    const resolvedModel = targetConv.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
+    if (!targetConv.modelId) {
+      store.updateConversation(targetConv.id, { modelId: resolvedModel });
     }
 
     if (replaceIndex === undefined && textToSend === undefined) {
@@ -86,15 +93,16 @@ export function ChatArea() {
       replaceIndex,
       additionalMessages,
       targetConversationId: activeConvId,
-      targetConversation: targetConv,
-      targetSettings: targetConv.modelId ? { ...store.settings, model: targetConv.modelId } : undefined,
+      targetConversation: { ...targetConv, modelId: resolvedModel },
+      targetSettings: { ...store.settings, model: resolvedModel },
     });
   }, [input, attachments, sendMessage, store]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!conversation) return;
+    const exportModel = conversation.modelId || store.settings.model;
     const md = conversation.messages.map(m => {
-      const role = m.role === 'user' ? '**You**' : `**${store.settings.model?.split('/').pop() || 'Model'}**`;
+      const role = m.role === 'user' ? '**You**' : `**${exportModel?.split('/').pop() || 'Model'}**`;
       const text = getPublicMessageText(m);
       return `${role}\n\n${text}\n\n---\n`;
     }).join('\n');

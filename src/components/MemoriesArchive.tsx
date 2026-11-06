@@ -15,7 +15,8 @@ export function MemoriesArchive() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'model' | 'user' | 'legacy'>('model');
 
-  const activeModelId = settings.model || 'models/gemini-3-flash-preview';
+  const activeConv = store.conversations.find(c => c.id === store.currentId);
+  const activeModelId = activeConv?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
   const modelDef = resolveModelIdentity(activeModelId);
   const activeModelDisplayName = modelDef?.displayName || activeModelId?.split('/').pop() || 'Current Model';
   const currentNamespace = normalizeMemoryNamespace(activeModelId);

@@ -79,7 +79,35 @@ export function subscribeToState(
   const giftsColRef = collection(db, 'users', userId, 'gifts');
   const companionsColRef = collection(db, 'users', userId, 'companions');
 
-  // 1. Real-Time Settings Listener
+  // 1. Real-Time Settings Listener & One-Time Legacy Recovery Check
+  let legacyChecked = false;
+  const runLegacyRecovery = () => {
+    if (legacyChecked) return;
+    legacyChecked = true;
+    checkLegacyOnce(userId, (legacy) => {
+      if (legacy && isSubscribed) {
+        if (!liveState.settings && legacy.settings) liveState.settings = legacy.settings;
+        if (!liveState.jewelMetrics && legacy.jewelMetrics) liveState.jewelMetrics = legacy.jewelMetrics;
+        if (!liveState.userProfile && legacy.userProfile) liveState.userProfile = legacy.userProfile;
+        if (Array.isArray(legacy.conversations) && legacy.conversations.length > 0) {
+          const existingIds = new Set((liveState.conversations || []).map(c => c.id));
+          const missingConvs = legacy.conversations.filter((c: any) => c && c.id && !existingIds.has(c.id));
+          if (missingConvs.length > 0) {
+            liveState.conversations = [...(liveState.conversations || []), ...missingConvs];
+          }
+        }
+        if (Array.isArray(legacy.gifts) && legacy.gifts.length > 0) {
+          const existingGiftIds = new Set((liveState.gifts || []).map(g => g.id));
+          const missingGifts = legacy.gifts.filter((g: any) => g && g.id && !existingGiftIds.has(g.id));
+          if (missingGifts.length > 0) {
+            liveState.gifts = [...(liveState.gifts || []), ...missingGifts];
+          }
+        }
+        notify();
+      }
+    });
+  };
+
   const unsubSettings = onSnapshot(settingsDocRef, (snap) => {
     if (snap.exists()) {
       const data = snap.data();
@@ -87,21 +115,9 @@ export function subscribeToState(
       liveState.jewelMetrics = data.jewelMetrics;
       liveState.userProfile = data.userProfile;
       notify();
+      runLegacyRecovery();
     } else {
-      checkLegacyOnce(userId, (legacy) => {
-        if (legacy && isSubscribed) {
-          liveState.settings = legacy.settings;
-          liveState.jewelMetrics = legacy.jewelMetrics;
-          liveState.userProfile = legacy.userProfile;
-          if (Array.isArray(legacy.conversations) && (!liveState.conversations || liveState.conversations.length === 0)) {
-            liveState.conversations = legacy.conversations;
-          }
-          if (Array.isArray(legacy.gifts) && (!liveState.gifts || liveState.gifts.length === 0)) {
-            liveState.gifts = legacy.gifts;
-          }
-        }
-        notify();
-      });
+      runLegacyRecovery();
     }
   }, (err) => {
     console.error('[Realtime Sync] Error on settings snapshot:', err);

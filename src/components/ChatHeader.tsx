@@ -214,7 +214,7 @@ export function ChatHeader({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#2C194D]/70">Model ID</span>
-                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]" title={settings.model}>{settings.model}</span>
+                    <span className="bg-[#B39DE5] px-2 py-0.5 rounded-full border-[2px] border-[#2C194D] truncate max-w-[120px]" title={activeModelId}>{activeModelId}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#2C194D]/70">Messages</span>

@@ -314,7 +314,12 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
                   key={conv.id}
                   whileHover={{ y: -2 }}
                   whileTap={{ y: 3 }}
-                  onClick={() => store.setCurrentId(conv.id)}
+                  onClick={() => {
+                    if (conv.modelId) {
+                      store.updateSettings({ model: conv.modelId });
+                    }
+                    store.setCurrentId(conv.id);
+                  }}
                   className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group"
                 >
                   <div className="flex items-center gap-3 overflow-hidden">

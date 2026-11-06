@@ -201,10 +201,7 @@ export function Sidebar() {
               <NebulaArchive 
                 conversations={store.conversations} 
                 currentId={store.currentId} 
-                onSelect={(id) => {
-                  store.setCurrentId(id);
-                  if (window.innerWidth < 1024) setSidebarOpen(false);
-                }} 
+                onSelect={(id) => handleSelect(id)} 
               />
             </motion.div>
           )}

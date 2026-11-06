@@ -120,7 +120,8 @@ export function useChatStream({
       return;
     }
 
-    const effectiveSettings = targetSettings || (targetConversation?.modelId ? { ...settings, model: targetConversation.modelId } : settings);
+    const effectiveModel = targetSettings?.model || targetConversation?.modelId || conversationRef.current?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
+    const effectiveSettings = { ...(targetSettings || settings), model: effectiveModel };
 
     if ((isGenerating || isGeneratingRef.current) && (!additionalMessages || additionalMessages.length === 0)) {
       console.warn("sendMessage blocked: Generation already in progress.");
@@ -676,9 +677,15 @@ export function useChatStream({
     if (!conv || conv.messages.length < 2) return;
     const lastUserIndex = conv.messages.map(m => m.role).lastIndexOf('user');
     if (lastUserIndex !== -1) {
-      sendMessage(getPublicMessageText(conv.messages[lastUserIndex]) || '', { replaceIndex: lastUserIndex });
+      const targetModel = conv.modelId || settings.model || 'models/gemini-3.1-pro-preview';
+      sendMessage(getPublicMessageText(conv.messages[lastUserIndex]) || '', {
+        replaceIndex: lastUserIndex,
+        targetConversationId: conv.id,
+        targetConversation: conv,
+        targetSettings: { ...settings, model: targetModel },
+      });
     }
-  }, [sendMessage]);
+  }, [sendMessage, settings]);
 
   return {
     isGenerating,

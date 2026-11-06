@@ -11,7 +11,8 @@ import {
   deleteConversationDocs, 
   saveFullGranularState,
   saveConversationDoc,
-  saveProfileDoc
+  saveProfileDoc,
+  saveGiftDoc
 } from './persistenceSystem';
 import { normalizeModelId } from './modelSystem';
 import { getModelEntity } from './entitySystem';
@@ -127,6 +128,13 @@ export function useAppStore(passedUser?: any) {
 
             // Retain locally-created conversations that haven't hit Firestore snapshot yet
             const localOnly = prev.filter(c => !incomingIds.has(c.id));
+            if (localOnly.length > 0 && user?.uid) {
+              localOnly.forEach(localConv => {
+                saveConversationDoc(user.uid, localConv).catch(err => {
+                  console.warn('[Sanctuary Store] Failed to backfill local conversation to Firestore:', err);
+                });
+              });
+            }
 
             const mergedIncoming = incoming.map((c: any) => {
               const prevConv = prevMap.get(c.id);
@@ -169,7 +177,13 @@ export function useAppStore(passedUser?: any) {
           }));
         }
         if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
-        if (data.gifts) setGifts(data.gifts);
+        if (data.gifts) {
+          setGifts(prev => {
+            const incomingIds = new Set(data.gifts!.map((g: Gift) => g.id));
+            const localOnlyGifts = prev.filter(g => !incomingIds.has(g.id));
+            return [...data.gifts!, ...localOnlyGifts];
+          });
+        }
         if (data.userProfile) setProfile(data.userProfile);
         
         setDataLoaded(true);
@@ -287,7 +301,12 @@ export function useAppStore(passedUser?: any) {
       timestamp: Date.now()
     };
     setGifts(prev => [newGift, ...prev]);
-  }, []);
+    if (user) {
+      saveGiftDoc(user.uid, newGift).catch(err => {
+        console.error('[Sanctuary Store] Error saving gift doc immediately:', err);
+      });
+    }
+  }, [user]);
 
   const removeMemory = useCallback((id: string) => {
     setSettings(prev => ({

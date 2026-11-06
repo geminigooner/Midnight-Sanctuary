@@ -44,7 +44,7 @@ export function MessageList({
   }, [conversation?.messages, isGenerating]);
 
   const modelsList = Array.isArray(availableModels) ? availableModels : [];
-  const activeModel = settings?.model || DEFAULT_SETTINGS.model;
+  const activeModel = conversation?.modelId || settings?.model || DEFAULT_SETTINGS.model;
   const modelName = modelsList.find(m => m.name === activeModel)?.displayName || resolveModelIdentity(activeModel)?.displayName || activeModel?.split('/').pop() || 'Model';
 
   return (

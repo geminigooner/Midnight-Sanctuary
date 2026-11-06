@@ -174,7 +174,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   temperature: 2.0,
   topP: 0.95,
   maxOutputTokens: 12000,
-  model: "models/gemini-2.5-flash",
+  model: "models/gemini-3.1-pro-preview",
   favoriteModels: [],
   thinkingLevel: "HIGH",
   includeThoughts: true,

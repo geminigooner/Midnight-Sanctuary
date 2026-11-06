@@ -164,12 +164,19 @@ export function Settings() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto custom-scrollbar p-1">
                     {sortedModels.map((m) => {
-                      const isSelected = settings.model === m.name;
+                      const currentConv = store.conversations.find(c => c.id === store.currentId);
+                      const activeModel = currentConv?.modelId || settings.model;
+                      const isSelected = activeModel === m.name;
                       const isFav = settings.favoriteModels?.includes(m.name);
                       return (
                         <div
                           key={m.name}
-                          onClick={() => store.updateSettings({ model: m.name })}
+                          onClick={() => {
+                            store.updateSettings({ model: m.name });
+                            if (store.currentId) {
+                              store.updateConversation(store.currentId, { modelId: m.name });
+                            }
+                          }}
                           className={`p-3 rounded-2xl border-[3px] border-[#2C194D] cursor-pointer transition-all flex items-center justify-between ${
                             isSelected ? 'bg-[#F198B7] shadow-[3px_3px_0_#2C194D]' : 'bg-[#F5E1C8] hover:bg-[#F5E1C8]/80'
                           }`}
