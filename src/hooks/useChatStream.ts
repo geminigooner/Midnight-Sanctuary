@@ -19,10 +19,14 @@ export interface UseChatStreamOptions {
   onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
   onRemoveMessage?: (conversationId: string, messageId: string) => void;
   onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
+  onRecordEntityTurn?: (
+    entityKey: string,
+    params: { role: 'user' | 'model'; responseCharacters?: number; timestamp?: number }
+  ) => void;
   onAddGift: (gift: any) => void;
   onAddMemory: (content: string, origin?: string, author?: 'user' | 'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => void;
-  onAddEventLog: (description: string) => void;
-  onAddGemmaNote: (note: string) => void;
+  onAddEventLog: (description: string, entityKey?: string) => void;
+  onAddGemmaNote: (note: string, authorEntityKey?: string) => void;
   onUpdateEntityQuarters?: (modelKey: string, updates: any) => void;
   onRecordEntityThought?: (modelKey: string, thoughtText: string) => void;
   onPlaceSticker?: (sticker: { stickerId: string; emoji: string; name: string; targetId: string; note?: string; placedBy?: string }) => void;
@@ -41,6 +45,7 @@ export function useChatStream({
   onUpdateMessage,
   onRemoveMessage,
   onUpdateJewel,
+  onRecordEntityTurn,
   onAddGift,
   onAddMemory,
   onAddEventLog,
@@ -163,6 +168,9 @@ export function useChatStream({
         lastInteractionTimestamp: now
       };
     });
+    if (onRecordEntityTurn) {
+      onRecordEntityTurn(effectiveSettings.model, { role: 'user', timestamp: now });
+    }
 
     let currentMessages = [...((targetConversation || conversationRef.current)?.messages || [])];
     
@@ -424,10 +432,10 @@ export function useChatStream({
             }
           } else if (chunk.type === 'user_note') {
             hasToolCalls = true;
-            onAddGemmaNote(chunk.note);
+            onAddGemmaNote(chunk.note, (chunk as any).entityId || (chunk as any).modelId || activeEntity.id);
           } else if (chunk.type === 'eventLog') {
             hasToolCalls = true;
-            onAddEventLog(chunk.description);
+            onAddEventLog(chunk.description, (chunk as any).entityId || (chunk as any).modelId || activeEntity.id);
           } else if (chunk.type === 'stick_sticker') {
             hasToolCalls = true;
             if (onPlaceSticker) {
@@ -597,6 +605,13 @@ export function useChatStream({
           totalResponseCharacters: prev.totalResponseCharacters + currentModelText.length,
           lastInteractionTimestamp: Date.now()
         }));
+        if (onRecordEntityTurn) {
+          onRecordEntityTurn(activeEntity.id, {
+            role: 'model',
+            responseCharacters: currentModelText.length,
+            timestamp: Date.now(),
+          });
+        }
       }
       setTemporaryPresence('complete', 'resting');
     } catch (e: any) {

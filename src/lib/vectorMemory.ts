@@ -1,7 +1,5 @@
-import { GoogleGenAI } from '@google/genai';
-import { db } from './firebase';
-import { collection, doc, setDoc, getDocs } from 'firebase/firestore';
 import { Memory } from './types';
+import { auth } from './firebase';
 
 // Mathematical Cosine Similarity calculation
 export function cosineSimilarity(vecA: number[], vecB: number[]): number {
@@ -32,23 +30,30 @@ export interface VectorMemoryRecord {
 const memoryEmbeddingCache = new Map<string, number[]>();
 
 /**
- * Request text embedding from backend / Google GenAI
+ * Request text embedding from authenticated backend `/api/embed` route.
  */
 export async function getEmbedding(text: string): Promise<number[] | null> {
   if (!text || !text.trim()) return null;
-  const cached = memoryEmbeddingCache.get(text.trim());
+  const trimmed = text.trim();
+  const cached = memoryEmbeddingCache.get(trimmed);
   if (cached) return cached;
 
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (auth.currentUser) {
+      const token = await auth.currentUser.getIdToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
+
     const res = await fetch('/api/embed', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.trim() }),
+      headers,
+      body: JSON.stringify({ text: trimmed }),
     });
     if (!res.ok) return null;
     const data = await res.json();
     if (data?.embedding && Array.isArray(data.embedding)) {
-      memoryEmbeddingCache.set(text.trim(), data.embedding);
+      memoryEmbeddingCache.set(trimmed, data.embedding);
       return data.embedding;
     }
   } catch (err) {
@@ -58,7 +63,8 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
 }
 
 /**
- * Score and retrieve top semantic memories for any given query or user message
+ * Score and retrieve top semantic memories for any given query or user message,
+ * utilizing pre-computed `memory.embedding` vectors when available.
  */
 export async function retrieveRelevantMemories(
   queryText: string,
@@ -71,14 +77,17 @@ export async function retrieveRelevantMemories(
 
   const queryEmbedding = await getEmbedding(queryText);
   if (!queryEmbedding) {
-    return allMemories.slice(0, topK).map(m => ({ memory: m, similarity: 1.0 }));
+    return allMemories.slice(0, topK).map((m) => ({ memory: m, similarity: 1.0 }));
   }
 
   const scored: { memory: Memory; similarity: number }[] = [];
 
   for (const memory of allMemories) {
     if (!memory.content || !memory.content.trim()) continue;
-    const memEmbedding = await getEmbedding(memory.content);
+    const memEmbedding =
+      Array.isArray(memory.embedding) && memory.embedding.length > 0
+        ? memory.embedding
+        : await getEmbedding(memory.content);
     if (memEmbedding) {
       const similarity = cosineSimilarity(queryEmbedding, memEmbedding);
       scored.push({ memory, similarity });

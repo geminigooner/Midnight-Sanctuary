@@ -1949,6 +1949,8 @@ export class PersistenceCoordinator {
     caption?: string;
     isLocked?: boolean;
     lockReason?: string;
+    memoryType?: 'fact' | 'episodic' | 'preference' | 'milestone';
+    embedding?: number[];
     explicitId?: string;
     createdAt?: number;
   }): Promise<ScopedMemory | null> {
@@ -1970,6 +1972,7 @@ export class PersistenceCoordinator {
                 ...existing,
                 isLocked: true,
                 lockReason: params.lockReason || existing.lockReason,
+                embedding: params.embedding || existing.embedding,
                 revision: this.nextRevision(),
                 updatedAt: Date.now(),
               };
@@ -1987,6 +1990,7 @@ export class PersistenceCoordinator {
               ...existing,
               isLocked: true,
               lockReason: params.lockReason || existing.lockReason,
+              embedding: params.embedding || existing.embedding,
               revision: this.nextRevision(),
               updatedAt: Date.now(),
             };
@@ -2009,6 +2013,8 @@ export class PersistenceCoordinator {
       caption: params.caption,
       isLocked: Boolean(params.isLocked),
       lockReason: params.lockReason,
+      memoryType: params.memoryType,
+      embedding: params.embedding,
       scope: isCompanionScoped && entityId ? 'companion' : 'shared',
       entityId,
       revision: rev,

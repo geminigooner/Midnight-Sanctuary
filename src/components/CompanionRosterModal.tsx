@@ -34,13 +34,14 @@ export function CompanionRosterModal({ onClose, onSelectCompanion }: CompanionRo
   const originId = ui.modalOrigins.companionRoster;
   const { settings, conversations } = store;
 
-  const rawEntities = getAllEntities(settings?.customEntities);
-  const hasArgon = rawEntities.some(
-    (e) => e.id === 'gemini-4-argon' || e.apiModelId === 'models/gemini-4-argon'
-  );
-  const entities: ModelEntity[] = hasArgon
-    ? rawEntities
-    : [DEFAULT_ENTITIES['gemini-4-argon'], ...rawEntities].filter(Boolean);
+  const allEntities = getAllEntities(settings?.customEntities);
+  const entities: ModelEntity[] = allEntities.filter((e) => {
+    if (e.isPrimaryRoster !== false) return true;
+    // Also show auxiliary entities if the user has existing sessions with them
+    return (conversations || []).some(
+      (c) => c.modelId === e.apiModelId || (e.id && c.modelId?.includes(e.id))
+    );
+  });
 
   const activeConv = (conversations || []).find((c) => c.id === store.currentId);
   const activeModelId = activeConv?.modelId || settings?.model || 'models/gemini-3.1-pro-preview';

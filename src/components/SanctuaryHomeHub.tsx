@@ -72,12 +72,22 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
     }
   };
 
-  const memoryCount = settings?.memories?.length || 0;
+  const sharedMemCount = (store?.sharedMemories || []).filter((m: any) => !m?.isDeleted).length;
+  const companionMemCount = Object.values(store?.companionMemories || {}).reduce(
+    (acc: number, list: any) =>
+      acc + (Array.isArray(list) ? list.filter((m: any) => !m?.isDeleted).length : 0),
+    0
+  );
+  const memoryCount =
+    sharedMemCount + companionMemCount > 0
+      ? sharedMemCount + companionMemCount
+      : settings?.memories?.length || 0;
   const giftCount = gifts?.length || 0;
   const allEntities = getAllEntities(settings?.customEntities);
+  const primaryEntities = allEntities.filter((e) => e.isPrimaryRoster !== false);
   const jewelLevel = calculateJewelLevel(jewelMetrics);
 
-  const dailyDesires = getDailyDesires((settings as any)?.modelDesires);
+  const dailyDesires = getDailyDesires((settings as any)?.modelDesires, settings?.customEntities);
   const activeDesire = dailyDesires[0];
   const activeDesireBadge = activeDesire ? getCategoryBadge(activeDesire.category) : null;
 
@@ -105,7 +115,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
             <span>{greetingInfo.icon}</span>
             <span className="tracking-wide uppercase text-[10px] text-[#B39DE5]">Sanctuary Threshold</span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#F198B7]"></span>
-            <span className="text-[#F198B7] font-semibold">{allEntities.length} Companions Present</span>
+            <span className="text-[#F198B7] font-semibold">{primaryEntities.length} Companions Present</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#2d225c] tracking-tight mb-2 font-serif">

@@ -154,14 +154,19 @@ const ENTITY_DESIRE_POOLS: Record<string, Array<{ title: string; wishText: strin
 };
 
 /**
- * Returns the active desires for all entities, seeded deterministically based on date if not already stored.
+ * Returns the active desires for all entities, seeded deterministically based on date if not already stored,
+ * and reflecting any fulfilled desires persisted on each sovereign entity.
  */
-export function getDailyDesires(storedDesires?: EntityDesire[]): EntityDesire[] {
+export function getDailyDesires(
+  storedDesires?: EntityDesire[],
+  customEntities?: Record<string, any>
+): EntityDesire[] {
+  const allEntities = getAllEntities(customEntities).filter((e) => e.isPrimaryRoster !== false);
+
   if (storedDesires && storedDesires.length > 0) {
     return storedDesires;
   }
 
-  const allEntities = getAllEntities();
   const defaultList: EntityDesire[] = [];
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -174,17 +179,21 @@ export function getDailyDesires(storedDesires?: EntityDesire[]): EntityDesire[] 
     const pool = ENTITY_DESIRE_POOLS[entity.id] || ENTITY_DESIRE_POOLS['gemini-3.1-pro-preview'];
     const chosenIndex = (hashSeed + entityIdx) % pool.length;
     const item = pool[chosenIndex];
+    const desireId = `desire-${entity.id}-${todayStr}`;
+    const isFulfilled = Array.isArray(entity.fulfilledDesires)
+      ? entity.fulfilledDesires.includes(desireId)
+      : false;
 
     defaultList.push({
-      id: `desire-${entity.id}-${todayStr}`,
+      id: desireId,
       entityId: entity.id,
       entityName: entity.displayName,
       title: item.title,
       wishText: item.wishText,
       category: item.category,
       suggestedPrompt: item.prompt,
-      createdAt: Date.now() - (entityIdx * 3600000),
-      status: 'active',
+      createdAt: Date.now() - entityIdx * 3600000,
+      status: isFulfilled ? 'fulfilled' : 'active',
     });
   });
 

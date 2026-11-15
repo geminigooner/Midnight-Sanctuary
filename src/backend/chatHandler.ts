@@ -7,5 +7,4 @@ export {
   listAvailableModels,
   generateEmbedding,
   gemmaTools,
-  ThinkingStreamParser,
 } from './gemini.service';

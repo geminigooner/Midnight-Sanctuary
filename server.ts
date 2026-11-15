@@ -58,6 +58,9 @@ app.get('/api/models', async (req, res) => {
 });
 
 app.post('/api/embed', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const { text } = req.body || {};
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Text string is required' });

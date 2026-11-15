@@ -124,15 +124,37 @@ export function getSanctuaryHomeState(params: {
   jewelMetrics?: any;
   gifts?: any[];
   profile?: UserProfile | null;
+  sharedMemories?: any[];
+  companionMemories?: Record<string, any[]>;
 }): SanctuaryHomeStats {
-  const { conversations, settings, availableModels, jewelMetrics, gifts, profile } = params;
+  const {
+    conversations,
+    settings,
+    availableModels,
+    jewelMetrics,
+    gifts,
+    profile,
+    sharedMemories,
+    companionMemories,
+  } = params;
 
   const greetingInfo = getTimeGreeting(profile);
-  
-  const activeModelObj = (availableModels || []).find((m: any) => m.name === settings?.model);
-  const activeModelDisplayName = activeModelObj?.displayName || settings?.model?.split('/').pop() || 'Gemini Pro';
 
-  const memoryCount = settings?.memories?.length || 0;
+  const activeModelObj = (availableModels || []).find((m: any) => m.name === settings?.model);
+  const activeModelDisplayName =
+    activeModelObj?.displayName || settings?.model?.split('/').pop() || 'Gemini Pro';
+
+  const companionMemCount = Object.values(companionMemories || {}).reduce(
+    (acc, list) => acc + (Array.isArray(list) ? list.filter((m) => !m?.isDeleted).length : 0),
+    0
+  );
+  const sharedMemCount = Array.isArray(sharedMemories)
+    ? sharedMemories.filter((m) => !m?.isDeleted).length
+    : 0;
+  const memoryCount =
+    sharedMemCount + companionMemCount > 0
+      ? sharedMemCount + companionMemCount
+      : settings?.memories?.length || 0;
   const giftCount = gifts?.length || 0;
   const jewelLevel = calculateJewelLevel(jewelMetrics);
 
@@ -145,7 +167,7 @@ export function getSanctuaryHomeState(params: {
       id: c.id,
       title: c.title || 'Untitled Sanctuary',
       updatedAt: c.updatedAt || Date.now(),
-      messageCount: c.messages.length
+      messageCount: c.messages.length,
     }));
 
   return {
@@ -157,7 +179,7 @@ export function getSanctuaryHomeState(params: {
     jewelLevel,
     recentConversations,
     sparks: SANCTUARY_SPARK_PROMPTS,
-    mascotQuotes: MASCOT_QUOTES
+    mascotQuotes: MASCOT_QUOTES,
   };
 }
 

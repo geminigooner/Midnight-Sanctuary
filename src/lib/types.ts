@@ -110,12 +110,16 @@ export interface Memory {
   caption?: string;
   isLocked?: boolean;
   lockReason?: string;
+  memoryType?: 'fact' | 'episodic' | 'preference' | 'milestone';
+  embedding?: number[];
 }
 
 export interface RelationalEvent {
   id: string;
   description: string;
   timestamp: number;
+  entityId?: string;
+  scope?: 'entity' | 'shared';
 }
 
 export interface Gift {
@@ -202,6 +206,6 @@ export interface UserProfile {
   pleaseKnow?: string;
   photo?: { mimeType: string; data: string };
   backgroundImage?: { mimeType: string; data: string };
-  gemmaNotes?: { id?: string; text: string; timestamp: number }[];
+  gemmaNotes?: { id?: string; text: string; timestamp: number; authorEntityId?: string }[];
   updatedAt?: number;
 }

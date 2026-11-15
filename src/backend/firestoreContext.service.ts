@@ -6,6 +6,9 @@ import { AppSettings, DEFAULT_SETTINGS, Gift, Memory, Message, UserProfile } fro
 export interface HydratedChatContext {
   conversationId?: string;
   model: string;
+  respondingEntityId: string;
+  conversationType?: 'direct' | 'group';
+  participantEntityIds?: string[];
   messages: Message[];
   settings: AppSettings;
   gifts: Gift[];
@@ -192,6 +195,8 @@ export async function resolveExternalChatContext(
   let firestoreGifts: Gift[] = [];
   let firestoreMessages: Message[] = [];
   let firestoreConvModelId: string | undefined;
+  let firestoreConvType: 'direct' | 'group' | undefined;
+  let firestoreParticipantEntityIds: string[] | undefined;
   let deletedMessageIds = new Set<string>();
   let sharedFirestoreMemories: ScopedMemory[] = [];
   let activeCompanionPrivateMemories: ScopedMemory[] = [];
@@ -260,6 +265,12 @@ export async function resolveExternalChatContext(
           if (convDoc?.modelId) {
             firestoreConvModelId = convDoc.modelId;
           }
+          if (convDoc?.type === 'group' || convDoc?.type === 'direct') {
+            firestoreConvType = convDoc.type;
+          }
+          if (Array.isArray(convDoc?.participantEntityIds)) {
+            firestoreParticipantEntityIds = convDoc.participantEntityIds;
+          }
           if (Array.isArray(convDoc?.deletedMessageIds)) {
             deletedMessageIds = new Set(convDoc!.deletedMessageIds);
           }
@@ -327,6 +338,9 @@ export async function resolveExternalChatContext(
     };
   }
 
+  const entityRuntimeConfig =
+    mergedSettings.customEntities?.[activeEntityId]?.runtimeConfig || {};
+
   // Assemble strictly isolated context memories:
   // Shared Sanctuary memories + Active Companion's private memories + pre-migration legacy fallback (filtered by active companion)
   const legacySettingsMemories: Memory[] = Array.isArray(firestoreSettings?.memories)
@@ -342,7 +356,7 @@ export async function resolveExternalChatContext(
     ...legacySettingsMemories,
     ...optimisticClientMemories,
   ];
-  mergedSettings.memories = getContextMemories(candidateMemories, resolvedModel);
+  mergedSettings.memories = getContextMemories(candidateMemories, activeEntityId);
 
   if (
     Array.isArray(clientFallback.settings?.eventLog) &&
@@ -366,15 +380,32 @@ export async function resolveExternalChatContext(
   return {
     conversationId: conversationId || undefined,
     model: resolvedModel,
+    respondingEntityId: activeEntityId !== 'unknown' ? activeEntityId : 'gemini-3.1-pro-preview',
+    conversationType: reqBody?.conversationType || firestoreConvType || 'direct',
+    participantEntityIds:
+      reqBody?.participantEntityIds || firestoreParticipantEntityIds || undefined,
     messages: resolvedMessages,
     settings: mergedSettings,
     gifts: resolvedGifts,
     profile: resolvedProfile,
-    forceCloudflare: reqBody?.forceCloudflare ?? mergedSettings.forceCloudflare,
-    thinkingLevel: reqBody?.thinkingLevel ?? mergedSettings.thinkingLevel,
-    includeThoughts: reqBody?.includeThoughts ?? mergedSettings.includeThoughts,
-    temperature: reqBody?.temperature ?? mergedSettings.temperature,
-    topP: reqBody?.topP ?? mergedSettings.topP,
-    maxOutputTokens: reqBody?.maxOutputTokens ?? mergedSettings.maxOutputTokens,
+    forceCloudflare:
+      reqBody?.forceCloudflare ??
+      entityRuntimeConfig.forceCloudflare ??
+      mergedSettings.forceCloudflare,
+    thinkingLevel:
+      reqBody?.thinkingLevel ??
+      entityRuntimeConfig.thinkingLevel ??
+      mergedSettings.thinkingLevel,
+    includeThoughts:
+      reqBody?.includeThoughts ??
+      entityRuntimeConfig.includeThoughts ??
+      mergedSettings.includeThoughts,
+    temperature:
+      reqBody?.temperature ?? entityRuntimeConfig.temperature ?? mergedSettings.temperature,
+    topP: reqBody?.topP ?? entityRuntimeConfig.topP ?? mergedSettings.topP,
+    maxOutputTokens:
+      reqBody?.maxOutputTokens ??
+      entityRuntimeConfig.maxOutputTokens ??
+      mergedSettings.maxOutputTokens,
   };
 }

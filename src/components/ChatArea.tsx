@@ -45,6 +45,7 @@ export function ChatArea() {
     onUpdateMessage: store.updateMessage,
     onRemoveMessage: store.removeMessage,
     onUpdateJewel: store.updateJewelMetrics,
+    onRecordEntityTurn: (store as any).recordEntityTurn,
     onAddGift: store.addGift,
     onAddMemory: store.addMemory,
     onAddEventLog: store.addEventLog,

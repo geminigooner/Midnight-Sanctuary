@@ -49,13 +49,15 @@
         "caption": { "type": "string", "maxLength": 1000 },
         "isLocked": { "type": "boolean" },
         "lockReason": { "type": "string", "maxLength": 1000 },
+        "memoryType": { "type": "string", "enum": ["fact", "preference", "episodic", "reflection"] },
+        "embedding": { "type": "array" },
         "isDeleted": { "type": "boolean" }
       },
       "required": ["id", "content", "createdAt", "scope"]
     },
     "CompanionState": {
       "title": "CompanionState",
-      "description": "Sovereign companion entity configuration, room quarters decor, props, and personal diary entries.",
+      "description": "Sovereign companion entity configuration, room quarters decor, props, bond progression, and personal diary entries.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -76,6 +78,12 @@
         "personalThoughts": { "type": "array" },
         "roomProps": { "type": "array" },
         "diaryEntries": { "type": "array" },
+        "isPrimaryRoster": { "type": "boolean" },
+        "runtimeConfig": { "type": "object" },
+        "bondState": { "type": "object" },
+        "observations": { "type": "array" },
+        "relationshipEvents": { "type": "array" },
+        "fulfilledDesires": { "type": "array" },
         "revision": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
@@ -99,6 +107,8 @@
         "caption": { "type": "string", "maxLength": 1000 },
         "isLocked": { "type": "boolean" },
         "lockReason": { "type": "string", "maxLength": 1000 },
+        "memoryType": { "type": "string", "enum": ["fact", "preference", "episodic", "reflection"] },
+        "embedding": { "type": "array" },
         "isDeleted": { "type": "boolean" }
       },
       "required": ["id", "content", "createdAt", "scope", "entityId"]

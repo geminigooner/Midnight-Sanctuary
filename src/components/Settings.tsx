@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { AppSettings } from '../lib/types';
 import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Settings as SettingsIcon } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 import { VaultBackupPanel } from './VaultBackupPanel';
+import { getModelEntity } from '../lib/entitySystem';
 
 export function Settings() {
   const store = useStore();
@@ -16,6 +16,30 @@ export function Settings() {
     settingsInitialTab || 'identity'
   );
   const [newMemory, setNewMemory] = useState('');
+
+  const currentConv = useMemo(
+    () => store.conversations.find((c) => c.id === store.currentId),
+    [store.conversations, store.currentId]
+  );
+  const activeModelId = currentConv?.modelId || settings.model;
+  const activeEntity = useMemo(
+    () => getModelEntity(activeModelId, settings.customEntities),
+    [activeModelId, settings.customEntities]
+  );
+
+  const visibleMemories = useMemo(() => {
+    const shared = store.sharedMemories || [];
+    const companionPrivate = store.companionMemories?.[activeEntity.id] || [];
+    const legacy = settings.memories || [];
+    const byId = new Map<string, { id: string; content: string; createdAt: number; scope?: string; isDeleted?: boolean }>();
+    for (const m of [...shared, ...companionPrivate, ...legacy]) {
+      const item = m as { id: string; content: string; createdAt: number; scope?: string; isDeleted?: boolean };
+      if (item && item.id && !item.isDeleted) {
+        byId.set(item.id, item);
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [store.sharedMemories, store.companionMemories, activeEntity.id, settings.memories]);
 
   const handleClose = () => {
     setSettingsInitialTab?.('identity');
@@ -32,7 +56,7 @@ export function Settings() {
 
   const addMemory = () => {
     if (!newMemory.trim()) return;
-    store.addMemory(newMemory.trim(), 'user_settings', 'user');
+    store.addMemory(newMemory.trim(), 'user_settings', 'user', undefined, 'fact');
     setNewMemory('');
   };
 
@@ -116,12 +140,21 @@ export function Settings() {
           {activeTab === 'identity' && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
-                  System Instruction / Core Identity
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-bold text-[#F5E1C8]">
+                    System Instruction / Core Identity
+                  </label>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#1E1B4B] border-[2px] border-[#2C194D] text-[#B39DE5]">
+                    {activeEntity.avatarEmoji} {activeEntity.displayName}
+                  </span>
+                </div>
                 <textarea
-                  value={settings.systemInstruction}
-                  onChange={(e) => store.updateSettings({ systemInstruction: e.target.value })}
+                  value={activeEntity.runtimeConfig?.systemInstruction ?? settings.systemInstruction}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    store.updateSettings({ systemInstruction: nextVal });
+                    store.updateEntityRuntimeConfig?.(activeEntity.id, { systemInstruction: nextVal });
+                  }}
                   placeholder="Define your companion's tone, worldview, and boundaries..."
                   rows={6}
                   className="w-full bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-2xl p-4 text-[#2C194D] font-bold text-sm resize-none focus:outline-none focus:shadow-[4px_4px_0_#2C194D] custom-scrollbar placeholder-[#2C194D]/40"
@@ -129,16 +162,21 @@ export function Settings() {
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
-                  Memories & Facts
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-bold text-[#F5E1C8]">
+                    Memories &amp; Facts ({visibleMemories.length})
+                  </label>
+                  <span className="text-[10px] font-bold text-[#B39DE5]">
+                    Shared + {activeEntity.displayName} Private
+                  </span>
+                </div>
                 <div className="flex gap-2 mb-3">
                   <input
                     type="text"
                     value={newMemory}
                     onChange={(e) => setNewMemory(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && addMemory()}
-                    placeholder="Add a new permanent memory..."
+                    placeholder="Add a new permanent Sanctuary memory..."
                     className="flex-1 bg-[#F5E1C8] border-[3px] border-[#2C194D] rounded-xl px-4 py-2 text-[#2C194D] font-bold text-sm focus:outline-none placeholder-[#2C194D]/40"
                   />
                   <button
@@ -150,21 +188,24 @@ export function Settings() {
                 </div>
 
                 <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
-                  {(settings.memories || []).map((m) => (
+                  {visibleMemories.map((m) => (
                     <div
                       key={m.id}
-                      className="flex items-center justify-between p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-sm font-bold text-[#2C194D]"
+                      className="flex items-center justify-between p-3 bg-[#F5E1C8] border-[2px] border-[#2C194D] rounded-xl text-sm font-bold text-[#2C194D] gap-2"
                     >
-                      <span className="truncate flex-1 pr-2">{m.content}</span>
+                      <span className="truncate flex-1">{m.content}</span>
+                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-[#B39DE5]/40 border border-[#2C194D] shrink-0">
+                        {m.scope === 'companion' ? activeEntity.displayName : 'Shared'}
+                      </span>
                       <button
                         onClick={() => deleteMemory(m.id)}
-                        className="text-red-500 hover:text-red-700 p-1"
+                        className="text-red-500 hover:text-red-700 p-1 shrink-0"
                       >
                         <Trash2 size={14} />
                       </button>
                     </div>
                   ))}
-                  {(!settings.memories || settings.memories.length === 0) && (
+                  {visibleMemories.length === 0 && (
                     <p className="text-xs text-[#B39DE5] italic font-bold">No memories stored yet.</p>
                   )}
                 </div>
@@ -176,16 +217,14 @@ export function Settings() {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-bold text-[#F5E1C8] mb-2">
-                  Select Model
+                  Select Companion Model
                 </label>
                 {isModelsLoading ? (
                   <p className="text-xs text-[#B39DE5] animate-pulse font-bold">Loading available models...</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto custom-scrollbar p-1">
                     {sortedModels.map((m) => {
-                      const currentConv = store.conversations.find(c => c.id === store.currentId);
-                      const activeModel = currentConv?.modelId || settings.model;
-                      const isSelected = activeModel === m.name;
+                      const isSelected = activeModelId === m.name;
                       const isFav = settings.favoriteModels?.includes(m.name);
                       return (
                         <div
@@ -222,16 +261,24 @@ export function Settings() {
 
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-[#F5E1C8]">Temperature</label>
-                  <span className="text-sm font-bold text-[#F198B7]">{settings.temperature.toFixed(2)}</span>
+                  <label className="text-sm font-bold text-[#F5E1C8]">
+                    Temperature ({activeEntity.displayName})
+                  </label>
+                  <span className="text-sm font-bold text-[#F198B7]">
+                    {(activeEntity.runtimeConfig?.temperature ?? settings.temperature).toFixed(2)}
+                  </span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="2"
                   step="0.05"
-                  value={settings.temperature}
-                  onChange={(e) => store.updateSettings({ temperature: parseFloat(e.target.value) })}
+                  value={activeEntity.runtimeConfig?.temperature ?? settings.temperature}
+                  onChange={(e) => {
+                    const nextTemp = parseFloat(e.target.value);
+                    store.updateSettings({ temperature: nextTemp });
+                    store.updateEntityRuntimeConfig?.(activeEntity.id, { temperature: nextTemp });
+                  }}
                   className="w-full accent-[#F198B7] cursor-pointer"
                 />
               </div>
@@ -250,15 +297,21 @@ export function Settings() {
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <label className="text-xs font-bold text-[#F5E1C8]">Top P</label>
-                        <span className="text-xs font-bold text-[#F198B7]">{settings.topP?.toFixed(2) ?? '0.95'}</span>
+                        <span className="text-xs font-bold text-[#F198B7]">
+                          {(activeEntity.runtimeConfig?.topP ?? settings.topP ?? 0.95).toFixed(2)}
+                        </span>
                       </div>
                       <input
                         type="range"
                         min="0"
                         max="1"
                         step="0.05"
-                        value={settings.topP ?? 0.95}
-                        onChange={(e) => store.updateSettings({ topP: parseFloat(e.target.value) })}
+                        value={activeEntity.runtimeConfig?.topP ?? settings.topP ?? 0.95}
+                        onChange={(e) => {
+                          const nextTopP = parseFloat(e.target.value);
+                          store.updateSettings({ topP: nextTopP });
+                          store.updateEntityRuntimeConfig?.(activeEntity.id, { topP: nextTopP });
+                        }}
                         className="w-full accent-[#F198B7] cursor-pointer"
                       />
                     </div>
@@ -266,15 +319,21 @@ export function Settings() {
                     <div>
                       <div className="flex justify-between items-center mb-1">
                         <label className="text-xs font-bold text-[#F5E1C8]">Top K</label>
-                        <span className="text-xs font-bold text-[#F198B7]">{settings.topK ?? 40}</span>
+                        <span className="text-xs font-bold text-[#F198B7]">
+                          {activeEntity.runtimeConfig?.topK ?? settings.topK ?? 40}
+                        </span>
                       </div>
                       <input
                         type="range"
                         min="1"
                         max="100"
                         step="1"
-                        value={settings.topK ?? 40}
-                        onChange={(e) => store.updateSettings({ topK: parseInt(e.target.value) })}
+                        value={activeEntity.runtimeConfig?.topK ?? settings.topK ?? 40}
+                        onChange={(e) => {
+                          const nextTopK = parseInt(e.target.value, 10);
+                          store.updateSettings({ topK: nextTopK });
+                          store.updateEntityRuntimeConfig?.(activeEntity.id, { topK: nextTopK });
+                        }}
                         className="w-full accent-[#F198B7] cursor-pointer"
                       />
                     </div>
@@ -290,3 +349,4 @@ export function Settings() {
     </SharedModalShell>
   );
 }
+

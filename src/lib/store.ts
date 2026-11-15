@@ -29,6 +29,12 @@ import {
   SyncStatusSnapshot,
   ValidatedBackupPreview,
 } from './persistence/types';
+import { EntityRuntimeConfig, resolveCanonicalEntityId } from './domains/entityDomain';
+import {
+  recordEntityGiftExchange,
+  recordEntityTurnInteraction,
+} from './domains/relationshipDomain';
+import { getEmbedding } from './vectorMemory';
 
 let sharedCoordinator: PersistenceCoordinator | null = null;
 
@@ -199,6 +205,20 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
   const addGift = useCallback(
     (gift: Omit<Gift, 'id' | 'timestamp'>) => {
       void coordinator.addGift(gift);
+      const targetEntityKey =
+        gift.from === 'user' ? gift.targetModelId || gift.modelId : gift.modelId || gift.from;
+      const canonicalEntity = resolveCanonicalEntityId(targetEntityKey);
+      if (canonicalEntity) {
+        const direction = gift.from === 'user' ? 'user_to_entity' : 'entity_to_user';
+        void coordinator.mutateCompanion(canonicalEntity, (currentEntity) => {
+          const nextBond = recordEntityGiftExchange(currentEntity, direction);
+          return {
+            ...currentEntity,
+            resonanceScore: nextBond.resonanceScore,
+            bondState: nextBond,
+          };
+        });
+      }
     },
     [coordinator]
   );
@@ -218,17 +238,30 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
       modelId?: string,
       caption?: string,
       isLocked?: boolean,
-      lockReason?: string
+      lockReason?: string,
+      memoryType?: 'fact' | 'episodic' | 'preference' | 'milestone'
     ) => {
-      void coordinator.addMemory({
-        content: memoryContent,
-        origin,
-        author,
-        modelId,
-        caption,
-        isLocked,
-        lockReason,
-      });
+      void (async () => {
+        const created = await coordinator.addMemory({
+          content: memoryContent,
+          origin,
+          author,
+          modelId,
+          caption,
+          isLocked,
+          lockReason,
+          memoryType,
+        });
+        if (created && (!created.embedding || created.embedding.length === 0)) {
+          const emb = await getEmbedding(memoryContent);
+          if (emb && emb.length > 0) {
+            await coordinator.upsertScopedMemory({
+              ...created,
+              embedding: emb,
+            });
+          }
+        }
+      })();
     },
     [coordinator]
   );
@@ -574,16 +607,92 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
   );
 
   const addEventLog = useCallback(
-    (description: string) => {
+    (description: string, entityKey?: string, scope: 'entity' | 'shared' = 'entity') => {
+      if (!description?.trim()) return;
+      const now = Date.now();
+      const targetEntityId =
+        resolveCanonicalEntityId(
+          entityKey || coordinator.getDomainState().settings.model
+        ) || 'gemini-3.1-pro-preview';
+
+      // 1. Store on the sovereign entity's relationshipEvents ledger
+      void coordinator.mutateCompanion(targetEntityId, (currentEntity) => {
+        const prevEvents = currentEntity.relationshipEvents || [];
+        const newScopedEvent = {
+          id: uuidv4(),
+          entityId: targetEntityId,
+          scope,
+          description: description.trim(),
+          timestamp: now,
+        };
+        return {
+          ...currentEntity,
+          relationshipEvents: [newScopedEvent, ...prevEvents].slice(0, 50),
+        };
+      });
+
+      // 2. Also maintain tagged entry in settings.eventLog for Sanctuary timeline views
       void coordinator.updateSettings((prev) => {
         const newEvent = {
           id: uuidv4(),
-          description,
-          timestamp: Date.now(),
+          description: description.trim(),
+          timestamp: now,
+          entityId: targetEntityId,
+          scope,
         };
         return {
           ...prev,
-          eventLog: [newEvent, ...(prev.eventLog || [])].slice(0, 10),
+          eventLog: [newEvent, ...(prev.eventLog || [])].slice(0, 30),
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const updateEntityRuntimeConfig = useCallback(
+    (entityKey: string, configUpdates: Partial<EntityRuntimeConfig>) => {
+      const targetEntityId = resolveCanonicalEntityId(entityKey);
+      if (!targetEntityId) return;
+      void coordinator.mutateCompanion(targetEntityId, (currentEntity) => ({
+        ...currentEntity,
+        runtimeConfig: {
+          ...(currentEntity.runtimeConfig || {}),
+          ...configUpdates,
+        },
+      }));
+    },
+    [coordinator]
+  );
+
+  const recordEntityTurn = useCallback(
+    (
+      entityKey: string,
+      params: { role: 'user' | 'model'; responseCharacters?: number; timestamp?: number }
+    ) => {
+      const targetEntityId = resolveCanonicalEntityId(entityKey);
+      if (!targetEntityId) return;
+      void coordinator.mutateCompanion(targetEntityId, (currentEntity) => {
+        const nextBond = recordEntityTurnInteraction(currentEntity, params);
+        return {
+          ...currentEntity,
+          resonanceScore: nextBond.resonanceScore,
+          bondState: nextBond,
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const fulfillEntityDesire = useCallback(
+    (entityKey: string, desireId: string) => {
+      const targetEntityId = resolveCanonicalEntityId(entityKey);
+      if (!targetEntityId || !desireId) return;
+      void coordinator.mutateCompanion(targetEntityId, (currentEntity) => {
+        const existing = new Set(currentEntity.fulfilledDesires || []);
+        existing.add(desireId);
+        return {
+          ...currentEntity,
+          fulfilledDesires: Array.from(existing).slice(-100),
         };
       });
     },
@@ -681,22 +790,54 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
   );
 
   const addGemmaNote = useCallback(
-    (note: string) => {
+    (note: string, authorEntityKey?: string) => {
+      if (!note?.trim()) return;
+      const now = Date.now();
+      const authorEntityId =
+        resolveCanonicalEntityId(
+          authorEntityKey || coordinator.getDomainState().settings.model
+        ) || 'gemini-3.1-pro-preview';
+
+      // 1. Store on the authoring entity's sovereign `observations` array
+      void coordinator.mutateCompanion(authorEntityId, (currentEntity) => {
+        const prevObs = currentEntity.observations || [];
+        const exists = prevObs.some(
+          (o) => o.text.trim().toLowerCase() === note.trim().toLowerCase()
+        );
+        if (exists) return currentEntity;
+        const newObs = {
+          id: uuidv4(),
+          authorEntityId,
+          text: note.trim(),
+          timestamp: now,
+        };
+        return {
+          ...currentEntity,
+          observations: [newObs, ...prevObs].slice(0, 50),
+        };
+      });
+
+      // 2. Also record on userProfile.gemmaNotes WITH explicit `authorEntityId` tag so dossier views can display it without cross-entity attribution leaks
       void coordinator.updateProfile((prev) => {
-        const newNote = { id: uuidv4(), text: note, timestamp: Date.now() };
+        const newNote = {
+          id: uuidv4(),
+          text: note.trim(),
+          timestamp: now,
+          authorEntityId,
+        };
         if (prev) {
           return {
             ...prev,
             id: prev.id || user?.uid || 'default-profile',
-            gemmaNotes: [newNote, ...(prev.gemmaNotes || [])],
-            updatedAt: Date.now(),
+            gemmaNotes: [newNote, ...(prev.gemmaNotes || [])].slice(0, 100),
+            updatedAt: now,
           };
         }
         return {
           id: user?.uid || 'default-profile',
           name: 'User',
           gemmaNotes: [newNote],
-          updatedAt: Date.now(),
+          updatedAt: now,
         };
       });
     },
@@ -765,6 +906,9 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
     lockMemory,
     unlockMemory,
     addEventLog,
+    updateEntityRuntimeConfig,
+    recordEntityTurn,
+    fulfillEntityDesire,
     updateEntityQuarters,
     recordEntityThought,
     addEntityDiaryEntry,

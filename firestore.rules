@@ -96,6 +96,8 @@ service cloud.firestore {
         && (!('caption' in data) || isBoundedString(data.caption, 1000))
         && (!('isLocked' in data) || data.isLocked is bool)
         && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
+        && (!('memoryType' in data) || isBoundedString(data.memoryType, 64))
+        && (!('embedding' in data) || (data.embedding is list && data.embedding.size() <= 3072))
         && (!('isDeleted' in data) || data.isDeleted is bool);
     }
 
@@ -109,13 +111,19 @@ service cloud.firestore {
         && (!('themeColor' in data) || isBoundedString(data.themeColor, 64))
         && (!('accentColor' in data) || isBoundedString(data.accentColor, 64))
         && (!('typingIndicator' in data) || isBoundedString(data.typingIndicator, 200))
+        && (!('isPrimaryRoster' in data) || data.isPrimaryRoster is bool)
         && (!('bio' in data) || isBoundedString(data.bio, 8000))
         && (!('moodStatus' in data) || isBoundedString(data.moodStatus, 500))
         && (!('currentActivity' in data) || isBoundedString(data.currentActivity, 500))
         && (!('roomDecor' in data) || data.roomDecor is map)
+        && (!('runtimeConfig' in data) || data.runtimeConfig is map)
         && (!('resonanceScore' in data) || data.resonanceScore is number)
         && (!('favoriteGiftIds' in data) || isBoundedStringList(data.favoriteGiftIds, 200))
         && (!('personalThoughts' in data) || (data.personalThoughts is list && data.personalThoughts.size() <= 50))
+        && (!('bondState' in data) || data.bondState is map)
+        && (!('observations' in data) || (data.observations is list && data.observations.size() <= 100))
+        && (!('relationshipEvents' in data) || (data.relationshipEvents is list && data.relationshipEvents.size() <= 100))
+        && (!('fulfilledDesires' in data) || isBoundedStringList(data.fulfilledDesires, 200))
         && (!('roomProps' in data) || (data.roomProps is list && data.roomProps.size() <= 100))
         && (!('diaryEntries' in data) || (data.diaryEntries is list && data.diaryEntries.size() <= 100))
         && (!('revision' in data) || data.revision is number)
@@ -136,6 +144,8 @@ service cloud.firestore {
         && (!('caption' in data) || isBoundedString(data.caption, 1000))
         && (!('isLocked' in data) || data.isLocked is bool)
         && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
+        && (!('memoryType' in data) || isBoundedString(data.memoryType, 64))
+        && (!('embedding' in data) || (data.embedding is list && data.embedding.size() <= 3072))
         && (!('isDeleted' in data) || data.isDeleted is bool);
     }
 
@@ -254,7 +264,8 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope'])
           && incoming().keys().hasOnly([
             'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
-            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
+            'memoryType', 'embedding', 'isDeleted'
           ])
           && isValidSharedMemoryDoc(incoming(), memoryId);
 
@@ -263,7 +274,8 @@ service cloud.firestore {
           && isValidId(memoryId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
-            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
+            'memoryType', 'embedding', 'isDeleted'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(memoryId);
@@ -304,9 +316,10 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id'])
           && incoming().keys().hasOnly([
             'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
-            'themeColor', 'accentColor', 'typingIndicator', 'bio', 'moodStatus',
-            'currentActivity', 'roomDecor', 'resonanceScore', 'favoriteGiftIds',
-            'personalThoughts', 'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+            'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster', 'bio', 'moodStatus',
+            'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore', 'favoriteGiftIds',
+            'personalThoughts', 'bondState', 'observations', 'relationshipEvents', 'fulfilledDesires',
+            'roomProps', 'diaryEntries', 'revision', 'updatedAt'
           ])
           && isValidCompanionDoc(incoming());
 
@@ -315,9 +328,10 @@ service cloud.firestore {
           && isValidId(companionId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
-            'themeColor', 'accentColor', 'typingIndicator', 'bio', 'moodStatus',
-            'currentActivity', 'roomDecor', 'resonanceScore', 'favoriteGiftIds',
-            'personalThoughts', 'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+            'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster', 'bio', 'moodStatus',
+            'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore', 'favoriteGiftIds',
+            'personalThoughts', 'bondState', 'observations', 'relationshipEvents', 'fulfilledDesires',
+            'roomProps', 'diaryEntries', 'revision', 'updatedAt'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(companionId);
@@ -333,7 +347,8 @@ service cloud.firestore {
             && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope', 'entityId'])
             && incoming().keys().hasOnly([
               'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
-              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
+              'memoryType', 'embedding', 'isDeleted'
             ])
             && isValidCompanionMemoryDoc(incoming(), memoryId);
 
@@ -343,7 +358,8 @@ service cloud.firestore {
             && isValidId(memoryId)
             && incoming().diff(existing()).affectedKeys().hasOnly([
               'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
-              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
+              'memoryType', 'embedding', 'isDeleted'
             ]);
 
           allow delete: if isVerifiedOwner(userId) && isValidId(companionId) && isValidId(memoryId);
