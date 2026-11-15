@@ -2,22 +2,411 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isOwner(userId) {
-      return request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ahatley094@gmail.com');
-    }
 
-    // User root document and all nested granular subcollections
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-      
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
-      }
-    }
-
-    // Fallback for any other root documents
+    // 1. Global Default-Deny Safety Net (Eliminates permissive wildcard fallback)
     match /{document=**} {
-      allow read, write: if request.auth != null && (request.auth.token.email == 'ahatley094@gmail.com' || request.auth.uid != null);
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Core Identity & Primitive Guards
+    // -------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isOwner(userId) && request.auth.token.email_verified == true;
+    }
+
+    function isVerifiedBootstrappedOwner() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'ahatley094@gmail.com';
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string
+        && id.size() >= 1
+        && id.size() <= 128
+        && !id.matches('^\\.+$')
+        && id.matches('^[a-zA-Z0-9_\\-\\.@:]+$');
+    }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isBoundedStringList(arr, maxItems) {
+      return arr is list
+        && arr.size() <= maxItems
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 256));
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints (Used on BOTH create and update)
+    // -------------------------------------------------------------------------
+
+    function isValidUserDoc(data, userId) {
+      return (!('id' in data) || (data.id is string && data.id == userId && data.id.size() <= 128))
+        && (!('email' in data) || isBoundedString(data.email, 320))
+        && (!('displayName' in data) || isBoundedString(data.displayName, 200))
+        && (!('userProfile' in data) || data.userProfile == null || data.userProfile is map)
+        && (!('migratedToGranular' in data) || data.migratedToGranular is bool)
+        && (!('updatedAt' in data) || data.updatedAt is number);
+    }
+
+    function isValidSettingsDoc(data, userId) {
+      return (!('id' in data) || (data.id is string && data.id == 'app'))
+        && (!('userId' in data) || (data.userId is string && data.userId == userId && data.userId.size() <= 128))
+        && (!('settings' in data) || data.settings is map)
+        && (!('settingsRevision' in data) || data.settingsRevision is number)
+        && (!('memoriesMigratedV2' in data) || data.memoriesMigratedV2 is bool)
+        && (!('jewelMetrics' in data) || data.jewelMetrics is map)
+        && (!('jewelRevision' in data) || data.jewelRevision is number)
+        && (!('userProfile' in data) || data.userProfile == null || data.userProfile is map)
+        && (!('profileRevision' in data) || data.profileRevision is number)
+        && (!('updatedAt' in data) || data.updatedAt is number);
+    }
+
+    function isValidSharedMemoryDoc(data, memoryId) {
+      return (!('id' in data) || (data.id is string && data.id == memoryId && data.id.size() <= 128))
+        && ('content' in data && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000)
+        && (!('createdAt' in data) || data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('scope' in data) || (data.scope is string && data.scope in ['shared', 'legacy']))
+        && (!('entityId' in data) || isBoundedString(data.entityId, 128))
+        && (!('origin' in data) || isBoundedString(data.origin, 100))
+        && (!('author' in data) || (data.author is string && data.author in ['user', 'model']))
+        && (!('modelId' in data) || isBoundedString(data.modelId, 128))
+        && (!('caption' in data) || isBoundedString(data.caption, 1000))
+        && (!('isLocked' in data) || data.isLocked is bool)
+        && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
+        && (!('isDeleted' in data) || data.isDeleted is bool);
+    }
+
+    function isValidCompanionDoc(data) {
+      return ('id' in data && data.id is string && data.id.size() >= 1 && data.id.size() <= 128)
+        && (!('apiModelId' in data) || isBoundedString(data.apiModelId, 200))
+        && (!('displayName' in data) || isBoundedString(data.displayName, 200))
+        && (!('roleTitle' in data) || isBoundedString(data.roleTitle, 200))
+        && (!('avatarEmoji' in data) || isBoundedString(data.avatarEmoji, 32))
+        && (!('avatarUrl' in data) || isBoundedString(data.avatarUrl, 900000))
+        && (!('themeColor' in data) || isBoundedString(data.themeColor, 64))
+        && (!('accentColor' in data) || isBoundedString(data.accentColor, 64))
+        && (!('typingIndicator' in data) || isBoundedString(data.typingIndicator, 200))
+        && (!('bio' in data) || isBoundedString(data.bio, 8000))
+        && (!('moodStatus' in data) || isBoundedString(data.moodStatus, 500))
+        && (!('currentActivity' in data) || isBoundedString(data.currentActivity, 500))
+        && (!('roomDecor' in data) || data.roomDecor is map)
+        && (!('resonanceScore' in data) || data.resonanceScore is number)
+        && (!('favoriteGiftIds' in data) || isBoundedStringList(data.favoriteGiftIds, 200))
+        && (!('personalThoughts' in data) || (data.personalThoughts is list && data.personalThoughts.size() <= 50))
+        && (!('roomProps' in data) || (data.roomProps is list && data.roomProps.size() <= 100))
+        && (!('diaryEntries' in data) || (data.diaryEntries is list && data.diaryEntries.size() <= 100))
+        && (!('revision' in data) || data.revision is number)
+        && (!('updatedAt' in data) || data.updatedAt is number);
+    }
+
+    function isValidCompanionMemoryDoc(data, memoryId) {
+      return (!('id' in data) || (data.id is string && data.id == memoryId && data.id.size() <= 128))
+        && ('content' in data && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000)
+        && ('scope' in data && data.scope is string && data.scope == 'companion')
+        && ('entityId' in data && data.entityId is string && data.entityId.size() >= 1 && data.entityId.size() <= 128)
+        && (!('author' in data) || (data.author is string && data.author == 'model'))
+        && (!('modelId' in data) || (data.modelId is string && data.modelId == data.entityId && data.modelId.size() <= 128))
+        && (!('createdAt' in data) || data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('origin' in data) || isBoundedString(data.origin, 100))
+        && (!('caption' in data) || isBoundedString(data.caption, 1000))
+        && (!('isLocked' in data) || data.isLocked is bool)
+        && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
+        && (!('isDeleted' in data) || data.isDeleted is bool);
+    }
+
+    function isValidConversationDoc(data, conversationId) {
+      return ('id' in data && data.id is string && data.id == conversationId && data.id.size() <= 128)
+        && (!('title' in data) || isBoundedString(data.title, 500))
+        && (!('modelId' in data) || isBoundedString(data.modelId, 200))
+        && (!('type' in data) || (data.type is string && data.type in ['direct', 'group']))
+        && (!('participantEntityIds' in data) || isBoundedStringList(data.participantEntityIds, 20))
+        && (!('deletedMessageIds' in data) || isBoundedStringList(data.deletedMessageIds, 100))
+        && (!('messages' in data) || (data.messages is list && data.messages.size() <= 30))
+        && (!('createdAt' in data) || data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool);
+    }
+
+    function isValidMessageDoc(data, conversationId, messageId) {
+      return ('id' in data && data.id is string && data.id == messageId && data.id.size() <= 128)
+        && ('conversationId' in data && data.conversationId is string && data.conversationId == conversationId && data.conversationId.size() <= 128)
+        && ('role' in data && data.role is string && data.role in ['user', 'model'])
+        && ('parts' in data && data.parts is list && data.parts.size() >= 1 && data.parts.size() <= 50)
+        && ('timestamp' in data && data.timestamp is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('publicText' in data) || isBoundedString(data.publicText, 500000))
+        && (!('thoughtText' in data) || isBoundedString(data.thoughtText, 500000))
+        && (!('thoughtStatus' in data) || (data.thoughtStatus is string && data.thoughtStatus in ['thinking', 'complete', 'error']))
+        && (!('finishReason' in data) || isBoundedString(data.finishReason, 120))
+        && (!('backend' in data) || isBoundedString(data.backend, 120))
+        && (!('reaction' in data) || isBoundedString(data.reaction, 64))
+        && (!('searchResults' in data) || (data.searchResults is list && data.searchResults.size() <= 20))
+        && (!('generatedImages' in data) || (data.generatedImages is list && data.generatedImages.size() <= 10))
+        && (!('scribbles' in data) || (data.scribbles is list && data.scribbles.size() <= 10))
+        && (!('musicTracks' in data) || (data.musicTracks is list && data.musicTracks.size() <= 10))
+        && (!('authorEntityId' in data) || isBoundedString(data.authorEntityId, 128))
+        && (!('authorDisplayName' in data) || isBoundedString(data.authorDisplayName, 200))
+        && (!('authorAvatar' in data) || isBoundedString(data.authorAvatar, 2000))
+        && (!('isDeleted' in data) || data.isDeleted is bool);
+    }
+
+    function isValidGiftDoc(data, giftId) {
+      return ('id' in data && data.id is string && data.id == giftId && data.id.size() <= 128)
+        && ('from' in data && isBoundedString(data.from, 200))
+        && ('content' in data && isBoundedString(data.content, 10000))
+        && ('gift_type' in data && isBoundedString(data.gift_type, 120))
+        && (!('reason' in data) || isBoundedString(data.reason, 4000))
+        && ('timestamp' in data && data.timestamp is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('inlineData' in data) || data.inlineData is map)
+        && (!('scribble' in data) || data.scribble is map)
+        && (!('musicTrack' in data) || data.musicTrack is map)
+        && (!('modelId' in data) || isBoundedString(data.modelId, 128))
+        && (!('targetModelId' in data) || isBoundedString(data.targetModelId, 128))
+        && (!('isDeleted' in data) || data.isDeleted is bool);
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Blocks (Strict UID Ownership — Zero Cross-User Access)
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      // Read-only allowance for legacy email-keyed root document strictly when verified owner matches
+      allow get: if (isOwner(userId) && isValidId(userId))
+        || (userId == 'ahatley094@gmail.com' && isVerifiedBootstrappedOwner());
+      allow list: if false;
+
+      allow create: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && incoming().keys().hasAll(['id'])
+        && incoming().keys().hasOnly([
+          'id', 'email', 'displayName', 'userProfile', 'migratedToGranular', 'updatedAt'
+        ])
+        && isValidUserDoc(incoming(), userId);
+
+      allow update: if isVerifiedOwner(userId)
+        && isValidUserDoc(incoming(), userId)
+        && isValidId(userId)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'id', 'email', 'displayName', 'userProfile', 'migratedToGranular', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+
+      // 1. Settings, Jewel Metrics & Profile (`users/{userId}/settings/app`)
+      match /settings/{settingId} {
+        allow get: if isOwner(userId) && settingId == 'app';
+        allow list: if false;
+
+        allow create: if isVerifiedOwner(userId)
+          && settingId == 'app'
+          && incoming().keys().hasAll(['id', 'userId'])
+          && incoming().keys().hasOnly([
+            'id', 'userId', 'settings', 'settingsRevision', 'memoriesMigratedV2',
+            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision', 'updatedAt'
+          ])
+          && isValidSettingsDoc(incoming(), userId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidSettingsDoc(incoming(), userId)
+          && settingId == 'app'
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'userId', 'settings', 'settingsRevision', 'memoriesMigratedV2',
+            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision', 'updatedAt'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && settingId == 'app';
+      }
+
+      // 2. Shared Sanctuary Memories (`users/{userId}/memories/{memoryId}`)
+      match /memories/{memoryId} {
+        allow get: if isOwner(userId) && isValidId(memoryId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(memoryId)
+          && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope'])
+          && incoming().keys().hasOnly([
+            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+          ])
+          && isValidSharedMemoryDoc(incoming(), memoryId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidSharedMemoryDoc(incoming(), memoryId)
+          && isValidId(memoryId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+            'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(memoryId);
+      }
+
+      // 3. Gifts (`users/{userId}/gifts/{giftId}`)
+      match /gifts/{giftId} {
+        allow get: if isOwner(userId) && isValidId(giftId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(giftId)
+          && incoming().keys().hasAll(['id', 'from', 'content', 'gift_type', 'timestamp'])
+          && incoming().keys().hasOnly([
+            'id', 'from', 'content', 'gift_type', 'reason', 'timestamp', 'revision',
+            'inlineData', 'scribble', 'musicTrack', 'modelId', 'targetModelId', 'isDeleted'
+          ])
+          && isValidGiftDoc(incoming(), giftId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidGiftDoc(incoming(), giftId)
+          && isValidId(giftId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'from', 'content', 'gift_type', 'reason', 'timestamp', 'revision',
+            'inlineData', 'scribble', 'musicTrack', 'modelId', 'targetModelId', 'isDeleted'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(giftId);
+      }
+
+      // 4. Sovereign Companion Entities (`users/{userId}/companions/{companionId}`)
+      match /companions/{companionId} {
+        allow get: if isOwner(userId) && isValidId(companionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(companionId)
+          && incoming().keys().hasAll(['id'])
+          && incoming().keys().hasOnly([
+            'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
+            'themeColor', 'accentColor', 'typingIndicator', 'bio', 'moodStatus',
+            'currentActivity', 'roomDecor', 'resonanceScore', 'favoriteGiftIds',
+            'personalThoughts', 'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+          ])
+          && isValidCompanionDoc(incoming());
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidCompanionDoc(incoming())
+          && isValidId(companionId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
+            'themeColor', 'accentColor', 'typingIndicator', 'bio', 'moodStatus',
+            'currentActivity', 'roomDecor', 'resonanceScore', 'favoriteGiftIds',
+            'personalThoughts', 'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(companionId);
+
+        // 5. Private Companion-Scoped Memories (`users/{userId}/companions/{companionId}/memories/{memoryId}`)
+        match /memories/{memoryId} {
+          allow get: if isOwner(userId) && isValidId(companionId) && isValidId(memoryId);
+          allow list: if isOwner(userId);
+
+          allow create: if isVerifiedOwner(userId)
+            && isValidId(companionId)
+            && isValidId(memoryId)
+            && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope', 'entityId'])
+            && incoming().keys().hasOnly([
+              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+            ])
+            && isValidCompanionMemoryDoc(incoming(), memoryId);
+
+          allow update: if isVerifiedOwner(userId)
+            && isValidCompanionMemoryDoc(incoming(), memoryId)
+            && isValidId(companionId)
+            && isValidId(memoryId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+              'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason', 'isDeleted'
+            ]);
+
+          allow delete: if isVerifiedOwner(userId) && isValidId(companionId) && isValidId(memoryId);
+        }
+      }
+
+      // 6. Conversations (`users/{userId}/conversations/{conversationId}`)
+      match /conversations/{conversationId} {
+        allow get: if isOwner(userId) && isValidId(conversationId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(conversationId)
+          && incoming().keys().hasAll(['id'])
+          && incoming().keys().hasOnly([
+            'id', 'title', 'modelId', 'type', 'participantEntityIds',
+            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt', 'revision', 'isDeleted'
+          ])
+          && isValidConversationDoc(incoming(), conversationId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidConversationDoc(incoming(), conversationId)
+          && isValidId(conversationId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'title', 'modelId', 'type', 'participantEntityIds',
+            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt', 'revision', 'isDeleted'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(conversationId);
+
+        // 7. Granular Messages (`users/{userId}/conversations/{conversationId}/messages/{messageId}`)
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) && isValidId(conversationId) && isValidId(messageId);
+          allow list: if isOwner(userId);
+
+          allow create: if isVerifiedOwner(userId)
+            && isValidId(conversationId)
+            && isValidId(messageId)
+            && incoming().keys().hasAll(['id', 'conversationId', 'role', 'parts', 'timestamp'])
+            && incoming().keys().hasOnly([
+              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision',
+              'publicText', 'thoughtText', 'thoughtStatus', 'finishReason', 'backend',
+              'reaction', 'searchResults', 'generatedImages', 'scribbles', 'musicTracks',
+              'authorEntityId', 'authorDisplayName', 'authorAvatar', 'isDeleted'
+            ])
+            && isValidMessageDoc(incoming(), conversationId, messageId)
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/conversations/$(conversationId));
+
+          allow update: if isVerifiedOwner(userId)
+            && isValidMessageDoc(incoming(), conversationId, messageId)
+            && isValidId(conversationId)
+            && isValidId(messageId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision',
+              'publicText', 'thoughtText', 'thoughtStatus', 'finishReason', 'backend',
+              'reaction', 'searchResults', 'generatedImages', 'scribbles', 'musicTracks',
+              'authorEntityId', 'authorDisplayName', 'authorAvatar', 'isDeleted'
+            ])
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/conversations/$(conversationId));
+
+          allow delete: if isVerifiedOwner(userId) && isValidId(conversationId) && isValidId(messageId);
+        }
+      }
     }
   }
 }

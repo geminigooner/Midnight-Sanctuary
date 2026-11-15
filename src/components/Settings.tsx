@@ -3,16 +3,24 @@ import { AppSettings } from '../lib/types';
 import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Settings as SettingsIcon } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
+import { VaultBackupPanel } from './VaultBackupPanel';
 
 export function Settings() {
   const store = useStore();
-  const { closeModal, modalOrigins } = useUI();
+  const { closeModal, modalOrigins, settingsInitialTab, setSettingsInitialTab } = useUI();
   const originId = modalOrigins.settings;
   const { settings, availableModels, isModelsLoading } = store;
   
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [activeTab, setActiveTab] = useState<'model' | 'identity'>('identity');
+  const [activeTab, setActiveTab] = useState<'model' | 'identity' | 'vault'>(
+    settingsInitialTab || 'identity'
+  );
   const [newMemory, setNewMemory] = useState('');
+
+  const handleClose = () => {
+    setSettingsInitialTab?.('identity');
+    closeModal('settings');
+  };
 
   const toggleFavorite = (modelName: string) => {
     const isFav = settings.favoriteModels?.includes(modelName);
@@ -46,7 +54,7 @@ export function Settings() {
   return (
     <SharedModalShell
       originId={originId}
-      onClose={() => closeModal('settings')}
+      onClose={handleClose}
       panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
     >
       <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
@@ -59,11 +67,11 @@ export function Settings() {
           </SharedModalIcon>
           <div>
             <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Sanctuary Configuration</h2>
-            <p className="text-xs font-bold text-[#B39DE5]">Core identity, memories &amp; model parameters</p>
+            <p className="text-xs font-bold text-[#B39DE5]">Core identity, memories, model parameters &amp; vault</p>
           </div>
         </div>
         <button 
-          onClick={() => closeModal('settings')}
+          onClick={handleClose}
           className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
         >
           <X size={20} />
@@ -91,6 +99,16 @@ export function Settings() {
             }`}
           >
             Model &amp; Parameters
+          </button>
+          <button
+            onClick={() => setActiveTab('vault')}
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'vault'
+                ? 'bg-[#F198B7] text-[#2C194D]'
+                : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+            }`}
+          >
+            Vault &amp; Backup
           </button>
         </div>
 
@@ -265,6 +283,8 @@ export function Settings() {
               </div>
             </div>
           )}
+
+          {activeTab === 'vault' && <VaultBackupPanel />}
         </div>
       </SharedModalBody>
     </SharedModalShell>

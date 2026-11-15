@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Conversation } from '../lib/types';
-import { Plus, ShieldCheck, LogIn, LogOut, CheckCircle2 } from 'lucide-react';
+import { Plus, ShieldCheck, LogIn, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { getModelEntity } from '../lib/entitySystem';
 import { CompanionAvatar } from './CompanionAvatar';
+import { SyncStatusBadge } from './SyncStatusBadge';
 
 export function Sidebar() {
   const store = useStore();
@@ -143,6 +144,42 @@ export function Sidebar() {
               transition={viewMotion}
               className="space-y-2"
             >
+              {!store.isAuthReady || (store.user && !store.dataLoaded && filtered.length === 0) ? (
+                <div className="p-4 rounded-2xl bg-[#1f1947] border-[2.5px] border-[#2C194D] text-center space-y-2">
+                  <RefreshCw size={20} className="mx-auto text-[#B39DE5] animate-spin" />
+                  <p className="text-xs font-extrabold text-[#F5E1C8]">Restoring Sanctuary Archives...</p>
+                  <p className="text-[11px] font-semibold text-[#B39DE5]/80">
+                    Syncing your conversations and messages from Firestore.
+                  </p>
+                </div>
+              ) : !store.user && filtered.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-[#1f1947] border-[2.5px] border-[#2C194D] text-center space-y-3 shadow-[3px_3px_0_#2C194D]">
+                  <div className="w-10 h-10 mx-auto rounded-2xl bg-[#9D7FE3]/25 border-[2px] border-[#9D7FE5]/50 flex items-center justify-center text-[#F198B7]">
+                    <Lock size={18} strokeWidth={2.5} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-extrabold text-[#F5E1C8]">Archives Locked on This Domain</p>
+                    <p className="text-[11px] font-semibold text-[#B39DE5] leading-relaxed">
+                      All of your messages and companions are safe in Firestore. Sign in below to load them here.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenAuth}
+                    className="w-full py-2 px-3 rounded-xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[2px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_2px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <LogIn size={14} strokeWidth={2.5} />
+                    <span>Sign In to Load Messages</span>
+                  </button>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-[#1f1947]/70 border-[2px] border-[#2C194D] text-center">
+                  <p className="text-xs font-bold text-[#B39DE5]">
+                    {search.trim() ? 'No sanctuaries match your filter.' : 'No sanctuaries yet — start one above.'}
+                  </p>
+                </div>
+              ) : null}
+
               {filtered.map(c => {
                 const isSelected = c.id === store.currentId;
                 const isEditing = editingId === c.id;
@@ -231,8 +268,9 @@ export function Sidebar() {
         </AnimatePresence>
       </div>
 
-      {/* Sanctuary Auth Badge & Profile Bottom Bar */}
-      <div className="p-3 border-t-[3px] border-[#2C194D] bg-[#1a1640] shrink-0 z-10">
+      {/* Sanctuary Sync Status (Conditional) & Auth Bottom Bar */}
+      <div className="p-3 border-t-[3px] border-[#2C194D] bg-[#1a1640] shrink-0 z-10 space-y-2">
+        <SyncStatusBadge />
         {store.user ? (
           <motion.div 
             layoutId={resolveSharedLayoutId('sidebar-auth', reducedMotion)}

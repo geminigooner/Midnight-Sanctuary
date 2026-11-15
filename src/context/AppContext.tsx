@@ -50,6 +50,8 @@ export interface UIState {
   modalOrigins: Partial<Record<ModalKey, string | undefined>>;
   openModalWithOrigin: (modal: ModalKey, originId?: string) => void;
   closeModal: (modal: ModalKey) => void;
+  settingsInitialTab?: 'identity' | 'model' | 'vault';
+  setSettingsInitialTab?: React.Dispatch<React.SetStateAction<'identity' | 'model' | 'vault'>>;
 }
 
 export interface AppContextType {

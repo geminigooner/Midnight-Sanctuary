@@ -1,5 +1,7 @@
 import firebaseConfig from '../../firebase-applet-config.json';
-import { AppSettings, DEFAULT_SETTINGS, Gift, Message, UserProfile } from '../lib/types';
+import { canonicalCompanionId, getContextMemories, toScopedMemory } from '../lib/memorySystem';
+import { ScopedMemory } from '../lib/persistence/types';
+import { AppSettings, DEFAULT_SETTINGS, Gift, Memory, Message, UserProfile } from '../lib/types';
 
 export interface HydratedChatContext {
   conversationId?: string;
@@ -122,28 +124,37 @@ async function fetchFirestoreCollection(
 }
 
 /**
- * Merges Firestore-stored conversation messages with any optimistic/in-flight client messages
- * (such as the latest user message or inline base64 attachment that was just submitted).
+ * Merges Firestore-stored conversation messages with any optimistic/in-flight client messages,
+ * honoring `deletedMessageIds` tombstones so truncated/deleted messages never resurrect.
  */
-function mergeMessages(firestoreMsgs: Message[], clientMsgs: Message[]): Message[] {
+function mergeMessages(
+  firestoreMsgs: Message[],
+  clientMsgs: Message[],
+  deletedMessageIds: Set<string> = new Set()
+): Message[] {
   const byId = new Map<string, Message>();
 
   for (const m of firestoreMsgs) {
-    if (!m) continue;
+    if (!m || (m as any).isDeleted) continue;
     const id = m.id || `fs-${m.timestamp || 0}-${byId.size}`;
+    if (deletedMessageIds.has(id)) continue;
     byId.set(id, { ...m, id });
   }
 
   for (const cm of clientMsgs) {
-    if (!cm) continue;
+    if (!cm || (cm as any).isDeleted) continue;
     const id = cm.id || `client-${cm.timestamp || 0}-${byId.size}`;
+    if (deletedMessageIds.has(id)) continue;
     const existing = byId.get(id);
     if (!existing) {
       byId.set(id, { ...cm, id });
     } else {
-      // Preserve inlineData or functionResponse from client if stripped in Firestore preview
-      const clientHasInline = (cm.parts || []).some((p: any) => p?.inlineData || p?.functionResponse);
-      const existingHasInline = (existing.parts || []).some((p: any) => p?.inlineData || p?.functionResponse);
+      const clientHasInline = (cm.parts || []).some(
+        (p: any) => p?.inlineData || p?.functionResponse
+      );
+      const existingHasInline = (existing.parts || []).some(
+        (p: any) => p?.inlineData || p?.functionResponse
+      );
       if (clientHasInline && !existingHasInline) {
         byId.set(id, { ...existing, ...cm, parts: cm.parts });
       }
@@ -160,8 +171,12 @@ function mergeMessages(firestoreMsgs: Message[], clientMsgs: Message[]): Message
 }
 
 /**
- * Hydrates conversation history, user profile, settings, memories, and gifts from Firestore
- * for the authenticated user, falling back gracefully to client-supplied state when needed.
+ * Hydrates conversation history, user profile, settings, sovereign companion memories,
+ * shared Sanctuary memories, and gifts from Firestore for the authenticated user.
+ *
+ * Strictly enforces entity memory sovereignty: ONLY the active companion (`resolvedModel`)
+ * has its private `users/{uid}/companions/{companionId}/memories` subcollection hydrated,
+ * preventing cross-companion private memory bleed even in multi-entity group threads.
  */
 export async function resolveExternalChatContext(
   uid: string | undefined,
@@ -177,6 +192,10 @@ export async function resolveExternalChatContext(
   let firestoreGifts: Gift[] = [];
   let firestoreMessages: Message[] = [];
   let firestoreConvModelId: string | undefined;
+  let deletedMessageIds = new Set<string>();
+  let sharedFirestoreMemories: ScopedMemory[] = [];
+  let activeCompanionPrivateMemories: ScopedMemory[] = [];
+  let activeCompanionEntityDoc: Record<string, any> | null = null;
 
   if (uid && idToken) {
     const tasks: Promise<void>[] = [];
@@ -192,7 +211,6 @@ export async function resolveExternalChatContext(
             firestoreProfile = appDoc.userProfile;
           }
         } else {
-          // Legacy fallback: users/{uid}
           const legacyDoc = await fetchFirestoreDocument(`users/${uid}`, idToken);
           if (legacyDoc) {
             if (legacyDoc.settings) firestoreSettings = legacyDoc.settings;
@@ -205,16 +223,30 @@ export async function resolveExternalChatContext(
       })
     );
 
-    // 2. Fetch gifts collection from users/{uid}/gifts
+    // 2. Fetch shared Sanctuary memories from users/{uid}/memories
+    tasks.push(
+      fetchFirestoreCollection(`users/${uid}/memories`, idToken, 200).then((memDocs) => {
+        sharedFirestoreMemories = memDocs
+          .filter((d) => !d.isDeleted && d.scope !== 'legacy')
+          .map((d) => ({
+            ...toScopedMemory(d as unknown as Memory),
+            scope: 'shared' as const,
+            author: 'user' as const,
+          }));
+      })
+    );
+
+    // 3. Fetch gifts collection from users/{uid}/gifts
     tasks.push(
       fetchFirestoreCollection(`users/${uid}/gifts`, idToken, 100).then((giftDocs) => {
-        if (giftDocs.length > 0) {
-          firestoreGifts = giftDocs as unknown as Gift[];
+        const activeGifts = giftDocs.filter((g) => !g.isDeleted);
+        if (activeGifts.length > 0) {
+          firestoreGifts = activeGifts as unknown as Gift[];
         }
       })
     );
 
-    // 3. Fetch conversation metadata & messages subcollection if conversationId is provided
+    // 4. Fetch conversation metadata & messages subcollection if conversationId is provided
     if (conversationId) {
       tasks.push(
         Promise.all([
@@ -228,9 +260,12 @@ export async function resolveExternalChatContext(
           if (convDoc?.modelId) {
             firestoreConvModelId = convDoc.modelId;
           }
+          if (Array.isArray(convDoc?.deletedMessageIds)) {
+            deletedMessageIds = new Set(convDoc!.deletedMessageIds);
+          }
           const previewMsgs: Message[] = Array.isArray(convDoc?.messages) ? convDoc!.messages : [];
           const subMsgs: Message[] = msgDocs as unknown as Message[];
-          firestoreMessages = mergeMessages(previewMsgs, subMsgs);
+          firestoreMessages = mergeMessages(previewMsgs, subMsgs, deletedMessageIds);
         })
       );
     }
@@ -245,20 +280,6 @@ export async function resolveExternalChatContext(
     ...(firestoreSettings || {}),
   };
 
-  // Preserve memories or eventLog if client has a newer optimistic item not yet flushed
-  if (
-    Array.isArray(clientFallback.settings?.memories) &&
-    clientFallback.settings.memories.length > (mergedSettings.memories?.length || 0)
-  ) {
-    mergedSettings.memories = clientFallback.settings.memories;
-  }
-  if (
-    Array.isArray(clientFallback.settings?.eventLog) &&
-    clientFallback.settings.eventLog.length > (mergedSettings.eventLog?.length || 0)
-  ) {
-    mergedSettings.eventLog = clientFallback.settings.eventLog;
-  }
-
   const resolvedModel =
     reqBody?.model ||
     firestoreConvModelId ||
@@ -266,8 +287,71 @@ export async function resolveExternalChatContext(
     'models/gemini-3.1-pro-preview';
   mergedSettings.model = resolvedModel;
 
-  const resolvedProfile: UserProfile | null =
-    firestoreProfile || clientFallback.profile || null;
+  // 5. Fetch ONLY the active responder companion's sovereign entity doc & private memories subcollection
+  const activeEntityId = canonicalCompanionId(resolvedModel);
+  const safeCompanionDocId = sanitizeDocId(activeEntityId);
+
+  if (uid && idToken && safeCompanionDocId && activeEntityId !== 'unknown') {
+    const [compDoc, compMemDocs] = await Promise.all([
+      fetchFirestoreDocument(`users/${uid}/companions/${safeCompanionDocId}`, idToken),
+      fetchFirestoreCollection(
+        `users/${uid}/companions/${safeCompanionDocId}/memories`,
+        idToken,
+        200
+      ),
+    ]);
+    activeCompanionEntityDoc = compDoc;
+    activeCompanionPrivateMemories = compMemDocs
+      .filter((d) => !d.isDeleted)
+      .map((d) => ({
+        ...toScopedMemory({
+          ...(d as unknown as Memory),
+          author: 'model',
+          modelId: activeEntityId,
+        }),
+        scope: 'companion' as const,
+        entityId: activeEntityId,
+        modelId: activeEntityId,
+        author: 'model' as const,
+      }));
+  }
+
+  if (activeCompanionEntityDoc && activeEntityId !== 'unknown') {
+    mergedSettings.customEntities = {
+      ...(mergedSettings.customEntities || {}),
+      [activeEntityId]: {
+        ...(mergedSettings.customEntities?.[activeEntityId] || {}),
+        ...activeCompanionEntityDoc,
+        id: activeEntityId,
+      },
+    };
+  }
+
+  // Assemble strictly isolated context memories:
+  // Shared Sanctuary memories + Active Companion's private memories + pre-migration legacy fallback (filtered by active companion)
+  const legacySettingsMemories: Memory[] = Array.isArray(firestoreSettings?.memories)
+    ? firestoreSettings!.memories
+    : [];
+  const optimisticClientMemories: Memory[] = Array.isArray(clientFallback.settings?.memories)
+    ? clientFallback.settings.memories
+    : [];
+
+  const candidateMemories: Memory[] = [
+    ...sharedFirestoreMemories,
+    ...activeCompanionPrivateMemories,
+    ...legacySettingsMemories,
+    ...optimisticClientMemories,
+  ];
+  mergedSettings.memories = getContextMemories(candidateMemories, resolvedModel);
+
+  if (
+    Array.isArray(clientFallback.settings?.eventLog) &&
+    clientFallback.settings.eventLog.length > (mergedSettings.eventLog?.length || 0)
+  ) {
+    mergedSettings.eventLog = clientFallback.settings.eventLog;
+  }
+
+  const resolvedProfile: UserProfile | null = firestoreProfile || clientFallback.profile || null;
 
   const resolvedGifts: Gift[] =
     firestoreGifts.length >= (clientFallback.gifts?.length || 0)
@@ -276,8 +360,8 @@ export async function resolveExternalChatContext(
 
   const resolvedMessages: Message[] =
     firestoreMessages.length > 0
-      ? mergeMessages(firestoreMessages, clientMessages)
-      : clientMessages;
+      ? mergeMessages(firestoreMessages, clientMessages, deletedMessageIds)
+      : clientMessages.filter((m) => m && !deletedMessageIds.has(m.id));
 
   return {
     conversationId: conversationId || undefined,

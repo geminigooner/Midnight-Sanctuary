@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { X, ShieldCheck, LogIn, LogOut, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup, signOut } from '../lib/firebase';
+import React, { useState, useEffect } from 'react';
+import { X, ShieldCheck, LogIn, LogOut, AlertCircle, Sparkles, CheckCircle2, Copy, Check, ExternalLink } from 'lucide-react';
+import { auth, googleProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from '../lib/firebase';
 import { useStore, useUI } from '../context/AppContext';
 import { triggerHaptic } from '../lib/haptics';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 export const AuthModal: React.FC = () => {
   const store = useStore();
@@ -11,25 +12,85 @@ export const AuthModal: React.FC = () => {
   const originId = ui.modalOrigins.authModal;
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   const currentUser = store.user;
   const isAuthorizedOwner = currentUser?.email === 'ahatley094@gmail.com';
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isTopLevelWindow = typeof window !== 'undefined' && window.self === window.top;
+
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          ui.closeModal('authModal');
+        }
+      })
+      .catch((err: any) => {
+        if (err?.code) {
+          setErrorCode(err.code);
+          setAuthError(err.message || 'Redirect sign-in failed.');
+        }
+      });
+  }, [ui]);
 
   const handleSignIn = async () => {
     triggerHaptic('medium');
     setIsLoading(true);
     setAuthError(null);
+    setErrorCode(null);
     try {
       await signInWithPopup(auth, googleProvider);
       triggerHaptic('heavy');
-      ui.setAuthModalOpen(false);
+      ui.closeModal('authModal');
     } catch (err: any) {
       console.error('Sign-in error:', err);
-      setAuthError(err?.message || 'Failed to sign in. If popups are blocked in your browser/iframe, please allow popups or open in a new tab.');
+      const code = err?.code || '';
+      setErrorCode(code);
+      if (code === 'auth/unauthorized-domain') {
+        setAuthError(
+          `Domain "${currentHostname}" needs to be added to Firebase Authorized Domains so Google Sign-In can run on this URL.`
+        );
+      } else if (code === 'auth/popup-blocked' && isTopLevelWindow) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectErr: any) {
+          setAuthError(redirectErr?.message || 'Sign-in redirect could not start.');
+        }
+      } else {
+        setAuthError(
+          err?.message ||
+            'Failed to sign in. If popups are blocked in your browser, allow popups or use Redirect Sign-In below.'
+        );
+      }
       triggerHaptic('light');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleRedirectSignIn = async () => {
+    triggerHaptic('medium');
+    setIsLoading(true);
+    setAuthError(null);
+    setErrorCode(null);
+    try {
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err: any) {
+      console.error('Redirect sign-in error:', err);
+      setErrorCode(err?.code || null);
+      setAuthError(err?.message || 'Failed to start redirect sign-in.');
+      setIsLoading(false);
+    }
+  };
+
+  const handleCopyDomain = () => {
+    if (!currentHostname) return;
+    navigator.clipboard.writeText(currentHostname);
+    setCopiedDomain(true);
+    setTimeout(() => setCopiedDomain(false), 2000);
   };
 
   const handleSignOut = async () => {
@@ -76,85 +137,140 @@ export const AuthModal: React.FC = () => {
 
       {/* Body */}
       <SharedModalBody className="p-6 space-y-5">
-          {currentUser ? (
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-[#F198B7]/30 border-[2px] border-[#2C194D] flex items-center gap-3.5 shadow-[2px_2px_0_#2C194D]">
-                {currentUser.photoURL ? (
-                  <img
-                    src={currentUser.photoURL}
-                    alt={currentUser.displayName || 'User'}
-                    className="w-12 h-12 rounded-full border-[2px] border-[#2C194D] object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center font-bold text-lg text-[#2C194D]">
-                    {currentUser.displayName?.[0] || currentUser.email?.[0] || 'U'}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-extrabold text-sm truncate">{currentUser.displayName || 'Sanctuary Owner'}</span>
-                    {isAuthorizedOwner && (
-                      <CheckCircle2 size={16} className="text-emerald-700 shrink-0" strokeWidth={2.5} />
-                    )}
-                  </div>
-                  <p className="text-xs font-semibold text-[#2C194D]/75 truncate">{currentUser.email}</p>
-                  <span className={`inline-block mt-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
-                    isAuthorizedOwner ? 'bg-emerald-100 text-emerald-800 border-emerald-600' : 'bg-amber-100 text-amber-800 border-amber-600'
-                  }`}>
-                    {isAuthorizedOwner ? '✓ Verified Sanctuary Owner' : '⚠️ Unauthorized Account'}
-                  </span>
-                </div>
-              </div>
-
-              {!isAuthorizedOwner && (
-                <div className="p-3 rounded-xl bg-amber-50 border-[2px] border-amber-700 text-amber-900 text-xs font-semibold flex items-start gap-2">
-                  <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-700" />
-                  <span>Only <strong className="font-bold">ahatley094@gmail.com</strong> is authorized to generate responses and access this sanctuary. Please sign in with that Google account.</span>
+        {currentUser ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-[#F198B7]/30 border-[2px] border-[#2C194D] flex items-center gap-3.5 shadow-[2px_2px_0_#2C194D]">
+              {currentUser.photoURL ? (
+                <img
+                  src={currentUser.photoURL}
+                  alt={currentUser.displayName || 'User'}
+                  className="w-12 h-12 rounded-full border-[2px] border-[#2C194D] object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-full bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center font-bold text-lg text-[#2C194D]">
+                  {currentUser.displayName?.[0] || currentUser.email?.[0] || 'U'}
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={handleSignOut}
-                disabled={isLoading}
-                className="w-full py-3 px-4 rounded-2xl bg-[#F5E1C8] hover:bg-[#F198B7]/40 border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-sm shadow-[0_4px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                <LogOut size={16} strokeWidth={2.5} />
-                <span>{isLoading ? 'Signing out...' : 'Sign Out'}</span>
-              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-sm truncate">
+                    {currentUser.displayName || 'Sanctuary Owner'}
+                  </span>
+                  {isAuthorizedOwner && (
+                    <CheckCircle2 size={16} className="text-emerald-700 shrink-0" strokeWidth={2.5} />
+                  )}
+                </div>
+                <p className="text-xs font-semibold text-[#2C194D]/75 truncate">{currentUser.email}</p>
+                <span
+                  className={`inline-block mt-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    isAuthorizedOwner
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-600'
+                      : 'bg-amber-100 text-amber-800 border-amber-600'
+                  }`}
+                >
+                  {isAuthorizedOwner ? '✓ Verified Sanctuary Owner' : '⚠️ Unauthorized Account'}
+                </span>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4 text-center">
-              <div className="w-16 h-16 mx-auto rounded-3xl bg-[#9D7FE3] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[4px_4px_0_#2C194D]">
-                <Sparkles size={32} strokeWidth={2} />
-              </div>
 
-              <div>
-                <h3 className="text-base font-extrabold text-[#2C194D]">Welcome to the Sanctuary</h3>
-                <p className="text-xs font-semibold text-[#2C194D]/80 mt-1 max-w-xs mx-auto">
-                  Sign in with your authorized Google Account (<span className="font-bold underline">ahatley094@gmail.com</span>) to unlock conversations, tools, and sync your state.
-                </p>
+            {!isAuthorizedOwner && (
+              <div className="p-3 rounded-xl bg-amber-50 border-[2px] border-amber-700 text-amber-900 text-xs font-semibold flex items-start gap-2">
+                <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-700" />
+                <span>
+                  Only <strong className="font-bold">ahatley094@gmail.com</strong> is authorized to generate
+                  responses and access this sanctuary. Please sign in with that Google account.
+                </span>
               </div>
+            )}
 
-              {authError && (
-                <div className="p-3 rounded-xl bg-red-100 border-[2px] border-red-600 text-red-900 text-xs font-semibold text-left flex items-start gap-2">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isLoading}
+              className="w-full py-3 px-4 rounded-2xl bg-[#F5E1C8] hover:bg-[#F198B7]/40 border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-sm shadow-[0_4px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <LogOut size={16} strokeWidth={2.5} />
+              <span>{isLoading ? 'Signing out...' : 'Sign Out'}</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 text-center">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-[#9D7FE3] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[4px_4px_0_#2C194D]">
+              <Sparkles size={32} strokeWidth={2} />
+            </div>
+
+            <div>
+              <h3 className="text-base font-extrabold text-[#2C194D]">Welcome to the Sanctuary</h3>
+              <p className="text-xs font-semibold text-[#2C194D]/80 mt-1 max-w-xs mx-auto">
+                Sign in with your authorized Google Account (
+                <span className="font-bold underline">ahatley094@gmail.com</span>) to restore all of your
+                saved conversations, memories, and companions.
+              </p>
+            </div>
+
+            {authError && (
+              <div className="p-3.5 rounded-2xl bg-red-100 border-[2px] border-red-700 text-red-950 text-xs font-semibold text-left space-y-2.5">
+                <div className="flex items-start gap-2">
                   <AlertCircle size={16} className="shrink-0 mt-0.5 text-red-700" />
                   <span>{authError}</span>
                 </div>
-              )}
 
+                {errorCode === 'auth/unauthorized-domain' && currentHostname && (
+                  <div className="pt-2 border-t border-red-300 space-y-2">
+                    <p className="text-[11px] font-bold text-red-900">
+                      1. Copy this domain and add it under Firebase Console → Authentication → Settings →
+                      Authorized domains:
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-white border border-red-400 text-[#2C194D] font-mono text-[11px] font-bold truncate">
+                        {currentHostname}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={handleCopyDomain}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#F5E1C8] border-[2px] border-[#2C194D] text-[#2C194D] font-extrabold text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        {copiedDomain ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedDomain ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <a
+                      href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-[#2C194D] underline hover:opacity-80"
+                    >
+                      <span>Open Firebase Authorized Domains ({firebaseConfig.projectId})</span>
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSignIn}
+              disabled={isLoading}
+              className="w-full py-3.5 px-4 rounded-2xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-sm shadow-[0_4px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+            >
+              <LogIn size={18} strokeWidth={2.5} />
+              <span>{isLoading ? 'Connecting to Google...' : 'Sign In with Google'}</span>
+            </button>
+
+            {isTopLevelWindow && (
               <button
                 type="button"
-                onClick={handleSignIn}
+                onClick={handleRedirectSignIn}
                 disabled={isLoading}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-sm shadow-[0_4px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-[#F5E1C8] hover:bg-[#F198B7]/30 border-[2px] border-[#2C194D] text-[#2C194D] font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
               >
-                <LogIn size={18} strokeWidth={2.5} />
-                <span>{isLoading ? 'Connecting to Google...' : 'Sign In with Google'}</span>
+                <span>Mobile popup blocked? Sign In via Redirect</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
+        )}
       </SharedModalBody>
     </SharedModalShell>
   );

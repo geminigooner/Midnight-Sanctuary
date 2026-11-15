@@ -1,4 +1,4 @@
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { 
   doc, 
   setDoc, 
@@ -12,6 +12,59 @@ import {
 } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { Conversation, AppSettings, JewelMetrics, Gift, Message, UserProfile } from './types';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function logFirestoreError(error: unknown, operationType: OperationType, path: string | null): FirestoreErrorInfo {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo = logFirestoreError(error, operationType, path);
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export function removeUndefined(obj: any): any {
   if (Array.isArray(obj)) {
@@ -122,6 +175,8 @@ export function subscribeToState(
   const messageUnsubs = new Map<string, Unsubscribe>();
   const subcollectionMessages = new Map<string, Message[]>();
   const inlinePreviewMessages = new Map<string, Message[]>();
+  const legacyConversationsMap = new Map<string, Conversation>();
+  let convsSnapshotReceived = false;
 
   const sortMessagesDeterministically = (msgs: Message[]): Message[] => {
     return [...msgs].sort((a, b) => {
@@ -136,9 +191,16 @@ export function subscribeToState(
   const mergeConversationMessages = (convId: string, currentLocalMsgs: Message[] = []): Message[] => {
     const subMsgs = subcollectionMessages.get(convId) || [];
     const previewMsgs = inlinePreviewMessages.get(convId) || [];
+    const legacyMsgs = legacyConversationsMap.get(convId)?.messages || [];
 
-    // Combine subcollection messages with any inline preview messages not yet in subcollection
+    // Combine legacy, inline preview, and subcollection messages so no message is ever lost
     const byId = new Map<string, Message>();
+    for (let i = 0; i < legacyMsgs.length; i++) {
+      const lm = legacyMsgs[i];
+      if (!lm) continue;
+      const norm = normalizeMessageSchema(lm, convId, i);
+      byId.set(norm.id, norm);
+    }
     for (let i = 0; i < previewMsgs.length; i++) {
       const pm = previewMsgs[i];
       if (!pm) continue;
@@ -200,23 +262,39 @@ export function subscribeToState(
         }
         if (Array.isArray(legacy.conversations) && legacy.conversations.length > 0) {
           const existingIds = new Set((liveState.conversations || []).map(c => c.id));
-          const missingConvs = legacy.conversations
-            .filter((c: any) => c && c.id && !existingIds.has(c.id))
-            .map((c: any) => {
-              const safeConvId = ensureValidDocId(c.id, 'conv');
-              const convUpdatedAt = c.updatedAt || c.createdAt || Date.now();
-              return {
-                ...c,
-                id: safeConvId,
-                createdAt: c.createdAt || convUpdatedAt,
-                updatedAt: convUpdatedAt,
-                messages: Array.isArray(c.messages)
-                  ? c.messages.map((m: any, idx: number) => normalizeMessageSchema(m, safeConvId, idx, convUpdatedAt))
-                  : [],
-              };
+          const missingConvs: Conversation[] = [];
+
+          for (const rawConv of legacy.conversations) {
+            if (!rawConv || !rawConv.id) continue;
+            const safeConvId = ensureValidDocId(rawConv.id, 'conv');
+            const convUpdatedAt = rawConv.updatedAt || rawConv.createdAt || Date.now();
+            const normalizedConv: Conversation = {
+              ...rawConv,
+              id: safeConvId,
+              createdAt: rawConv.createdAt || convUpdatedAt,
+              updatedAt: convUpdatedAt,
+              messages: Array.isArray(rawConv.messages)
+                ? rawConv.messages.map((m: any, idx: number) => normalizeMessageSchema(m, safeConvId, idx, convUpdatedAt))
+                : [],
+            };
+            legacyConversationsMap.set(safeConvId, normalizedConv);
+            if (!existingIds.has(safeConvId)) {
+              missingConvs.push(normalizedConv);
+              // Backfill any un-migrated legacy conversation into granular conversations subcollection
+              saveConversationDoc(userId, normalizedConv).catch((err) => {
+                console.warn('[Migration] Failed to backfill legacy conversation:', err);
+              });
+            }
+          }
+
+          if (missingConvs.length > 0 || convsSnapshotReceived) {
+            const combined = [...(liveState.conversations || []), ...missingConvs];
+            combined.sort((a, b) => {
+              const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
+              if (diff !== 0) return diff;
+              return (a.id || '').localeCompare(b.id || '');
             });
-          if (missingConvs.length > 0) {
-            liveState.conversations = [...(liveState.conversations || []), ...missingConvs];
+            liveState.conversations = combined;
           }
         }
         if (Array.isArray(legacy.gifts) && legacy.gifts.length > 0) {
@@ -250,13 +328,14 @@ export function subscribeToState(
       runLegacyRecovery();
     }
   }, (err) => {
-    console.error('[Realtime Sync] Error on settings snapshot:', err);
+    logFirestoreError(err, OperationType.GET, `users/${userId}/settings/app`);
     notify();
   });
   unsubscribers.push(unsubSettings);
 
   // 2. Real-Time Conversations & Messages Listener
   const unsubConvs = onSnapshot(convsColRef, (convsSnap) => {
+    convsSnapshotReceived = true;
     const existingConvsMap = new Map((liveState.conversations || []).map(c => [c.id, c]));
     const updatedConvs: Conversation[] = [];
     const activeIds = new Set<string>();
@@ -339,6 +418,13 @@ export function subscribeToState(
       }
     }
 
+    // Preserve any legacy conversations that haven't appeared in the granular snapshot yet
+    for (const [legacyId, legacyConv] of legacyConversationsMap.entries()) {
+      if (!activeIds.has(legacyId)) {
+        updatedConvs.push(legacyConv);
+      }
+    }
+
     // Deterministic stable sorting for conversations: updatedAt descending, then id
     updatedConvs.sort((a, b) => {
       const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -346,9 +432,10 @@ export function subscribeToState(
       return (a.id || '').localeCompare(b.id || '');
     });
     liveState.conversations = updatedConvs;
+    runLegacyRecovery();
     notify();
   }, (err) => {
-    console.error('[Realtime Sync] Conversations snapshot error:', err);
+    logFirestoreError(err, OperationType.LIST, `users/${userId}/conversations`);
     notify();
   });
   unsubscribers.push(unsubConvs);
@@ -368,7 +455,7 @@ export function subscribeToState(
     liveState.gifts = gifts;
     notify();
   }, (err) => {
-    console.error('[Realtime Sync] Gifts snapshot error:', err);
+    logFirestoreError(err, OperationType.LIST, `users/${userId}/gifts`);
   });
   unsubscribers.push(unsubGifts);
 
@@ -386,7 +473,7 @@ export function subscribeToState(
     liveState.companions = comps;
     notify();
   }, (err) => {
-    console.error('[Realtime Sync] Companions snapshot error:', err);
+    logFirestoreError(err, OperationType.LIST, `users/${userId}/companions`);
   });
   unsubscribers.push(unsubCompanions);
 
@@ -399,21 +486,42 @@ export function subscribeToState(
 }
 
 /**
- * Legacy monolithic check for initial migration
+ * Legacy monolithic check for initial migration (checks both users/{uid} and legacy users/{email} if owner)
  */
 async function checkLegacyOnce(userId: string, onLegacy: (data: any) => void) {
   try {
     const legacyDocRef = doc(db, 'users', userId);
     const snap = await getDoc(legacyDocRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      onLegacy(data);
-      if (!data.migratedToGranular) {
-        migrateLegacyToGranular(userId, data).catch(console.error);
+    let combinedLegacy: any = snap.exists() ? { ...snap.data() } : null;
+
+    // Also check if any very early monolithic state was stored under the owner's email key
+    const currentEmail = auth.currentUser?.email;
+    if (currentEmail && currentEmail !== userId) {
+      try {
+        const emailDocSnap = await getDoc(doc(db, 'users', currentEmail));
+        if (emailDocSnap.exists()) {
+          const emailData = emailDocSnap.data();
+          if (!combinedLegacy) {
+            combinedLegacy = { ...emailData };
+          } else if (Array.isArray(emailData.conversations) && emailData.conversations.length > 0) {
+            const existingIds = new Set((combinedLegacy.conversations || []).map((c: any) => c?.id));
+            const extraConvs = emailData.conversations.filter((c: any) => c && c.id && !existingIds.has(c.id));
+            combinedLegacy.conversations = [...(combinedLegacy.conversations || []), ...extraConvs];
+          }
+        }
+      } catch {
+        // Ignore if email-keyed doc does not exist
+      }
+    }
+
+    if (combinedLegacy) {
+      onLegacy(combinedLegacy);
+      if (!combinedLegacy.migratedToGranular) {
+        migrateLegacyToGranular(userId, combinedLegacy).catch(console.error);
       }
     }
   } catch (err) {
-    console.error('[Realtime Sync] Legacy check error:', err);
+    logFirestoreError(err, OperationType.GET, `users/${userId}`);
   }
 }
 

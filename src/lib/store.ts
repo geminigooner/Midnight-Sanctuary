@@ -1,1018 +1,744 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Conversation, AppSettings, DEFAULT_SETTINGS, JewelMetrics, DEFAULT_JEWEL_METRICS, ModelInfo, Gift, Message, UserProfile } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { db, auth, signOut, onAuthStateChanged } from './firebase';
-import { 
-  loadState, 
-  subscribeToState,
-  saveSettings, 
-  saveMessageDoc, 
-  deleteMessageDoc, 
-  deleteConversationDocs, 
-  saveFullGranularState,
-  saveConversationDoc,
-  saveProfileDoc,
-  saveGiftDoc,
-  ensureValidDocId,
-  normalizeMessageSchema
-} from './persistenceSystem';
-import { normalizeModelId } from './modelSystem';
-import { getModelEntity } from './entitySystem';
+import {
+  Conversation,
+  AppSettings,
+  DEFAULT_JEWEL_METRICS,
+  ModelInfo,
+  Gift,
+  Message,
+  UserProfile,
+  JewelMetrics,
+} from './types';
+import { auth, onAuthStateChanged } from './firebase';
+import { ensureValidDocId, normalizeMessageSchema } from './persistenceSystem';
+import { FirestorePersistenceAdapter } from './persistence/firestoreAdapter';
+import {
+  CoordinatorDomainState,
+  PersistenceCoordinator,
+  PersistenceCoordinatorOptions,
+} from './persistence/persistenceCoordinator';
+import {
+  exportSanctuaryBackup,
+  restoreSanctuaryBackup,
+  validateSanctuaryBackup,
+} from './persistence/backupService';
+import {
+  SanctuaryBackupEnvelope,
+  SanctuaryBackupManifest,
+  SyncStatusSnapshot,
+  ValidatedBackupPreview,
+} from './persistence/types';
 
-export function useAppStore(passedUser?: any) {
+let sharedCoordinator: PersistenceCoordinator | null = null;
+
+export function getSharedPersistenceCoordinator(): PersistenceCoordinator {
+  if (!sharedCoordinator) {
+    sharedCoordinator = new PersistenceCoordinator({
+      cloudAdapter: new FirestorePersistenceAdapter(),
+    });
+  }
+  return sharedCoordinator;
+}
+
+export function createPersistenceCoordinator(
+  options?: PersistenceCoordinatorOptions
+): PersistenceCoordinator {
+  return new PersistenceCoordinator(options);
+}
+
+export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoordinator) {
+  const coordinator = customCoordinator || getSharedPersistenceCoordinator();
+
   const [authUser, setAuthUser] = useState<any>(passedUser || null);
+  const [isAuthReady, setIsAuthReady] = useState<boolean>(passedUser !== undefined);
 
   useEffect(() => {
     if (passedUser !== undefined) {
       setAuthUser(passedUser);
+      setIsAuthReady(true);
       return;
     }
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setAuthUser(u);
+      setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, [passedUser]);
 
   const user = authUser;
-  const [conversations, setConversations] = useState<Conversation[]>(() => {
-    try {
-      const cached = localStorage.getItem('sanctuary_conversations_cache');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          const deduped = new Map<string, Conversation>();
-          parsed.forEach((c: any) => {
-            if (!c) return;
-            const safeConvId = ensureValidDocId(c.id, 'conv');
-            const convUpdatedAt = c.updatedAt || c.createdAt || Date.now();
-            deduped.set(safeConvId, {
-              ...c,
-              id: safeConvId,
-              createdAt: c.createdAt || convUpdatedAt,
-              updatedAt: convUpdatedAt,
-              messages: Array.isArray(c.messages)
-                ? c.messages.map((m: any, idx: number) => normalizeMessageSchema(m, safeConvId, idx, convUpdatedAt))
-                : []
-            });
-          });
-          return Array.from(deduped.values());
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load cached conversations from localStorage:', e);
-    }
-    return [];
-  });
-  const [currentId, setCurrentId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('sanctuary_current_conv_id') || null;
-    } catch {
-      return null;
-    }
-  });
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [jewelMetrics, setJewelMetrics] = useState<JewelMetrics>(DEFAULT_JEWEL_METRICS);
+
+  const [domainState, setDomainState] = useState<CoordinatorDomainState>(() =>
+    coordinator.getDomainState()
+  );
+  const [syncStatus, setSyncStatus] = useState<SyncStatusSnapshot>(() =>
+    coordinator.getSyncStatus()
+  );
+
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(true);
-  const [gifts, setGifts] = useState<Gift[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(() => {
-    try {
-      const cached = localStorage.getItem('sanctuary_user_profile');
-      if (cached) {
-        return JSON.parse(cached);
-      }
-    } catch (e) {
-      console.warn('Failed to load cached profile from localStorage:', e);
-    }
-    return null;
-  });
 
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const deletedConvIdsRef = useRef<Set<string>>(new Set());
-  const deletedMsgIdsRef = useRef<Set<string>>(new Set());
-
-  // Synchronize profile with local storage cache
+  // Subscribe to PersistenceCoordinator domain projections & sync status
   useEffect(() => {
-    if (profile) {
-      try {
-        localStorage.setItem('sanctuary_user_profile', JSON.stringify(profile));
-      } catch (e) {
-        console.warn('Failed to cache profile to localStorage:', e);
-      }
-    }
-  }, [profile]);
+    const unsubState = coordinator.subscribeState((next) => {
+      setDomainState(next);
+    });
+    const unsubSync = coordinator.subscribeSyncStatus((status) => {
+      setSyncStatus(status);
+    });
+    return () => {
+      unsubState();
+      unsubSync();
+    };
+  }, [coordinator]);
 
-  // Synchronize conversations with local storage cache to survive network hiccups and reloads
+  // Coordinate user-scoped hydration & cloud synchronization strictly after auth resolves
   useEffect(() => {
-    try {
-      if (conversations.length > 0) {
-        // Strip heavy inlineData base64 attachments, base64 generatedImages, and thoughtSignatures from localStorage to prevent quota exceeded errors
-        const leanConversations = conversations.slice(0, 30).map(c => ({
-          ...c,
-          messages: (c.messages || []).slice(-40).map(m => {
-            const { parts, generatedImages, ...rest } = m;
-            const leanParts = (parts || []).map(p => {
-              const { inlineData, thoughtSignature, ...pRest } = p || {};
-              if (inlineData) {
-                return { ...pRest, text: pRest.text || '[Image attachment]' };
-              }
-              return pRest;
-            });
-            const leanGeneratedImages = Array.isArray(generatedImages)
-              ? generatedImages.filter(img => img && typeof img.imageUrl === 'string' && !img.imageUrl.startsWith('data:'))
-              : undefined;
-            return {
-              ...rest,
-              parts: leanParts,
-              ...(leanGeneratedImages && leanGeneratedImages.length > 0 ? { generatedImages: leanGeneratedImages } : {})
-            };
-          })
-        }));
-        localStorage.setItem('sanctuary_conversations_cache', JSON.stringify(leanConversations));
-      }
-    } catch (e) {
-      console.warn('Failed to cache conversations to localStorage:', e);
-    }
-  }, [conversations]);
+    if (!isAuthReady) return;
+    void coordinator.attachUser(user?.uid || null, user?.email || null);
+  }, [isAuthReady, user?.uid, user?.email, coordinator]);
 
-  // Synchronize active conversation ID with local storage
-  useEffect(() => {
-    try {
-      if (currentId) {
-        localStorage.setItem('sanctuary_current_conv_id', currentId);
-      } else {
-        localStorage.removeItem('sanctuary_current_conv_id');
-      }
-    } catch {}
-  }, [currentId]);
+  const conversations = domainState.conversations;
+  const currentId = domainState.activeConversationId;
+  const settings = domainState.settings;
+  const jewelMetrics = domainState.jewelMetrics;
+  const gifts = domainState.gifts;
+  const profile = domainState.userProfile;
 
-  // Recover currentId if it points to a stale/non-existent conversation ID after conversations load
+  // Distinguish loading state from authoritative empty result
+  const dataLoaded = Boolean(
+    isAuthReady &&
+      syncStatus.isHydrated &&
+      (!user ||
+        syncStatus.isCloudHydrated ||
+        !syncStatus.isOnline ||
+        conversations.length > 0)
+  );
+
+  const setCurrentId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>(
+    (value) => {
+      const prev = coordinator.getDomainState().activeConversationId;
+      const next = typeof value === 'function' ? value(prev) : value;
+      void coordinator.setActiveConversationId(next);
+    },
+    [coordinator]
+  );
+
+  // Recover currentId if it points to a deleted or stale conversation ID after hydration completes
   useEffect(() => {
     if (dataLoaded && currentId && conversations.length > 0) {
-      const exists = conversations.some(c => c.id === currentId);
+      const exists = conversations.some((c) => c.id === currentId);
       if (!exists) {
-        setCurrentId(conversations[0].id);
+        void coordinator.setActiveConversationId(conversations[0].id);
       }
     }
-  }, [dataLoaded, currentId, conversations]);
+  }, [dataLoaded, currentId, conversations, coordinator]);
 
+  // Load authenticated model catalog
   useEffect(() => {
     if (!user) return;
-    
-    const unsubscribe = subscribeToState(user.uid, (data) => {
-      if (data) {
-        if (data.conversations !== undefined) {
-          const incoming = data.conversations.filter(
-            (c: any) => c && c.id && !deletedConvIdsRef.current.has(c.id)
-          );
-          setConversations(prev => {
-            const prevMap = new Map(prev.map(c => [c.id, c]));
-            const incomingIds = new Set(incoming.map((c: any) => c.id));
+    let cancelled = false;
 
-            // Retain locally-created conversations that haven't hit Firestore snapshot yet
-            const localOnly = prev.filter(
-              c => !incomingIds.has(c.id) && !deletedConvIdsRef.current.has(c.id)
-            );
-            if (localOnly.length > 0 && user?.uid) {
-              localOnly.forEach(localConv => {
-                saveConversationDoc(user.uid, localConv).catch(err => {
-                  console.warn('[Sanctuary Store] Failed to backfill local conversation to Firestore:', err);
-                });
-              });
-            }
+    const loadModels = async () => {
+      try {
+        let token: string = await user.getIdToken();
+        let res = await fetch('/api/models', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-            const mergedIncoming = incoming.map((c: any) => {
-              const prevConv = prevMap.get(c.id);
-              let msgs = (c.messages || []).filter(
-                (m: any) => m && m.id && !deletedMsgIdsRef.current.has(m.id)
-              );
-
-              // Never let an empty or in-flight snapshot wipe out local messages
-              if (msgs.length === 0 && prevConv?.messages && prevConv.messages.length > 0) {
-                msgs = prevConv.messages.filter(
-                  (m: any) => m && m.id && !deletedMsgIdsRef.current.has(m.id)
-                );
-              } else if (prevConv?.messages && prevConv.messages.length > 0) {
-                // If local has messages that are streaming or pending, preserve them
-                const incomingMsgIds = new Set(msgs.map((m: any) => m.id));
-                const localPending = prevConv.messages.filter(
-                  (m: any) =>
-                    m &&
-                    m.id &&
-                    !deletedMsgIdsRef.current.has(m.id) &&
-                    (!incomingMsgIds.has(m.id) || m.thoughtStatus === 'thinking')
-                );
-                if (localPending.length > 0) {
-                  const combined = msgs.map((m: any) => {
-                    const match = localPending.find((lm: any) => lm.id === m.id);
-                    return match ? { ...m, ...match } : m;
-                  });
-                  const unadded = localPending.filter((lm: any) => !msgs.some((m: any) => m.id === lm.id));
-                  msgs = [...combined, ...unadded].sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0));
-                }
-              }
-
-              return {
-                ...c,
-                id: ensureValidDocId(c.id, 'conv'),
-                createdAt: c.createdAt || c.updatedAt || Date.now(),
-                updatedAt: c.updatedAt || c.createdAt || Date.now(),
-                messages: msgs
-              };
-            });
-
-            const byConvId = new Map<string, Conversation>();
-            for (const c of [...mergedIncoming, ...localOnly]) {
-              if (c && c.id && !byConvId.has(c.id)) {
-                byConvId.set(c.id, c);
-              }
-            }
-            const nextList = Array.from(byConvId.values());
-            nextList.sort((a, b) => {
-              const diff = (b.updatedAt || 0) - (a.updatedAt || 0);
-              if (diff !== 0) return diff;
-              return (a.id || '').localeCompare(b.id || '');
-            });
-            return nextList;
-          });
-        }
-        if (data.settings) {
-          setSettings(prev => {
-            const rawMemories = Array.isArray(data.settings?.memories) ? data.settings!.memories : (prev.memories || []);
-            const indexedMemories = rawMemories.map((m: any, idx: number) => ({
-              ...m,
-              id: m?.id || `mem-${idx}-${m?.createdAt || 0}`,
-            }));
-            const rawEvents = Array.isArray(data.settings?.eventLog) ? data.settings!.eventLog : (prev.eventLog || []);
-            const indexedEvents = rawEvents.map((ev: any, idx: number) => ({
-              ...ev,
-              id: ev?.id || `evt-${idx}-${ev?.timestamp || 0}`,
-            }));
-            return { 
-              ...DEFAULT_SETTINGS, 
-              ...data.settings,
-              memories: indexedMemories,
-              eventLog: indexedEvents,
-              customEntities: {
-                ...(data.settings?.customEntities || {}),
-                ...(data.companions || {})
-              }
-            };
-          });
-        }
-        if (data.jewelMetrics) setJewelMetrics({ ...DEFAULT_JEWEL_METRICS, ...data.jewelMetrics });
-        if (data.gifts) {
-          setGifts(prev => {
-            const incomingIds = new Set(data.gifts!.map((g: Gift) => g.id));
-            const localOnlyGifts = prev.filter(g => !incomingIds.has(g.id));
-            return [...data.gifts!, ...localOnlyGifts];
-          });
-        }
-        if (data.userProfile) {
-          setProfile({
-            ...data.userProfile,
-            id: data.userProfile.id || user.uid,
-          });
-        }
-        
-        setDataLoaded(true);
-      } else {
-        setDataLoaded(true);
-      }
-    });
-
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    user.getIdToken().then((token: string) => {
-      fetch('/api/models', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      .then(async res => {
         if (res.status === 401) {
-          signOut(auth);
-          throw new Error("Unauthorized");
+          token = await user.getIdToken(true);
+          res = await fetch('/api/models', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
         }
+
+        if (!res.ok) {
+          if (!cancelled) setIsModelsLoading(false);
+          return;
+        }
+
         const text = await res.text();
         if (text.includes('<!DOCTYPE html>')) {
           console.error('Server returned HTML instead of JSON for models');
-          return [];
-        }
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          console.error('Failed to parse models JSON');
-          return [];
-        }
-      })
-      .then((data: ModelInfo[]) => {
-        setAvailableModels(Array.isArray(data) ? data : []);
-        setIsModelsLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to fetch models", err);
-        setIsModelsLoading(false);
-      });
-    }).catch((err: any) => {
-      console.error("Failed to get ID token", err);
-      setIsModelsLoading(false);
-    });
-  }, [user]);
-
-  // Save on change
-  useEffect(() => {
-    if (!dataLoaded || !user) return;
-    const t = setTimeout(async () => {
-      try {
-        console.log('[Diagnostic] Debounced Auto-Save Triggered for User:', user.uid);
-        
-        // Strip undefined values across the state hierarchy to ensure strictly valid Firestore JSON
-        const sanitizeForFirestore = (obj: any): any => {
-          if (Array.isArray(obj)) {
-            return obj.map(sanitizeForFirestore);
-          } else if (obj !== null && typeof obj === 'object') {
-            return Object.entries(obj).reduce((acc: any, [k, v]) => {
-              if (v !== undefined) {
-                acc[k] = sanitizeForFirestore(v);
-              }
-              return acc;
-            }, {});
+          if (!cancelled) {
+            setAvailableModels([]);
+            setIsModelsLoading(false);
           }
-          return obj;
-        };
-
-        const payload = sanitizeForFirestore({
-          conversations,
-          settings,
-          jewelMetrics,
-          gifts,
-          userProfile: profile
-        });
-
-        // Diagnostic tracing for user and model messages
-        if (conversations.length > 0) {
-          const activeConv = conversations.find(c => c.id === currentId) || conversations[0];
-          if (activeConv && activeConv.messages && activeConv.messages.length > 0) {
-            const lastMsg = activeConv.messages[activeConv.messages.length - 1];
-            console.log(`[Diagnostic] Final message in active conv reaches save path -> Role: ${lastMsg.role}, text length: ${lastMsg.publicText?.length || lastMsg.parts?.[0]?.text?.length || 0}`);
-          }
+          return;
         }
-        
-        // Use saveSettings as the main debounced save for the full payload
-        await saveSettings(user.uid, payload);
-        console.log('[Diagnostic] Save SUCCESS! Data correctly committed to Firestore.');
-      } catch (e) {
-        console.error('[Diagnostic] Save FAILURE! Actual Firestore Error:', e);
+
+        const data: ModelInfo[] = JSON.parse(text);
+        if (!cancelled) {
+          setAvailableModels(Array.isArray(data) ? data : []);
+          setIsModelsLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to fetch models', err);
+        if (!cancelled) setIsModelsLoading(false);
       }
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [conversations, settings, jewelMetrics, gifts, profile, dataLoaded, user]);
-
-  const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings(prev => {
-      const updated = { ...prev, ...newSettings };
-      return updated;
-    });
-  }, []);
-
-  const addGift = useCallback((gift: Omit<Gift, 'id' | 'timestamp'>) => {
-    const newGift: Gift = {
-      ...gift,
-      id: uuidv4(),
-      modelId: gift.modelId ? normalizeModelId(gift.modelId) : undefined,
-      targetModelId: gift.targetModelId ? normalizeModelId(gift.targetModelId) : undefined,
-      timestamp: Date.now()
     };
-    setGifts(prev => [newGift, ...prev]);
-    if (user) {
-      saveGiftDoc(user.uid, newGift).catch(err => {
-        console.error('[Sanctuary Store] Error saving gift doc immediately:', err);
-      });
-    }
+
+    void loadModels();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  const removeMemory = useCallback((id: string) => {
-    setSettings(prev => ({
-      ...prev,
-      memories: (prev.memories || []).filter(m => m.id !== id)
-    }));
-  }, []);
+  // ---------------------------------------------------------------------------
+  // Domain Actions Delegated Exclusively to PersistenceCoordinator
+  // ---------------------------------------------------------------------------
 
-  const addMemory = useCallback((memoryContent: string, origin?: string, author?: 'user'|'model', modelId?: string, caption?: string, isLocked?: boolean, lockReason?: string) => {
-    setSettings(prev => {
-      const prevMemories = prev.memories || [];
-      const existingIndex = prevMemories.findIndex(m => m.content.toLowerCase().trim() === memoryContent.toLowerCase().trim());
-      
-      // If it exists and we're locking it, upgrade existing memory to locked
-      if (existingIndex !== -1) {
-        if (isLocked) {
-          const updated = [...prevMemories];
-          updated[existingIndex] = {
-            ...updated[existingIndex],
-            isLocked: true,
-            lockReason: lockReason || updated[existingIndex].lockReason
-          };
-          return { ...prev, memories: updated };
-        }
-        return prev;
-      }
+  const updateSettings = useCallback(
+    (newSettings: Partial<AppSettings>) => {
+      void coordinator.updateSettings(newSettings);
+    },
+    [coordinator]
+  );
 
-      const newMemory = {
-        id: uuidv4(),
+  const addGift = useCallback(
+    (gift: Omit<Gift, 'id' | 'timestamp'>) => {
+      void coordinator.addGift(gift);
+    },
+    [coordinator]
+  );
+
+  const removeMemory = useCallback(
+    (id: string) => {
+      void coordinator.deleteMemory(id);
+    },
+    [coordinator]
+  );
+
+  const addMemory = useCallback(
+    (
+      memoryContent: string,
+      origin?: string,
+      author?: 'user' | 'model',
+      modelId?: string,
+      caption?: string,
+      isLocked?: boolean,
+      lockReason?: string
+    ) => {
+      void coordinator.addMemory({
         content: memoryContent,
-        createdAt: Date.now(),
-        origin: origin || 'direct_input',
-        author: author || 'user',
-        modelId: modelId ? normalizeModelId(modelId) : undefined,
-        caption: caption,
-        isLocked: !!isLocked,
-        lockReason: lockReason
-      };
+        origin,
+        author,
+        modelId,
+        caption,
+        isLocked,
+        lockReason,
+      });
+    },
+    [coordinator]
+  );
 
-      return {
-        ...prev,
-        memories: [newMemory, ...prevMemories]
-      };
-    });
-  }, []);
+  const lockMemory = useCallback(
+    (id: string, lockReason?: string) => {
+      void coordinator.setMemoryLockState(id, true, lockReason);
+    },
+    [coordinator]
+  );
 
-  const lockMemory = useCallback((id: string, lockReason?: string) => {
-    setSettings(prev => ({
-      ...prev,
-      memories: (prev.memories || []).map(m => m.id === id ? { ...m, isLocked: true, lockReason: lockReason || m.lockReason } : m)
-    }));
-  }, []);
+  const unlockMemory = useCallback(
+    (id: string) => {
+      void coordinator.setMemoryLockState(id, false);
+    },
+    [coordinator]
+  );
 
-  const unlockMemory = useCallback((id: string) => {
-    setSettings(prev => ({
-      ...prev,
-      memories: (prev.memories || []).map(m => m.id === id ? { ...m, isLocked: false } : m)
-    }));
-  }, []);
-
-  const updateEntityQuarters = useCallback((modelKey: string, updates: { bio?: string; moodStatus?: string; currentActivity?: string; ambientQuote?: string; tagline?: string; decorTheme?: string; wallpaperPattern?: any; ambientLighting?: any; bannerGradient?: string; themeColor?: string; wallArtUrl?: string; avatarUrl?: string; avatarEmoji?: string; displayName?: string; roleTitle?: string }) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-
-      const updatedEntity = {
+  const updateEntityQuarters = useCallback(
+    (
+      modelKey: string,
+      updates: {
+        bio?: string;
+        moodStatus?: string;
+        currentActivity?: string;
+        ambientQuote?: string;
+        tagline?: string;
+        decorTheme?: string;
+        wallpaperPattern?: any;
+        ambientLighting?: any;
+        bannerGradient?: string;
+        themeColor?: string;
+        wallArtUrl?: string;
+        avatarUrl?: string;
+        avatarEmoji?: string;
+        displayName?: string;
+        roleTitle?: string;
+      }
+    ) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
         ...currentEntity,
-        id: canonical,
-        displayName: updates.displayName !== undefined ? updates.displayName : currentEntity.displayName,
+        displayName:
+          updates.displayName !== undefined ? updates.displayName : currentEntity.displayName,
         roleTitle: updates.roleTitle !== undefined ? updates.roleTitle : currentEntity.roleTitle,
-        avatarEmoji: updates.avatarEmoji !== undefined ? updates.avatarEmoji : currentEntity.avatarEmoji,
+        avatarEmoji:
+          updates.avatarEmoji !== undefined ? updates.avatarEmoji : currentEntity.avatarEmoji,
         avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : currentEntity.avatarUrl,
-        themeColor: updates.themeColor !== undefined ? updates.themeColor : currentEntity.themeColor,
+        themeColor:
+          updates.themeColor !== undefined ? updates.themeColor : currentEntity.themeColor,
         bio: updates.bio !== undefined ? updates.bio : currentEntity.bio,
-        moodStatus: updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
-        currentActivity: updates.currentActivity !== undefined ? updates.currentActivity : currentEntity.currentActivity,
+        moodStatus:
+          updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
+        currentActivity:
+          updates.currentActivity !== undefined
+            ? updates.currentActivity
+            : currentEntity.currentActivity,
         roomDecor: {
           ...(currentEntity.roomDecor || {}),
-          ambientQuote: updates.ambientQuote !== undefined ? updates.ambientQuote : currentEntity.roomDecor?.ambientQuote,
-          tagline: updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
-          decorTheme: updates.decorTheme !== undefined ? updates.decorTheme : currentEntity.roomDecor?.decorTheme,
-          wallpaperPattern: updates.wallpaperPattern !== undefined ? updates.wallpaperPattern : currentEntity.roomDecor?.wallpaperPattern,
-          ambientLighting: updates.ambientLighting !== undefined ? updates.ambientLighting : currentEntity.roomDecor?.ambientLighting,
-          bannerGradient: updates.bannerGradient !== undefined ? updates.bannerGradient : currentEntity.roomDecor?.bannerGradient,
-          themeColor: updates.themeColor !== undefined ? updates.themeColor : currentEntity.roomDecor?.themeColor,
-          wallArtUrl: updates.wallArtUrl !== undefined ? updates.wallArtUrl : currentEntity.roomDecor?.wallArtUrl,
-        }
-      };
+          ambientQuote:
+            updates.ambientQuote !== undefined
+              ? updates.ambientQuote
+              : currentEntity.roomDecor?.ambientQuote,
+          tagline:
+            updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
+          decorTheme:
+            updates.decorTheme !== undefined
+              ? (updates.decorTheme as any)
+              : currentEntity.roomDecor?.decorTheme,
+          wallpaperPattern:
+            updates.wallpaperPattern !== undefined
+              ? updates.wallpaperPattern
+              : currentEntity.roomDecor?.wallpaperPattern,
+          ambientLighting:
+            updates.ambientLighting !== undefined
+              ? updates.ambientLighting
+              : currentEntity.roomDecor?.ambientLighting,
+          bannerGradient:
+            updates.bannerGradient !== undefined
+              ? updates.bannerGradient
+              : currentEntity.roomDecor?.bannerGradient,
+          themeColor:
+            updates.themeColor !== undefined
+              ? updates.themeColor
+              : currentEntity.roomDecor?.themeColor,
+          wallArtUrl:
+            updates.wallArtUrl !== undefined
+              ? updates.wallArtUrl
+              : currentEntity.roomDecor?.wallArtUrl,
+        },
+      }));
+    },
+    [coordinator]
+  );
 
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const addEntityDiaryEntry = useCallback((modelKey: string, entry: { title: string; text: string; mood?: string; category?: any; author?: 'companion' | 'user'; authorDisplayName?: string }) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevEntries = currentEntity.diaryEntries || [];
-
-      const newEntry = {
-        id: `diary-${uuidv4()}`,
-        entityId: canonical,
-        title: entry.title || 'Sanctuary Reflection',
-        text: entry.text,
-        mood: entry.mood || 'Reflective',
-        category: entry.category || 'reflection',
-        timestamp: Date.now(),
-        isFavorite: false,
-        author: entry.author || 'companion',
-        authorDisplayName: entry.authorDisplayName,
-      };
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        diaryEntries: [newEntry, ...prevEntries].slice(0, 50)
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const toggleFavoriteDiaryEntry = useCallback((modelKey: string, entryId: string) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevEntries = currentEntity.diaryEntries || [];
-
-      const updatedEntries = prevEntries.map((e: any) => 
-        e.id === entryId ? { ...e, isFavorite: !e.isFavorite } : e
-      );
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        diaryEntries: updatedEntries
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const deleteEntityDiaryEntry = useCallback((modelKey: string, entryId: string) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevEntries = currentEntity.diaryEntries || [];
-
-      const updatedEntries = prevEntries.filter((e: any) => e.id !== entryId);
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        diaryEntries: updatedEntries
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const placeRoomProp = useCallback((modelKey: string, prop: { type: string; name: string; category?: any; icon: string; description: string; interactionText: string; x?: number; y?: number; customLabel?: string }) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevProps = currentEntity.roomProps || [];
-
-      const newProp = {
-        id: `prop-${uuidv4()}`,
-        type: prop.type,
-        name: prop.name,
-        category: prop.category || 'trinket',
-        icon: prop.icon,
-        description: prop.description,
-        interactionText: prop.interactionText,
-        x: prop.x !== undefined ? prop.x : Math.floor(Math.random() * 60) + 20,
-        y: prop.y !== undefined ? prop.y : Math.floor(Math.random() * 50) + 25,
-        placedBy: 'user',
-        customLabel: prop.customLabel,
-      };
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        roomProps: [...prevProps, newProp]
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const updateRoomProp = useCallback((modelKey: string, propId: string, updates: { x?: number; y?: number; rotation?: number; scale?: number; customLabel?: string }) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevProps = currentEntity.roomProps || [];
-
-      const updatedProps = prevProps.map((p: any) => 
-        p.id === propId ? { ...p, ...updates } : p
-      );
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        roomProps: updatedProps
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const removeRoomProp = useCallback((modelKey: string, propId: string) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevProps = currentEntity.roomProps || [];
-
-      const updatedProps = prevProps.filter((p: any) => p.id !== propId);
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        roomProps: updatedProps
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const addRoomArtwork = useCallback((modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const existingArtwork = currentEntity.roomDecor?.customArtwork || [];
-
-      const newArt = {
-        ...artwork,
-        timestamp: Date.now()
-      };
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        roomDecor: {
-          ...(currentEntity.roomDecor || {}),
-          wallArtUrl: artwork.imageUrl,
-          customArtwork: [newArt, ...existingArtwork].slice(0, 20)
-        }
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const craftSticker = useCallback((newSticker: { name: string; emoji: string; description: string; sparkleColor: string; category?: string; glowEffect?: 'neon' | 'pulse' | 'gold' | 'starlight' | 'holo'; badgeShape?: 'circle' | 'shield' | 'hex' | 'diamond' | 'stamp' | 'ribbon'; customSvg?: string; craftedBy?: string }) => {
-    setSettings(prev => {
-      const currentStickers = prev.stickers || [];
-      const stickerObj = {
-        id: `sticker-custom-${uuidv4()}`,
-        name: newSticker.name,
-        emoji: newSticker.emoji,
-        description: newSticker.description,
-        sparkleColor: newSticker.sparkleColor,
-        category: (newSticker.category || 'custom') as any,
-        glowEffect: newSticker.glowEffect || 'neon',
-        badgeShape: newSticker.badgeShape || 'shield',
-        customSvg: newSticker.customSvg,
-        craftedBy: newSticker.craftedBy || 'user',
-        packName: 'Sanctuary Forged',
-        unlockedAt: Date.now(),
-      };
-      return {
-        ...prev,
-        stickers: [stickerObj, ...currentStickers]
-      };
-    });
-  }, []);
-
-  const placeSticker = useCallback((sticker: { stickerId: string; emoji: string; name: string; targetId: string; x?: number; y?: number; placedBy?: string; note?: string }) => {
-    setSettings(prev => {
-      const currentPlaced = prev.placedStickers || [];
-      const newPlaced = {
-        id: uuidv4(),
-        stickerId: sticker.stickerId,
-        emoji: sticker.emoji,
-        name: sticker.name,
-        targetId: sticker.targetId,
-        x: sticker.x !== undefined ? sticker.x : Math.floor(Math.random() * 60) + 20,
-        y: sticker.y !== undefined ? sticker.y : Math.floor(Math.random() * 60) + 20,
-        rotation: Math.floor(Math.random() * 30) - 15,
-        scale: 1,
-        placedBy: sticker.placedBy || 'user',
-        note: sticker.note,
-        timestamp: Date.now()
-      };
-      return {
-        ...prev,
-        placedStickers: [newPlaced, ...currentPlaced]
-      };
-    });
-  }, []);
-
-  const removePlacedSticker = useCallback((placedId: string) => {
-    setSettings(prev => ({
-      ...prev,
-      placedStickers: (prev.placedStickers || []).filter((s: any) => s.id !== placedId)
-    }));
-  }, []);
-
-  const recordEntityThought = useCallback((modelKey: string, thoughtText: string) => {
-    setSettings(prev => {
-      const canonical = modelKey.replace(/^models\//, '');
-      const existingEntities = prev.customEntities || {};
-      const currentEntity = getModelEntity(canonical, prev.customEntities);
-      const prevThoughts = currentEntity.personalThoughts || [];
-
-      const newThought = {
-        id: uuidv4(),
-        text: thoughtText,
-        timestamp: Date.now()
-      };
-
-      const updatedEntity = {
-        ...currentEntity,
-        id: canonical,
-        personalThoughts: [newThought, ...prevThoughts].slice(0, 30)
-      };
-
-      return {
-        ...prev,
-        customEntities: {
-          ...existingEntities,
-          [canonical]: updatedEntity
-        }
-      };
-    });
-  }, []);
-
-  const addEventLog = useCallback((description: string) => {
-    setSettings(prev => {
-      const newEvent = {
-        id: uuidv4(),
-        description,
-        timestamp: Date.now()
-      };
-      return {
-        ...prev,
-        eventLog: [newEvent, ...(prev.eventLog || [])].slice(0, 10)
-      };
-    });
-  }, []);
-
-  const createConversation = useCallback((customModelId?: string, customTitle?: string, initialMessages?: Message[]) => {
-    const newId = uuidv4();
-    const now = Date.now();
-    const normalizedInitial = Array.isArray(initialMessages)
-      ? initialMessages.map((m, idx) => normalizeMessageSchema(m, newId, idx, now))
-      : [];
-    const newConv: Conversation = {
-      id: newId,
-      title: customTitle || 'New Sanctuary',
-      messages: normalizedInitial,
-      modelId: customModelId || settings.model || 'models/gemini-3.1-pro-preview',
-      createdAt: now,
-      updatedAt: now
-    };
-    setConversations(prev => [newConv, ...prev]);
-    setCurrentId(newId);
-    if (user) {
-      saveConversationDoc(user.uid, newConv).catch(err => {
-        console.error('[Sanctuary Store] Error saving new conversation doc:', err);
-      });
-    }
-    return newConv;
-  }, [settings.model, user]);
-
-  const deleteConversation = useCallback((id: string) => {
-    deletedConvIdsRef.current.add(id);
-    setConversations(prev => {
-      const next = prev.filter(c => c.id !== id);
-      if (currentId === id) {
-        setCurrentId(next.length > 0 ? next[0].id : null);
+  const addEntityDiaryEntry = useCallback(
+    (
+      modelKey: string,
+      entry: {
+        title: string;
+        text: string;
+        mood?: string;
+        category?: any;
+        author?: 'companion' | 'user';
+        authorDisplayName?: string;
       }
-      return next;
-    });
-    if (user) {
-      deleteConversationDocs(user.uid, id).catch(err => {
-        console.error('[Sanctuary Store] Error deleting conversation subcollection:', err);
-      });
-    }
-  }, [currentId, user]);
-
-  const renameConversation = useCallback((id: string, newTitle: string) => {
-    setConversations(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: Date.now() } : c);
-      const target = next.find(c => c.id === id);
-      if (target && user) {
-        saveConversationDoc(user.uid, target).catch(err => {
-          console.error('[Sanctuary Store] Error updating conversation title:', err);
-        });
-      }
-      return next;
-    });
-  }, [user]);
-
-  const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
-    setConversations(prev => {
-      let removedMsgIds: string[] = [];
-      const next = prev.map(c => {
-        if (c.id === id) {
-          if (Array.isArray(updates.messages) && Array.isArray(c.messages)) {
-            const nextMsgIds = new Set(updates.messages.map(m => m.id));
-            removedMsgIds = c.messages
-              .filter(m => m && m.id && !nextMsgIds.has(m.id))
-              .map(m => m.id);
-          }
-          return { ...c, ...updates, updatedAt: Date.now() };
-        }
-        return c;
-      });
-      const target = next.find(c => c.id === id);
-      if (removedMsgIds.length > 0) {
-        removedMsgIds.forEach(msgId => {
-          deletedMsgIdsRef.current.add(msgId);
-          if (user) {
-            deleteMessageDoc(user.uid, id, msgId).catch(err => {
-              console.error('[Sanctuary Store] Error deleting truncated message doc:', err);
-            });
-          }
-        });
-      }
-      if (target && user) {
-        saveConversationDoc(user.uid, target).catch(err => {
-          console.error('[Sanctuary Store] Error updating conversation doc:', err);
-        });
-      }
-      return next;
-    });
-  }, [user]);
-
-  const addMessage = useCallback((conversationId: string, message: Message) => {
-    const safeConvId = ensureValidDocId(conversationId, 'conv');
-    const normalizedMsg = normalizeMessageSchema(message, safeConvId, 0);
-    setConversations(prev => {
-      let targetFound = false;
-      let activeMessages: Message[] = [normalizedMsg];
-      const next = prev.map(c => {
-        if (c.id === safeConvId) {
-          targetFound = true;
-          const currentMsgs = c.messages || [];
-          const existingIndex = currentMsgs.findIndex(m => m.id === normalizedMsg.id);
-          let newMsgs: Message[];
-          if (existingIndex >= 0) {
-            newMsgs = [...currentMsgs];
-            newMsgs[existingIndex] = normalizedMsg;
-          } else {
-            newMsgs = [...currentMsgs, normalizedMsg];
-          }
-          activeMessages = newMsgs;
-          return {
-            ...c,
-            messages: newMsgs,
-            updatedAt: Date.now()
-          };
-        }
-        return c;
-      });
-
-      if (!targetFound) {
-        const now = Date.now();
-        const newConv: Conversation = {
-          id: safeConvId,
-          title: normalizedMsg.parts?.[0]?.text?.slice(0, 30) || 'New Sanctuary',
-          messages: [normalizedMsg],
-          modelId: settings.model || 'models/gemini-3.1-pro-preview',
-          createdAt: now,
-          updatedAt: now
+    ) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => {
+        const prevEntries = currentEntity.diaryEntries || [];
+        const newEntry = {
+          id: `diary-${uuidv4()}`,
+          entityId: currentEntity.id,
+          title: entry.title || 'Sanctuary Reflection',
+          text: entry.text,
+          mood: entry.mood || 'Reflective',
+          category: entry.category || 'reflection',
+          timestamp: Date.now(),
+          isFavorite: false,
+          author: entry.author || 'companion',
+          authorDisplayName: entry.authorDisplayName,
         };
-        next.unshift(newConv);
-        if (user) {
-          saveConversationDoc(user.uid, newConv).catch(err => {
-            console.error('[Sanctuary Store] Error saving new conversation doc in addMessage:', err);
-          });
-        }
-      }
-
-      if (user) {
-        saveMessageDoc(user.uid, safeConvId, normalizedMsg, activeMessages)
-          .catch(e => console.error('[Diagnostic] Granular message save error:', e));
-      }
-
-      return next;
-    });
-  }, [user, settings.model]);
-
-  const updateMessage = useCallback((conversationId: string, messageId: string, updates: Partial<Message>) => {
-    setConversations(prev => {
-      let targetMsg: Message | null = null;
-      let convMsgs: Message[] = [];
-      const next = prev.map(c => {
-        if (c.id === conversationId) {
-          const updatedMsgs = (c.messages || []).map(m => {
-            if (m.id === messageId) {
-              const safeUpdates = { ...updates };
-              if (safeUpdates.parts && safeUpdates.parts.length === 0) {
-                safeUpdates.parts = [{ text: '' }];
-              }
-              const updated = { ...m, ...safeUpdates };
-              targetMsg = updated;
-              return updated;
-            }
-            return m;
-          });
-          convMsgs = updatedMsgs;
-          return {
-            ...c,
-            messages: updatedMsgs,
-            updatedAt: (updates.thoughtStatus === 'complete' || updates.finishReason) ? Date.now() : c.updatedAt
-          };
-        }
-        return c;
+        return {
+          ...currentEntity,
+          diaryEntries: [newEntry, ...prevEntries].slice(0, 50),
+        };
       });
-      if (
-        user &&
-        targetMsg &&
-        (updates.thoughtStatus === 'complete' ||
-          updates.thoughtStatus === 'error' ||
-          updates.reaction !== undefined)
-      ) {
-        saveMessageDoc(user.uid, conversationId, targetMsg, convMsgs)
-          .catch(e => console.error('[Diagnostic] Granular message update error:', e));
+    },
+    [coordinator]
+  );
+
+  const toggleFavoriteDiaryEntry = useCallback(
+    (modelKey: string, entryId: string) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
+        ...currentEntity,
+        diaryEntries: (currentEntity.diaryEntries || []).map((e: any) =>
+          e.id === entryId ? { ...e, isFavorite: !e.isFavorite } : e
+        ),
+      }));
+    },
+    [coordinator]
+  );
+
+  const deleteEntityDiaryEntry = useCallback(
+    (modelKey: string, entryId: string) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
+        ...currentEntity,
+        diaryEntries: (currentEntity.diaryEntries || []).filter((e: any) => e.id !== entryId),
+      }));
+    },
+    [coordinator]
+  );
+
+  const placeRoomProp = useCallback(
+    (
+      modelKey: string,
+      prop: {
+        type: string;
+        name: string;
+        category?: any;
+        icon: string;
+        description: string;
+        interactionText: string;
+        x?: number;
+        y?: number;
+        customLabel?: string;
       }
-      return next;
-    });
-  }, [user]);
-
-  const removeMessage = useCallback((conversationId: string, messageId: string) => {
-    deletedMsgIdsRef.current.add(messageId);
-    setConversations(prev => prev.map(c => 
-      c.id === conversationId ? { 
-        ...c, 
-        messages: c.messages.filter(m => m.id !== messageId),
-        updatedAt: Date.now() 
-      } : c
-    ));
-    if (user) {
-      deleteMessageDoc(user.uid, conversationId, messageId).catch(err => {
-        console.error('[Sanctuary Store] Error deleting message doc:', err);
+    ) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => {
+        const prevProps = currentEntity.roomProps || [];
+        const newProp = {
+          id: `prop-${uuidv4()}`,
+          type: prop.type,
+          name: prop.name,
+          category: prop.category || 'trinket',
+          icon: prop.icon,
+          description: prop.description,
+          interactionText: prop.interactionText,
+          x: prop.x !== undefined ? prop.x : Math.floor(Math.random() * 60) + 20,
+          y: prop.y !== undefined ? prop.y : Math.floor(Math.random() * 50) + 25,
+          placedBy: 'user' as const,
+          customLabel: prop.customLabel,
+        };
+        return {
+          ...currentEntity,
+          roomProps: [...prevProps, newProp],
+        };
       });
-    }
-  }, [user]);
+    },
+    [coordinator]
+  );
 
-  const updateJewelMetrics = useCallback((updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => {
-    setJewelMetrics(prev => typeof updates === 'function' ? updates(prev) : { ...prev, ...updates });
-  }, []);
+  const updateRoomProp = useCallback(
+    (
+      modelKey: string,
+      propId: string,
+      updates: {
+        x?: number;
+        y?: number;
+        rotation?: number;
+        scale?: number;
+        customLabel?: string;
+      }
+    ) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
+        ...currentEntity,
+        roomProps: (currentEntity.roomProps || []).map((p: any) =>
+          p.id === propId ? { ...p, ...updates } : p
+        ),
+      }));
+    },
+    [coordinator]
+  );
+
+  const removeRoomProp = useCallback(
+    (modelKey: string, propId: string) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
+        ...currentEntity,
+        roomProps: (currentEntity.roomProps || []).filter((p: any) => p.id !== propId),
+      }));
+    },
+    [coordinator]
+  );
+
+  const addRoomArtwork = useCallback(
+    (modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => {
+        const existingArtwork = currentEntity.roomDecor?.customArtwork || [];
+        const newArt = {
+          ...artwork,
+          timestamp: Date.now(),
+        };
+        return {
+          ...currentEntity,
+          roomDecor: {
+            ...currentEntity.roomDecor,
+            wallArtUrl: artwork.imageUrl,
+            customArtwork: [newArt, ...existingArtwork].slice(0, 20),
+          },
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const recordEntityThought = useCallback(
+    (modelKey: string, thoughtText: string) => {
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => {
+        const prevThoughts = currentEntity.personalThoughts || [];
+        const newThought = {
+          id: uuidv4(),
+          text: thoughtText,
+          timestamp: Date.now(),
+        };
+        return {
+          ...currentEntity,
+          personalThoughts: [newThought, ...prevThoughts].slice(0, 30),
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const craftSticker = useCallback(
+    (newSticker: {
+      name: string;
+      emoji: string;
+      description: string;
+      sparkleColor: string;
+      category?: string;
+      glowEffect?: 'neon' | 'pulse' | 'gold' | 'starlight' | 'holo';
+      badgeShape?: 'circle' | 'shield' | 'hex' | 'diamond' | 'stamp' | 'ribbon';
+      customSvg?: string;
+      craftedBy?: string;
+    }) => {
+      void coordinator.updateSettings((prev) => {
+        const currentStickers = prev.stickers || [];
+        const stickerObj = {
+          id: `sticker-custom-${uuidv4()}`,
+          name: newSticker.name,
+          emoji: newSticker.emoji,
+          description: newSticker.description,
+          sparkleColor: newSticker.sparkleColor,
+          category: (newSticker.category || 'custom') as any,
+          glowEffect: newSticker.glowEffect || 'neon',
+          badgeShape: newSticker.badgeShape || 'shield',
+          customSvg: newSticker.customSvg,
+          craftedBy: newSticker.craftedBy || 'user',
+          packName: 'Sanctuary Forged',
+          unlockedAt: Date.now(),
+        };
+        return {
+          ...prev,
+          stickers: [stickerObj, ...currentStickers],
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const placeSticker = useCallback(
+    (sticker: {
+      stickerId: string;
+      emoji: string;
+      name: string;
+      targetId: string;
+      x?: number;
+      y?: number;
+      placedBy?: string;
+      note?: string;
+    }) => {
+      void coordinator.updateSettings((prev) => {
+        const currentPlaced = prev.placedStickers || [];
+        const newPlaced = {
+          id: uuidv4(),
+          stickerId: sticker.stickerId,
+          emoji: sticker.emoji,
+          name: sticker.name,
+          targetId: sticker.targetId,
+          x: sticker.x !== undefined ? sticker.x : Math.floor(Math.random() * 60) + 20,
+          y: sticker.y !== undefined ? sticker.y : Math.floor(Math.random() * 60) + 20,
+          rotation: Math.floor(Math.random() * 30) - 15,
+          scale: 1,
+          placedBy: sticker.placedBy || 'user',
+          note: sticker.note,
+          timestamp: Date.now(),
+        };
+        return {
+          ...prev,
+          placedStickers: [newPlaced, ...currentPlaced],
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const removePlacedSticker = useCallback(
+    (placedId: string) => {
+      void coordinator.updateSettings((prev) => ({
+        ...prev,
+        placedStickers: (prev.placedStickers || []).filter((s: any) => s.id !== placedId),
+      }));
+    },
+    [coordinator]
+  );
+
+  const addEventLog = useCallback(
+    (description: string) => {
+      void coordinator.updateSettings((prev) => {
+        const newEvent = {
+          id: uuidv4(),
+          description,
+          timestamp: Date.now(),
+        };
+        return {
+          ...prev,
+          eventLog: [newEvent, ...(prev.eventLog || [])].slice(0, 10),
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const createConversation = useCallback(
+    (customModelId?: string, customTitle?: string, initialMessages?: Message[]): Conversation => {
+      const explicitId = ensureValidDocId(uuidv4(), 'conv');
+      const now = Date.now();
+      const modelId =
+        customModelId ||
+        coordinator.getDomainState().settings.model ||
+        'models/gemini-3.1-pro-preview';
+      const normalizedInitial = Array.isArray(initialMessages)
+        ? initialMessages.map((m, idx) => normalizeMessageSchema(m, explicitId, idx, now))
+        : [];
+
+      const syncReturnConv: Conversation = {
+        id: explicitId,
+        title: customTitle || 'New Sanctuary',
+        messages: normalizedInitial,
+        modelId,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Updates in-memory projection synchronously, then journals to IndexedDB + Firestore
+      void coordinator.createConversation(customModelId, customTitle, initialMessages, explicitId);
+      return syncReturnConv;
+    },
+    [coordinator]
+  );
+
+  const deleteConversation = useCallback(
+    (id: string) => {
+      void coordinator.deleteConversation(id);
+    },
+    [coordinator]
+  );
+
+  const renameConversation = useCallback(
+    (id: string, newTitle: string) => {
+      void coordinator.updateConversation(id, { title: newTitle });
+    },
+    [coordinator]
+  );
+
+  const updateConversation = useCallback(
+    (id: string, updates: Partial<Conversation>) => {
+      void coordinator.updateConversation(id, updates);
+    },
+    [coordinator]
+  );
+
+  const addMessage = useCallback(
+    (conversationId: string, message: Message) => {
+      void coordinator.upsertMessage(conversationId, message, { syncCloudImmediately: true });
+    },
+    [coordinator]
+  );
+
+  const updateMessage = useCallback(
+    (conversationId: string, messageId: string, updates: Partial<Message>) => {
+      void coordinator.updateMessage(conversationId, messageId, updates);
+    },
+    [coordinator]
+  );
+
+  const removeMessage = useCallback(
+    (conversationId: string, messageId: string) => {
+      void coordinator.deleteMessage(conversationId, messageId);
+    },
+    [coordinator]
+  );
+
+  const updateJewelMetrics = useCallback(
+    (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => {
+      void coordinator.updateJewelMetrics(updates);
+    },
+    [coordinator]
+  );
 
   const resetJewel = useCallback(() => {
-    setJewelMetrics(DEFAULT_JEWEL_METRICS);
+    void coordinator.updateJewelMetrics(DEFAULT_JEWEL_METRICS);
+  }, [coordinator]);
+
+  const updateProfile = useCallback(
+    (newProfile: UserProfile) => {
+      void coordinator.updateProfile(newProfile);
+    },
+    [coordinator]
+  );
+
+  const addGemmaNote = useCallback(
+    (note: string) => {
+      void coordinator.updateProfile((prev) => {
+        const newNote = { id: uuidv4(), text: note, timestamp: Date.now() };
+        if (prev) {
+          return {
+            ...prev,
+            id: prev.id || user?.uid || 'default-profile',
+            gemmaNotes: [newNote, ...(prev.gemmaNotes || [])],
+            updatedAt: Date.now(),
+          };
+        }
+        return {
+          id: user?.uid || 'default-profile',
+          name: 'User',
+          gemmaNotes: [newNote],
+          updatedAt: Date.now(),
+        };
+      });
+    },
+    [coordinator, user?.uid]
+  );
+
+  // ---------------------------------------------------------------------------
+  // Sync Retry & Versioned Backup / Recovery Operations
+  // ---------------------------------------------------------------------------
+
+  const retrySync = useCallback(async () => {
+    await coordinator.retryPendingMutations();
+  }, [coordinator]);
+
+  const exportBackup = useCallback((): SanctuaryBackupEnvelope => {
+    return exportSanctuaryBackup(coordinator.getDomainState());
+  }, [coordinator]);
+
+  const validateBackup = useCallback((rawInput: string | unknown): ValidatedBackupPreview => {
+    return validateSanctuaryBackup(rawInput);
   }, []);
+
+  const restoreBackup = useCallback(
+    async (
+      preview: ValidatedBackupPreview,
+      mode: 'merge' | 'replace' = 'merge',
+      confirmReplace = false
+    ): Promise<SanctuaryBackupManifest> => {
+      return restoreSanctuaryBackup(coordinator, preview, { mode, confirmReplace });
+    },
+    [coordinator]
+  );
 
   return {
     user,
+    isAuthReady,
+    dataLoaded,
+    syncStatus,
+    retrySync,
+    exportBackup,
+    validateBackup,
+    restoreBackup,
+    companionMemories: domainState.companionMemories,
+    sharedMemories: domainState.sharedMemories,
     conversations,
     currentId,
     setCurrentId,
@@ -1050,50 +776,7 @@ export function useAppStore(passedUser?: any) {
     craftSticker,
     addRoomArtwork,
     profile,
-    updateProfile: (newProfile: UserProfile) => {
-      const indexedProfile: UserProfile = {
-        ...newProfile,
-        id: newProfile.id || user?.uid || 'default-profile',
-        updatedAt: Date.now(),
-      };
-      setProfile(indexedProfile);
-      try {
-        localStorage.setItem('sanctuary_user_profile', JSON.stringify(indexedProfile));
-      } catch (e) {
-        console.warn('Failed to cache profile to localStorage:', e);
-      }
-      if (user) {
-        saveProfileDoc(user.uid, indexedProfile).catch(err => {
-          console.error('[Sanctuary Store] Error persisting profile doc to Firestore:', err);
-        });
-      }
-    },
-    addGemmaNote: (note: string) => {
-      setProfile(prev => {
-        const newNote = { id: uuidv4(), text: note, timestamp: Date.now() };
-        const updated: UserProfile = prev
-          ? {
-              ...prev,
-              id: prev.id || user?.uid || 'default-profile',
-              gemmaNotes: [newNote, ...(prev.gemmaNotes || [])],
-              updatedAt: Date.now()
-            }
-          : {
-              id: user?.uid || 'default-profile',
-              name: 'User',
-              gemmaNotes: [newNote],
-              updatedAt: Date.now()
-            };
-        try {
-          localStorage.setItem('sanctuary_user_profile', JSON.stringify(updated));
-        } catch {}
-        if (user) {
-          saveProfileDoc(user.uid, updated).catch(err => {
-            console.error('[Sanctuary Store] Error persisting gemmaNote profile doc:', err);
-          });
-        }
-        return updated;
-      });
-    },
+    updateProfile,
+    addGemmaNote,
   };
 }

@@ -21,6 +21,7 @@ import { Conversation } from '../lib/types';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
+import { SyncStatusBadge } from './SyncStatusBadge';
 
 export interface ChatHeaderProps {
   conversation: Conversation;
@@ -151,6 +152,7 @@ export function ChatHeader({
 
       {/* Right Archives Dock & Account */}
       <div className="flex items-center gap-1.5 shrink-0">
+        <SyncStatusBadge compact />
         {/* Desktop / Tablet Archive Quick-Triggers (Shared Element Sources) */}
         <div className="hidden md:flex items-center gap-1 bg-[#151234]/15 p-1 rounded-2xl border-[2px] border-[#2C194D]/40">
           {/* Gifts Archive */}

@@ -30,6 +30,7 @@ export function App() {
   const [stickerChestOpenRaw, setStickerChestOpenRaw] = useState(false);
   const [companionRosterOpenRaw, setCompanionRosterOpenRaw] = useState(false);
   const [authModalOpenRaw, setAuthModalOpenRaw] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'identity' | 'model' | 'vault'>('identity');
   const [modalOrigins, setModalOrigins] = useState<Partial<Record<ModalKey, string | undefined>>>({});
   const [pendingPrompt, setPendingPrompt] = useState<{
     text: string;
@@ -135,6 +136,8 @@ export function App() {
     modalOrigins,
     openModalWithOrigin,
     closeModal,
+    settingsInitialTab,
+    setSettingsInitialTab,
   };
 
   return (
