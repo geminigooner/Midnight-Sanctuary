@@ -6,7 +6,7 @@ import {
   Smile, ShieldCheck, Music
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { getMotion } from '../lib/motion';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { getModelVisibleGifts } from '../lib/giftSystem';
@@ -19,6 +19,7 @@ import { ScribbleCard } from './ScribbleCard';
 import { CompanionAvatar } from './CompanionAvatar';
 import { compressImage } from '../lib/imageUtils';
 import { triggerHaptic } from '../lib/haptics';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 type QuartersTab = 'chamber' | 'themes' | 'diary' | 'vault' | 'persona';
 
@@ -51,11 +52,12 @@ const FALLBACK_ENTITY: ModelEntity = {
 
 export function EntityQuartersModal() {
   const store = useStore();
-  const { setEntityQuartersOpen, setStickerChestOpen } = (useUI() || {}) as any;
+  const ui = useUI();
+  const originId = ui?.modalOrigins?.entityQuarters;
   const { settings, gifts, conversations } = store || {};
 
   const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('heavy', reducedMotion);
+  const sharedTransition = getMotion('shared', reducedMotion);
 
   const rawEntities = getAllEntities(settings?.customEntities);
   const entities = Array.isArray(rawEntities) && rawEntities.length > 0 ? rawEntities : [FALLBACK_ENTITY];
@@ -176,7 +178,7 @@ export function EntityQuartersModal() {
     store.updateSettings({ model: entity.apiModelId });
     const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName}`);
     store.setCurrentId(newConv.id);
-    setEntityQuartersOpen(false);
+    ui.closeModal('entityQuarters');
   };
 
   const handleRemoveSticker = (placedId: string) => {
@@ -303,25 +305,21 @@ export function EntityQuartersModal() {
   });
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151234]/90 backdrop-blur-md select-none"
-    >
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        transition={modalMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col relative overflow-hidden text-[#F5E1C8]"
+    <>
+      <SharedModalShell
+        originId={originId}
+        onClose={() => ui.closeModal('entityQuarters')}
+        panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col relative overflow-hidden text-[#F5E1C8] select-none"
       >
         {/* ── HEADER ── */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2C194D] flex items-center justify-center text-2xl shadow-[2px_2px_0_#2C194D]">
+            <SharedModalIcon
+              originId={originId}
+              className="w-11 h-11 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2C194D] flex items-center justify-center text-2xl shadow-[2px_2px_0_#2C194D] shrink-0"
+            >
               🏛️
-            </div>
+            </SharedModalIcon>
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-[#F5E1C8] tracking-tight font-serif flex items-center gap-2">
                 Sanctuary Quarters
@@ -329,11 +327,11 @@ export function EntityQuartersModal() {
                   Living Chamber
                 </span>
               </h2>
-              <p className="text-xs font-bold text-[#B39DE5]">Explore & customize the personal sanctums of your anchors</p>
+              <p className="text-xs font-bold text-[#B39DE5]">Explore &amp; customize the personal sanctums of your anchors</p>
             </div>
           </div>
           <button 
-            onClick={() => setEntityQuartersOpen(false)} 
+            onClick={() => ui.closeModal('entityQuarters')} 
             className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[2.5px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
             title="Close Quarters"
           >
@@ -341,8 +339,9 @@ export function EntityQuartersModal() {
           </button>
         </div>
 
-        {/* ── COMPANION SELECTOR TABS ── */}
-        <div className="flex border-b-[3px] border-[#2C194D] bg-[#20153B] overflow-x-auto custom-scrollbar p-2 gap-2 shrink-0">
+        <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* ── COMPANION SELECTOR TABS ── */}
+          <div className="flex border-b-[3px] border-[#2C194D] bg-[#20153B] overflow-x-auto custom-scrollbar p-2 gap-2 shrink-0">
           {entities.map(entity => {
             const isSelected = entity.id === selectedEntityId;
             const isLive = resolvedCurrent?.identityId === entity.id || currentModelId.includes(entity.id);
@@ -503,23 +502,41 @@ export function EntityQuartersModal() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    <button
+                    <motion.button
                       type="button"
+                      layoutId={resolveSharedLayoutId('quarters-furnish-catalog', reducedMotion)}
+                      transition={{ layout: sharedTransition }}
+                      style={{ borderRadius: 16 }}
                       onClick={() => setShowCatalogModal(true)}
-                      className="px-3.5 py-2.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] hover:bg-[#f7e5cb]/90 active:translate-y-0.5 flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="px-3.5 py-2.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] hover:bg-[#f7e5cb]/90 active:translate-y-0.5 flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <Plus size={14} strokeWidth={2.5} />
+                      <motion.span
+                        layoutId={resolveSharedLayoutId('quarters-furnish-catalog', reducedMotion, 'icon')}
+                        transition={{ layout: sharedTransition }}
+                        className="flex items-center justify-center"
+                      >
+                        <Plus size={14} strokeWidth={2.5} />
+                      </motion.span>
                       <span>Furnish Chamber</span>
-                    </button>
+                    </motion.button>
 
-                    <button
+                    <motion.button
                       type="button"
-                      onClick={() => setStickerChestOpen(true)}
-                      className="px-3.5 py-2.5 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center gap-1.5 transition-all cursor-pointer"
+                      layoutId={resolveSharedLayoutId('quarters-stick-seal', reducedMotion)}
+                      transition={{ layout: sharedTransition }}
+                      style={{ borderRadius: 16 }}
+                      onClick={() => ui.openModalWithOrigin('stickerChest', 'quarters-stick-seal')}
+                      className="px-3.5 py-2.5 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <Tag size={14} />
+                      <motion.span
+                        layoutId={resolveSharedLayoutId('quarters-stick-seal', reducedMotion, 'icon')}
+                        transition={{ layout: sharedTransition }}
+                        className="flex items-center justify-center"
+                      >
+                        <Tag size={14} />
+                      </motion.span>
                       <span>Stick Seal</span>
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
 
@@ -1229,63 +1246,76 @@ export function EntityQuartersModal() {
             </div>
           )}
 
-        </div>
-
-        {/* ── FURNISHINGS CATALOG MODAL ── */}
-        {showCatalogModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-[#151234]/80 backdrop-blur-sm">
-            <div className="bg-[#f7e5cb] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-lg p-5 text-[#2C194D] max-h-[85vh] flex flex-col">
-              <div className="flex items-center justify-between pb-3 border-b-2 border-[#2C194D] shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">🛋️</span>
-                  <h4 className="text-base font-black">Chamber Furnishings Catalog</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowCatalogModal(false)}
-                  className="p-1 rounded-xl hover:bg-[#F198B7] text-[#2C194D] border border-transparent hover:border-[#2C194D]"
-                >
-                  <X size={18} strokeWidth={2.5} />
-                </button>
-              </div>
-
-              <div className="py-3 overflow-y-auto space-y-2.5 custom-scrollbar flex-1">
-                {ROOM_PROPS_CATALOG.map(item => (
-                  <div
-                    key={item.type}
-                    className="p-3 rounded-2xl bg-[#151234] border-2 border-[#2C194D] text-[#f7e5cb] flex items-center justify-between gap-3 shadow-sm"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center text-xl shrink-0">
-                        {item.icon}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h6 className="text-xs font-black truncate text-[#f7e5cb]">{item.name}</h6>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#2C194D] text-[#B39DE5] capitalize">
-                            {item.category}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-[#B39DE5] line-clamp-1 mt-0.5">
-                          {item.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAddPropFromCatalog(item)}
-                      className="px-3 py-1.5 rounded-xl bg-[#F198B7] hover:bg-[#eb86aa] border-2 border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 shrink-0 cursor-pointer"
-                    >
-                      Place in Room
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
+        </SharedModalBody>
+      </SharedModalShell>
+
+      {/* ── FURNISHINGS CATALOG SUB-MODAL (SHARED ELEMENT MORPH) ── */}
+      <AnimatePresence>
+        {showCatalogModal && (
+          <SharedModalShell
+            key="quarters-furnishings-catalog"
+            originId="quarters-furnish-catalog"
+            onClose={() => setShowCatalogModal(false)}
+            zIndexClassName="z-[60]"
+            panelClassName="bg-[#f7e5cb] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-lg p-5 text-[#2C194D] max-h-[85vh] flex flex-col select-none overflow-hidden"
+          >
+            <div className="flex items-center justify-between pb-3 border-b-2 border-[#2C194D] shrink-0">
+              <div className="flex items-center gap-2.5">
+                <SharedModalIcon
+                  originId="quarters-furnish-catalog"
+                  borderRadius={12}
+                  className="w-9 h-9 rounded-xl bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center text-lg shadow-[2px_2px_0_#2C194D] shrink-0"
+                >
+                  🛋️
+                </SharedModalIcon>
+                <h4 className="text-base font-black">Chamber Furnishings Catalog</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCatalogModal(false)}
+                className="p-1.5 rounded-xl hover:bg-[#F198B7] text-[#2C194D] border border-transparent hover:border-[#2C194D] cursor-pointer"
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <SharedModalBody className="py-3 overflow-y-auto space-y-2.5 custom-scrollbar flex-1">
+              {ROOM_PROPS_CATALOG.map(item => (
+                <div
+                  key={item.type}
+                  className="p-3 rounded-2xl bg-[#151234] border-2 border-[#2C194D] text-[#f7e5cb] flex items-center justify-between gap-3 shadow-sm"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-[#9D7FE3] border-[2px] border-[#2C194D] flex items-center justify-center text-xl shrink-0">
+                      {item.icon}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h6 className="text-xs font-black truncate text-[#f7e5cb]">{item.name}</h6>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#2C194D] text-[#B39DE5] capitalize">
+                          {item.category}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-[#B39DE5] line-clamp-1 mt-0.5">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAddPropFromCatalog(item)}
+                    className="px-3 py-1.5 rounded-xl bg-[#F198B7] hover:bg-[#eb86aa] border-2 border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 shrink-0 cursor-pointer"
+                  >
+                    Place in Room
+                  </button>
+                </div>
+              ))}
+            </SharedModalBody>
+          </SharedModalShell>
         )}
-      </motion.div>
-    </motion.div>
+      </AnimatePresence>
+    </>
   );
 }

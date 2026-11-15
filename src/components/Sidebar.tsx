@@ -3,14 +3,14 @@ import { Conversation } from '../lib/types';
 import { Plus, ShieldCheck, LogIn, LogOut, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
-import { getMotion } from '../lib/motion';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { getModelEntity } from '../lib/entitySystem';
 import { CompanionAvatar } from './CompanionAvatar';
 
 export function Sidebar() {
   const store = useStore();
-  const { setSidebarOpen, setCompanionRosterOpen, setAuthModalOpen } = useUI();
+  const { setSidebarOpen, setCompanionRosterOpen, setAuthModalOpen, openModalWithOrigin } = useUI();
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -31,6 +31,7 @@ export function Sidebar() {
   const reducedMotion = useReducedMotion();
   const listMotion = getMotion('standard', reducedMotion);
   const viewMotion = getMotion('heavy', reducedMotion);
+  const sharedMotion = getMotion('shared', reducedMotion);
 
   const startEdit = (c: Conversation) => {
     setEditingId(c.id);
@@ -54,21 +55,43 @@ export function Sidebar() {
   };
 
   const handleNew = () => {
-    setCompanionRosterOpen(true);
-    if (window.innerWidth < 1024) setSidebarOpen(false);
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      openModalWithOrigin('companionRoster', 'sidebar-new-sanctuary');
+    } else {
+      setSidebarOpen(false);
+      setCompanionRosterOpen(true);
+    }
+  };
+
+  const handleOpenAuth = () => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      openModalWithOrigin('authModal', 'sidebar-auth');
+    } else {
+      setSidebarOpen(false);
+      setAuthModalOpen(true);
+    }
   };
 
   return (
     <div className="flex flex-col h-full bg-[#151234] border-r-[3px] border-[#2C194D] w-full relative">
       <div className="p-4 border-b-[3px] border-[#2C194D] flex flex-col gap-3 z-10 shrink-0">
         <div className="flex gap-2">
-          <button 
+          <motion.button 
+            layoutId={resolveSharedLayoutId('sidebar-new-sanctuary', reducedMotion)}
+            transition={{ layout: sharedMotion }}
+            style={{ borderRadius: 20 }}
             onClick={handleNew}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all text-[#2C194D] font-bold text-base tracking-tight"
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-[#F198B7] border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-colors text-[#2C194D] font-bold text-base tracking-tight cursor-pointer"
           >
-            <Plus size={18} />
+            <motion.span
+              layoutId={resolveSharedLayoutId('sidebar-new-sanctuary', reducedMotion, 'icon')}
+              transition={{ layout: sharedMotion }}
+              className="flex items-center justify-center"
+            >
+              <Plus size={18} />
+            </motion.span>
             <span>New Sanctuary</span>
-          </button>
+          </motion.button>
           <button 
             onClick={() => {
               store.setCurrentId(null);
@@ -211,9 +234,12 @@ export function Sidebar() {
       {/* Sanctuary Auth Badge & Profile Bottom Bar */}
       <div className="p-3 border-t-[3px] border-[#2C194D] bg-[#1a1640] shrink-0 z-10">
         {store.user ? (
-          <div 
-            onClick={() => setAuthModalOpen(true)}
-            className="flex items-center gap-2.5 p-2 rounded-2xl bg-[#9D7FE3]/20 hover:bg-[#9D7FE3]/30 border-[2px] border-[#2C194D] cursor-pointer transition-all shadow-[2px_2px_0_#2C194D]"
+          <motion.div 
+            layoutId={resolveSharedLayoutId('sidebar-auth', reducedMotion)}
+            transition={{ layout: sharedMotion }}
+            style={{ borderRadius: 16 }}
+            onClick={handleOpenAuth}
+            className="flex items-center gap-2.5 p-2 rounded-2xl bg-[#9D7FE3]/20 hover:bg-[#9D7FE3]/30 border-[2px] border-[#2C194D] cursor-pointer transition-colors shadow-[2px_2px_0_#2C194D]"
           >
             {store.user.photoURL ? (
               <img
@@ -236,19 +262,33 @@ export function Sidebar() {
               </div>
               <p className="text-[10px] font-semibold text-[#B39DE5] truncate">{store.user.email}</p>
             </div>
-            <div className="w-7 h-7 rounded-xl bg-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shrink-0 shadow-[1px_1px_0_#2C194D]">
+            <motion.div
+              layoutId={resolveSharedLayoutId('sidebar-auth', reducedMotion, 'icon')}
+              transition={{ layout: sharedMotion }}
+              style={{ borderRadius: 12 }}
+              className="w-7 h-7 rounded-xl bg-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shrink-0 shadow-[1px_1px_0_#2C194D]"
+            >
               <ShieldCheck size={14} strokeWidth={2.5} />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         ) : (
-          <button
+          <motion.button
             type="button"
-            onClick={() => setAuthModalOpen(true)}
-            className="w-full py-2.5 px-3 rounded-2xl bg-[#F198B7] hover:bg-[#eb86aa] border-[2.5px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2 transition-all cursor-pointer"
+            layoutId={resolveSharedLayoutId('sidebar-auth', reducedMotion)}
+            transition={{ layout: sharedMotion }}
+            style={{ borderRadius: 16 }}
+            onClick={handleOpenAuth}
+            className="w-full py-2.5 px-3 rounded-2xl bg-[#F198B7] hover:bg-[#eb86aa] border-[2.5px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
-            <LogIn size={15} strokeWidth={2.5} />
+            <motion.span
+              layoutId={resolveSharedLayoutId('sidebar-auth', reducedMotion, 'icon')}
+              transition={{ layout: sharedMotion }}
+              className="flex items-center justify-center"
+            >
+              <LogIn size={15} strokeWidth={2.5} />
+            </motion.span>
             <span>Sign In to Sanctuary</span>
-          </button>
+          </motion.button>
         )}
       </div>
     </div>

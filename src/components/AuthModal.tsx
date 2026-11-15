@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { X, ShieldCheck, LogIn, LogOut, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import { auth, googleProvider, signInWithPopup, signOut } from '../lib/firebase';
 import { useStore, useUI } from '../context/AppContext';
 import { triggerHaptic } from '../lib/haptics';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export const AuthModal: React.FC = () => {
   const store = useStore();
   const ui = useUI();
+  const originId = ui.modalOrigins.authModal;
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -45,42 +46,36 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/85 backdrop-blur-md"
-      onClick={() => ui.setAuthModalOpen(false)}
+    <SharedModalShell
+      originId={originId}
+      onClose={() => ui.closeModal('authModal')}
+      panelClassName="bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-md flex flex-col overflow-hidden text-[#2C194D]"
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="bg-[#F5E1C8] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-md flex flex-col overflow-hidden text-[#2C194D]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b-[3px] border-[#2C194D] bg-[#9D7FE3]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
-              <ShieldCheck size={20} strokeWidth={2.5} />
-            </div>
-            <div>
-              <h2 className="text-lg font-extrabold text-[#2C194D] leading-tight">Sanctuary Gate</h2>
-              <p className="text-[11px] font-bold text-[#2C194D]/75">Firebase Single-User Authentication</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => ui.setAuthModalOpen(false)}
-            className="p-2 text-[#2C194D] hover:bg-[#F198B7] border-[2px] border-[#2C194D] rounded-xl transition-all shadow-[2px_2px_0_#2C194D] cursor-pointer"
+      {/* Header */}
+      <div className="flex items-center justify-between p-5 border-b-[3px] border-[#2C194D] bg-[#9D7FE3]">
+        <div className="flex items-center gap-2.5">
+          <SharedModalIcon
+            originId={originId}
+            className="w-9 h-9 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
           >
-            <X size={18} strokeWidth={2.5} />
-          </button>
+            <ShieldCheck size={20} strokeWidth={2.5} />
+          </SharedModalIcon>
+          <div>
+            <h2 className="text-lg font-extrabold text-[#2C194D] leading-tight">Sanctuary Gate</h2>
+            <p className="text-[11px] font-bold text-[#2C194D]/75">Firebase Single-User Authentication</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => ui.closeModal('authModal')}
+          className="p-2 text-[#2C194D] hover:bg-[#F198B7] border-[2px] border-[#2C194D] rounded-xl transition-all shadow-[2px_2px_0_#2C194D] cursor-pointer"
+        >
+          <X size={18} strokeWidth={2.5} />
+        </button>
+      </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-5">
+      {/* Body */}
+      <SharedModalBody className="p-6 space-y-5">
           {currentUser ? (
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-[#F198B7]/30 border-[2px] border-[#2C194D] flex items-center gap-3.5 shadow-[2px_2px_0_#2C194D]">
@@ -160,8 +155,7 @@ export const AuthModal: React.FC = () => {
               </button>
             </div>
           )}
-        </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 };

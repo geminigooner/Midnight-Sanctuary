@@ -1,24 +1,26 @@
 import React, { useState } from 'react';
 import { X, Gift, Sparkles, Tag, Plus } from 'lucide-react';
 import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
-import { getMotion } from '../lib/motion';
-import { getModelVisibleGifts, getLegacyOrOtherModelGifts, normalizeModelNamespace } from '../lib/giftSystem';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
+import { getModelVisibleGifts, getLegacyOrOtherModelGifts } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { useStore, useUI } from '../context/AppContext';
 import { ScribbleCard } from './ScribbleCard';
 import { MusicGiftCard } from './MusicGiftCard';
 import { PlacedSticker } from '../lib/stickerSystem';
 import { StickerBadge } from './CraftStickerModal';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export function GiftsArchive() {
   const store = useStore();
-  const { setGiftsOpen, setStickerChestOpen } = useUI();
+  const { closeModal, openModalWithOrigin, modalOrigins } = useUI();
   const { gifts, settings } = store;
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ id: string; url: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
   const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('heavy', reducedMotion);
+  const sharedTransition = getMotion('shared', reducedMotion);
+  const originId = modalOrigins.gifts;
 
   const activeConv = store.conversations.find(c => c.id === store.currentId);
   const activeModelId = activeConv?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
@@ -34,38 +36,37 @@ export function GiftsArchive() {
 
   return (
     <>
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+      <SharedModalShell
+        originId={originId}
+        onClose={() => closeModal('gifts')}
+        panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden"
       >
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={modalMotion}
-          className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden"
-        >
-          <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
-                <Gift size={20} />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Gifts Archive</h2>
-                <p className="text-sm font-bold text-[#B39DE5]">Moments held onto with {activeModelDisplayName}</p>
-              </div>
+        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
+          <div className="flex items-center gap-3">
+            <SharedModalIcon
+              originId={originId}
+              className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
+            >
+              <Gift size={20} />
+            </SharedModalIcon>
+            <div>
+              <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Gifts Archive</h2>
+              <p className="text-sm font-bold text-[#B39DE5]">Moments held onto with {activeModelDisplayName}</p>
             </div>
-            <button onClick={() => setGiftsOpen(false)} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
-              <X size={20} />
-            </button>
           </div>
+          <button
+            onClick={() => closeModal('gifts')}
+            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-          <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar">
+        <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar shrink-0">
             <button
               onClick={() => setActiveTab('current')}
-              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'current'
                   ? 'bg-[#F198B7] text-[#2C194D]'
                   : 'text-[#B39DE5] hover:text-[#F5E1C8]'
@@ -75,7 +76,7 @@ export function GiftsArchive() {
             </button>
             <button
               onClick={() => setActiveTab('all')}
-              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+              className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'all'
                   ? 'bg-[#F198B7] text-[#2C194D]'
                   : 'text-[#B39DE5] hover:text-[#F5E1C8]'
@@ -181,10 +182,18 @@ export function GiftsArchive() {
                         </div>
 
                         {gift.inlineData && (
-                          <img
+                          <motion.img
+                            layoutId={resolveSharedLayoutId(`gift-photo-${gift.id}`, reducedMotion)}
+                            transition={{ layout: sharedTransition }}
+                            style={{ borderRadius: 12 }}
                             src={`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`}
                             alt="Gift attachment"
-                            onClick={() => setSelectedImage(`data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`)}
+                            onClick={() =>
+                              setSelectedImage({
+                                id: gift.id,
+                                url: `data:${gift.inlineData.mimeType};base64,${gift.inlineData.data}`,
+                              })
+                            }
                             className="w-full h-36 object-cover rounded-xl border-[2px] border-[#2C194D] mb-2 cursor-pointer hover:opacity-95 transition-opacity"
                           />
                         )}
@@ -199,14 +208,23 @@ export function GiftsArchive() {
                           </p>
                         ) : <div />}
 
-                        <button
-                          onClick={() => setStickerChestOpen(true)}
-                          className="px-2 py-1 rounded-lg bg-[#2C194D]/10 hover:bg-[#2C194D] text-[#2C194D] hover:text-[#F5E1C8] text-[10px] font-black flex items-center gap-1 transition-colors"
+                        <motion.button
+                          layoutId={resolveSharedLayoutId(`gift-card-stick-${gift.id}`, reducedMotion)}
+                          transition={{ layout: sharedTransition }}
+                          style={{ borderRadius: 8 }}
+                          onClick={() => openModalWithOrigin('stickerChest', `gift-card-stick-${gift.id}`)}
+                          className="px-2 py-1 rounded-lg bg-[#2C194D]/10 hover:bg-[#2C194D] text-[#2C194D] hover:text-[#F5E1C8] text-[10px] font-black flex items-center gap-1 transition-colors cursor-pointer"
                           title="Stick seal onto this gift"
                         >
-                          <Tag size={10} />
+                          <motion.span
+                            layoutId={resolveSharedLayoutId(`gift-card-stick-${gift.id}`, reducedMotion, 'icon')}
+                            transition={{ layout: sharedTransition }}
+                            className="flex items-center justify-center"
+                          >
+                            <Tag size={10} />
+                          </motion.span>
                           <span>Stick Badge</span>
-                        </button>
+                        </motion.button>
                       </div>
                     </div>
                   );
@@ -214,8 +232,8 @@ export function GiftsArchive() {
               </div>
             )}
           </div>
-        </motion.div>
-      </motion.div>
+        </SharedModalBody>
+      </SharedModalShell>
 
       <AnimatePresence>
         {selectedImage && (
@@ -226,14 +244,14 @@ export function GiftsArchive() {
             onClick={() => setSelectedImage(null)}
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#151234]/95 backdrop-blur-md cursor-pointer"
           >
-            <button className="absolute top-6 right-6 p-2 text-[#2C194D] hover:text-white transition-colors bg-white/10 rounded-full">
+            <button className="absolute top-6 right-6 p-2 text-[#F5E1C8] hover:text-white transition-colors bg-white/10 rounded-full cursor-pointer">
               <X size={24} />
             </button>
             <motion.img
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              src={selectedImage}
+              layoutId={resolveSharedLayoutId(`gift-photo-${selectedImage.id}`, reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 12 }}
+              src={selectedImage.url}
               alt="Full size gift"
               className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}

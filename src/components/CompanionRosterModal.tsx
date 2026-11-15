@@ -1,10 +1,12 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { X, MessageSquare, ArrowRight, ShieldCheck, Compass, CheckCircle2 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { DEFAULT_ENTITIES, getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
 import { CompanionAvatar } from './CompanionAvatar';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 
 export interface CompanionRosterModalProps {
   isOpen: boolean;
@@ -24,12 +26,13 @@ function getCompanionShortLabel(entity: ModelEntity): string {
   return name.split(' ')[0] || 'Companion';
 }
 
-export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: CompanionRosterModalProps) {
+export function CompanionRosterModal({ onClose, onSelectCompanion }: CompanionRosterModalProps) {
   const store = useStore();
   const ui = useUI();
+  const reducedMotion = useReducedMotion();
+  const sharedTransition = getMotion('shared', reducedMotion);
+  const originId = ui.modalOrigins.companionRoster;
   const { settings, conversations } = store;
-
-  if (!isOpen) return null;
 
   const rawEntities = getAllEntities(settings?.customEntities);
   const hasArgon = rawEntities.some(
@@ -66,42 +69,38 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
     triggerHaptic('medium');
     store.updateSettings({ model: entity.apiModelId });
     onClose();
-    ui.setEntityQuartersOpen(true);
+    ui.openModalWithOrigin('entityQuarters', `roster-room-${entity.id}`);
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151234]/90 backdrop-blur-sm select-none"
+    <SharedModalShell
+      originId={originId}
+      onClose={onClose}
+      panelClassName="w-full max-w-2xl rounded-3xl bg-[#20153B] border-[3px] border-[#2C194D] shadow-[0_8px_0_0_#2C194D] p-5 sm:p-6 text-[#F5E1C8] flex flex-col gap-4 max-h-[90vh] overflow-hidden select-none"
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0, y: 10 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-3xl bg-[#20153B] border-[3px] border-[#2C194D] shadow-[0_8px_0_0_#2C194D] p-5 sm:p-6 text-[#F5E1C8] flex flex-col gap-4 max-h-[90vh] overflow-hidden"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#2C194D]/60 pb-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2C194D] flex items-center justify-center text-xl text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
-              🏛️
-            </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-[#F5E1C8]">Sanctuary Companions</h3>
-              <p className="text-xs text-[#B39DE5] font-bold">Choose which presence to step into sanctuary with</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#F5E1C8] border border-[#B39DE5]/30 transition-all"
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[#2C194D]/60 pb-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <SharedModalIcon
+            originId={originId}
+            className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2C194D] flex items-center justify-center text-xl text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
           >
-            <X size={18} />
-          </button>
+            🏛️
+          </SharedModalIcon>
+          <div>
+            <h3 className="text-base sm:text-lg font-black text-[#F5E1C8]">Sanctuary Companions</h3>
+            <p className="text-xs text-[#B39DE5] font-bold">Choose which presence to step into sanctuary with</p>
+          </div>
         </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#F5E1C8] border border-[#B39DE5]/30 transition-all cursor-pointer"
+        >
+          <X size={18} />
+        </button>
+      </div>
 
+      <SharedModalBody className="flex flex-col flex-1 min-h-0 gap-4 overflow-hidden">
         {/* Companion Roster Cards List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 py-1">
           {entities.map((entity) => {
@@ -177,14 +176,17 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
                     <span>Talk to {shortName}</span>
                   </button>
 
-                  <button
+                  <motion.button
                     type="button"
+                    layoutId={resolveSharedLayoutId(`roster-room-${entity.id}`, reducedMotion)}
+                    transition={{ layout: sharedTransition }}
+                    style={{ borderRadius: 12 }}
                     onClick={(e) => handleOpenQuarters(entity, e)}
-                    className="px-3 py-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#B39DE5] hover:text-[#F5E1C8] text-[10px] font-black border border-[#B39DE5]/30 transition-all flex items-center gap-1"
+                    className="px-3 py-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#B39DE5] hover:text-[#F5E1C8] text-[10px] font-black border border-[#B39DE5]/30 transition-colors flex items-center gap-1 cursor-pointer"
                   >
                     <span>View Room</span>
                     <ArrowRight size={11} />
-                  </button>
+                  </motion.button>
                 </div>
               </motion.div>
             );
@@ -199,12 +201,12 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
           </span>
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded-xl bg-[#2C194D] text-[#F5E1C8] text-xs font-black hover:bg-[#2C194D]/80 transition-all"
+            className="px-3 py-1.5 rounded-xl bg-[#2C194D] text-[#F5E1C8] text-xs font-black hover:bg-[#2C194D]/80 transition-all cursor-pointer"
           >
             Close
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 }

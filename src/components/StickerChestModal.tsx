@@ -1,20 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { X, Sparkles, Plus, Trash2, Check, Tag, Search, Hammer } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
-import { getMotion } from '../lib/motion';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { INITIAL_STICKER_CHEST, SanctuarySticker, PlacedSticker, StickerCategory } from '../lib/stickerSystem';
 import { getAllEntities } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
-import { CraftStickerModal, StickerBadge } from './CraftStickerModal';
+import { CraftStickerModal } from './CraftStickerModal';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export function StickerChestModal() {
   const store = useStore();
   const ui = useUI();
+  const originId = ui.modalOrigins.stickerChest;
   const { settings } = store;
 
   const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('heavy', reducedMotion);
+  const sharedTransition = getMotion('shared', reducedMotion);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<StickerCategory>('all');
@@ -71,41 +73,47 @@ export function StickerChestModal() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151234]/90 backdrop-blur-sm select-none"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={modalMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col relative overflow-hidden"
+    <>
+      <SharedModalShell
+        originId={originId}
+        onClose={() => ui.closeModal('stickerChest')}
+        zIndexClassName="z-[60]"
+        panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col relative overflow-hidden select-none"
       >
         {/* HEADER */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-2xl shadow-[2px_2px_0_#2C194D]">
+            <SharedModalIcon
+              originId={originId}
+              className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-2xl shadow-[2px_2px_0_#2C194D] shrink-0"
+            >
               🏷️
-            </div>
+            </SharedModalIcon>
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-[#F5E1C8] tracking-tight font-serif">Sanctuary Sticker Chest</h2>
-              <p className="text-xs sm:text-sm font-bold text-[#B39DE5]">Tactile seals, badges & room decoratives</p>
+              <p className="text-xs sm:text-sm font-bold text-[#B39DE5]">Tactile seals, badges &amp; room decoratives</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <motion.button
+              layoutId={resolveSharedLayoutId('sticker-forge-badge', reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 12 }}
               onClick={() => setIsCraftModalOpen(true)}
-              className="px-3 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] font-black text-xs flex items-center gap-1.5 active:translate-y-0.5 transition-all"
+              className="px-3 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2C194D] border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] font-black text-xs flex items-center gap-1.5 active:translate-y-0.5 transition-colors cursor-pointer"
             >
-              <Hammer size={14} />
+              <motion.span
+                layoutId={resolveSharedLayoutId('sticker-forge-badge', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="flex items-center justify-center"
+              >
+                <Hammer size={14} />
+              </motion.span>
               <span>Forge Badge</span>
-            </button>
+            </motion.button>
             <button
-              onClick={() => ui.setStickerChestOpen(false)}
-              className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
+              onClick={() => ui.closeModal('stickerChest')}
+              className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
               title="Close Chest"
             >
               <X size={20} />
@@ -113,8 +121,9 @@ export function StickerChestModal() {
           </div>
         </div>
 
-        {/* SEARCH & CATEGORY FILTERS */}
-        <div className="border-b-[3px] border-[#2C194D] bg-[#20153B] p-3 space-y-2 shrink-0">
+        <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* SEARCH & CATEGORY FILTERS */}
+          <div className="border-b-[3px] border-[#2C194D] bg-[#20153B] p-3 space-y-2 shrink-0">
           {/* SEARCH INPUT */}
           <div className="relative">
             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#B39DE5]" />
@@ -336,15 +345,22 @@ export function StickerChestModal() {
               </div>
             </div>
           )}
-        </div>
-      </motion.div>
+          </div>
+        </SharedModalBody>
+      </SharedModalShell>
 
       {/* CRAFT CUSTOM STICKER / BADGE MODAL */}
-      <CraftStickerModal
-        isOpen={isCraftModalOpen}
-        onClose={() => setIsCraftModalOpen(false)}
-        onSave={handleSaveCraftedSticker}
-      />
-    </motion.div>
+      <AnimatePresence>
+        {isCraftModalOpen && (
+          <CraftStickerModal
+            key="craft-sticker-modal"
+            isOpen={isCraftModalOpen}
+            originId="sticker-forge-badge"
+            onClose={() => setIsCraftModalOpen(false)}
+            onSave={handleSaveCraftedSticker}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }

@@ -1,19 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { motion } from 'motion/react';
 import { User, X, Camera, MapPin, Briefcase, Hash, Star, MessageCircle, AlertCircle } from 'lucide-react';
-import { UserProfile } from '../lib/types';
 import { compressImage } from '../lib/imageUtils';
-import { getMotion } from '../lib/motion';
-import { useReducedMotion } from 'motion/react';
 import { useStore, useUI } from '../context/AppContext';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export function ProfileModal() {
   const store = useStore();
-  const { setProfileOpen } = useUI();
+  const { closeModal, modalOrigins } = useUI();
+  const originId = modalOrigins.profile;
   const profile = store.profile;
 
-  const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('standard', reducedMotion);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(profile?.name || '');
@@ -79,39 +75,38 @@ export function ProfileModal() {
     });
     setIsSaved(true);
     setTimeout(() => {
-      setProfileOpen(false);
+      closeModal('profile');
     }, 450);
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+    <SharedModalShell
+      originId={originId}
+      onClose={() => closeModal('profile')}
+      panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
     >
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={modalMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
-      >
-        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
-              <User size={20} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Your Sanctuary Dossier</h2>
-              <p className="text-sm font-bold text-[#B39DE5]">What your companion remembers and perceives</p>
-            </div>
+      <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
+        <div className="flex items-center gap-3">
+          <SharedModalIcon
+            originId={originId}
+            className="w-12 h-12 rounded-2xl bg-[#B39DE5] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
+          >
+            <User size={20} />
+          </SharedModalIcon>
+          <div>
+            <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Your Sanctuary Dossier</h2>
+            <p className="text-sm font-bold text-[#B39DE5]">What your companion remembers and perceives</p>
           </div>
-          <button onClick={() => setProfileOpen(false)} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
-            <X size={20} />
-          </button>
         </div>
+        <button
+          onClick={() => closeModal('profile')}
+          className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
+      <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
         <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
           {/* Avatar / Photo */}
           <div className="flex items-center gap-4">
@@ -259,22 +254,22 @@ export function ProfileModal() {
 
         <div className="p-6 border-t-[3px] border-[#2C194D] bg-[#151234] flex justify-end gap-3 shrink-0">
           <button 
-            onClick={() => setProfileOpen(false)}
-            className="px-5 py-2.5 bg-transparent border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#F5E1C8] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all"
+            onClick={() => closeModal('profile')}
+            className="px-5 py-2.5 bg-transparent border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#F5E1C8] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all cursor-pointer"
           >
             Cancel
           </button>
           <button 
             onClick={handleSave}
             disabled={isSaved}
-            className={`px-6 py-2.5 border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#2C194D] shadow-[3px_3px_0_#2C194D] active:translate-y-1 active:shadow-none transition-all ${
+            className={`px-6 py-2.5 border-[3px] border-[#2C194D] rounded-xl font-bold text-sm text-[#2C194D] shadow-[3px_3px_0_#2C194D] active:translate-y-1 active:shadow-none transition-all cursor-pointer ${
               isSaved ? 'bg-emerald-300 scale-95' : 'bg-[#F198B7] hover:bg-[#B39DE5]'
             }`}
           >
             {isSaved ? 'Saved to Sanctuary! ✨' : 'Save Dossier'}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 }

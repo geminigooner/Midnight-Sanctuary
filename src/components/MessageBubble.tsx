@@ -7,7 +7,7 @@ import { ScribbleCard } from './ScribbleCard';
 import { MusicGiftCard } from './MusicGiftCard';
 import { ErrorState } from './ErrorState';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { getMotion } from '../lib/motion';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
 import { useUI } from '../context/AppContext';
 
@@ -224,17 +224,26 @@ export const MessageBubble = React.memo(function MessageBubble({
                 )}
                 {publicText.includes('Unauthorized') && (
                   <div className="mt-3 pt-3 border-t-[2px] border-[#2C194D]/20">
-                    <button
+                    <motion.button
                       type="button"
+                      layoutId={resolveSharedLayoutId(`msg-auth-${msg.id}`, reducedMotion)}
+                      transition={{ layout: getMotion('shared', reducedMotion) }}
+                      style={{ borderRadius: 12 }}
                       onClick={() => {
                         triggerHaptic('medium');
-                        ui.setAuthModalOpen(true);
+                        ui.openModalWithOrigin('authModal', `msg-auth-${msg.id}`);
                       }}
-                      className="px-3.5 py-2 rounded-xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[2px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center gap-2 cursor-pointer transition-all"
+                      className="px-3.5 py-2 rounded-xl bg-[#9D7FE3] hover:bg-[#8e6fd7] border-[2px] border-[#2C194D] text-[#2C194D] font-extrabold text-xs shadow-[0_3px_0_0_#2C194D] active:translate-y-0.5 flex items-center gap-2 cursor-pointer transition-colors"
                     >
-                      <LogIn size={15} strokeWidth={2.5} />
+                      <motion.span
+                        layoutId={resolveSharedLayoutId(`msg-auth-${msg.id}`, reducedMotion, 'icon')}
+                        transition={{ layout: getMotion('shared', reducedMotion) }}
+                        className="flex items-center justify-center"
+                      >
+                        <LogIn size={15} strokeWidth={2.5} />
+                      </motion.span>
                       <span>Sign In with Google to Unlock</span>
-                    </button>
+                    </motion.button>
                   </div>
                 )}
               </div>

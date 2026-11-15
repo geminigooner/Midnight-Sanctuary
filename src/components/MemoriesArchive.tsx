@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X, Bookmark, Trash2, Lock, Unlock } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
-import { getMotion } from '../lib/motion';
 import { normalizeMemoryNamespace } from '../lib/memorySystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { useStore, useUI } from '../context/AppContext';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export function MemoriesArchive() {
   const store = useStore();
-  const { setMemoriesOpen } = useUI();
+  const { closeModal, modalOrigins } = useUI();
+  const originId = modalOrigins.memories;
   const { settings } = store;
   const memories = settings.memories || [];
 
@@ -33,9 +33,6 @@ export function MemoriesArchive() {
     };
   }, [confirmDeleteId]);
 
-  const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('heavy', reducedMotion);
-
   const modelMemories = memories.filter(m => m.modelId ? normalizeMemoryNamespace(m.modelId) === currentNamespace : false);
   const userMemories = memories.filter(m => m.author === 'user');
   const legacyMemories = memories.filter(m => !m.modelId && m.author !== 'user');
@@ -49,38 +46,37 @@ export function MemoriesArchive() {
   const activeList = getActiveMemories();
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+    <SharedModalShell
+      originId={originId}
+      onClose={() => closeModal('memories')}
+      panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden"
     >
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={modalMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden"
-      >
-        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D]">
-              <Bookmark size={20} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Memories Archive</h2>
-              <p className="text-sm font-bold text-[#B39DE5]">Things considered worth keeping with {activeModelDisplayName}</p>
-            </div>
+      <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
+        <div className="flex items-center gap-3">
+          <SharedModalIcon
+            originId={originId}
+            className="w-12 h-12 rounded-2xl bg-[#9D7FE3] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
+          >
+            <Bookmark size={20} />
+          </SharedModalIcon>
+          <div>
+            <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Memories Archive</h2>
+            <p className="text-sm font-bold text-[#B39DE5]">Things considered worth keeping with {activeModelDisplayName}</p>
           </div>
-          <button onClick={() => setMemoriesOpen(false)} className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all">
-            <X size={20} />
-          </button>
         </div>
+        <button
+          onClick={() => closeModal('memories')}
+          className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
-        <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar">
+      <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar shrink-0">
           <button
             onClick={() => setActiveTab('model')}
-            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'model'
                 ? 'bg-[#F198B7] text-[#2C194D]'
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
@@ -90,7 +86,7 @@ export function MemoriesArchive() {
           </button>
           <button
             onClick={() => setActiveTab('user')}
-            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'user'
                 ? 'bg-[#F198B7] text-[#2C194D]'
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
@@ -100,7 +96,7 @@ export function MemoriesArchive() {
           </button>
           <button
             onClick={() => setActiveTab('legacy')}
-            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'legacy'
                 ? 'bg-[#F198B7] text-[#2C194D]'
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
@@ -190,7 +186,7 @@ export function MemoriesArchive() {
             ))
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 }

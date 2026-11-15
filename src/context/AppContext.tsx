@@ -10,6 +10,18 @@ export interface PendingPromptData {
   autoSend?: boolean;
 }
 
+export type ModalKey =
+  | 'settings'
+  | 'jewel'
+  | 'gifts'
+  | 'profile'
+  | 'memories'
+  | 'entityQuarters'
+  | 'desires'
+  | 'stickerChest'
+  | 'companionRoster'
+  | 'authModal';
+
 export interface UIState {
   sidebarOpen: boolean;
   setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -35,6 +47,9 @@ export interface UIState {
   setAuthModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pendingPrompt: PendingPromptData | null;
   setPendingPrompt: React.Dispatch<React.SetStateAction<PendingPromptData | null>>;
+  modalOrigins: Partial<Record<ModalKey, string | undefined>>;
+  openModalWithOrigin: (modal: ModalKey, originId?: string) => void;
+  closeModal: (modal: ModalKey) => void;
 }
 
 export interface AppContextType {

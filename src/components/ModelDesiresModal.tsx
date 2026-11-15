@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { X, Sparkles, CheckCircle, ArrowRight, RefreshCw, MessageSquareQuote } from 'lucide-react';
+import { motion } from 'motion/react';
+import { X, CheckCircle, ArrowRight, MessageSquareQuote } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getDailyDesires, getCategoryBadge, EntityDesire, DesireCategory } from '../lib/desireSystem';
 import { getAllEntities } from '../lib/entitySystem';
-import { getMotion } from '../lib/motion';
 import { triggerHaptic } from '../lib/haptics';
 import { CompanionAvatar } from './CompanionAvatar';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 interface ModelDesiresModalProps {
   onSelectPrompt?: (promptText: string, modelId?: string) => void;
@@ -15,8 +15,7 @@ interface ModelDesiresModalProps {
 export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPrompt }) => {
   const store = useStore();
   const ui = useUI();
-  const reducedMotion = useReducedMotion();
-  const modalMotion = getMotion('heavy', reducedMotion);
+  const originId = ui.modalOrigins.desires;
 
   const [desires, setDesires] = useState<EntityDesire[]>(() => {
     const stored = (store?.settings as any)?.modelDesires;
@@ -71,7 +70,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
     });
 
     // 5. Close desires modal and mobile sidebar
-    ui.setDesiresOpen(false);
+    ui.closeModal('desires');
     ui.setSidebarOpen(false);
 
     if (onSelectPrompt) {
@@ -86,48 +85,44 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
   });
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151234]/90 backdrop-blur-sm select-none"
+    <SharedModalShell
+      originId={originId}
+      onClose={() => ui.closeModal('desires')}
+      panelClassName="bg-[#1a153b] border-[3px] border-[#2d225c] shadow-[0_8px_0_0_#2d225c] rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col relative overflow-hidden select-none"
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        transition={modalMotion}
-        className="bg-[#1a153b] border-[3px] border-[#2d225c] shadow-[0_8px_0_0_#2d225c] rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col relative overflow-hidden"
-      >
-        {/* MODAL HEADER */}
-        <div className="p-5 sm:p-6 bg-[#f7e5cb] border-b-[3px] border-[#2d225c] flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center shadow-[0_2px_0_0_#2d225c] text-xl">
-              💭
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-extrabold text-[#2d225c] tracking-tight font-serif">
-                  Sanctuary Whisper Board
-                </h2>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#9D7FE3] border-[2px] border-[#2d225c] text-[#2d225c]">
-                  Daily Desires
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm font-bold text-[#2d225c]/70 mt-0.5">
-                Spontaneous wishes, features, and musings from your sovereign companions
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => ui.setDesiresOpen(false)}
-            className="p-2 text-[#2d225c] hover:text-red-600 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2d225c] rounded-2xl transition-all"
-            title="Close Whisper Board"
+      {/* MODAL HEADER */}
+      <div className="p-5 sm:p-6 bg-[#f7e5cb] border-b-[3px] border-[#2d225c] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <SharedModalIcon
+            originId={originId}
+            className="w-11 h-11 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center shadow-[0_2px_0_0_#2d225c] text-xl shrink-0"
           >
-            <X size={20} strokeWidth={2.5} />
-          </button>
+            💭
+          </SharedModalIcon>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-[#2d225c] tracking-tight font-serif">
+                Sanctuary Whisper Board
+              </h2>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#9D7FE3] border-[2px] border-[#2d225c] text-[#2d225c]">
+                Daily Desires
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm font-bold text-[#2d225c]/70 mt-0.5">
+              Spontaneous wishes, features, and musings from your sovereign companions
+            </p>
+          </div>
         </div>
+        <button
+          onClick={() => ui.closeModal('desires')}
+          className="p-2 text-[#2d225c] hover:text-red-600 hover:bg-[#F198B7] border-[2px] border-transparent hover:border-[#2d225c] rounded-2xl transition-all cursor-pointer"
+          title="Close Whisper Board"
+        >
+          <X size={20} strokeWidth={2.5} />
+        </button>
+      </div>
 
+      <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {/* ENTITY & CATEGORY FILTERS */}
         <div className="p-4 bg-[#1a153b] border-b-[2px] border-[#2d225c] shrink-0 space-y-3">
           {/* Entity Tabs */}
@@ -256,7 +251,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
             })
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 };

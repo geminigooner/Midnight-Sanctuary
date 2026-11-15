@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Sparkles, X, Check, Shield, Circle, Hexagon, Gem, Award, Bookmark } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Sparkles, X } from 'lucide-react';
 import { SanctuarySticker } from '../lib/stickerSystem';
 import { triggerHaptic } from '../lib/haptics';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export interface StickerBadgeProps {
   sticker: SanctuarySticker;
@@ -88,6 +88,7 @@ export function StickerBadge({
 
 export interface CraftStickerModalProps {
   isOpen: boolean;
+  originId?: string;
   onClose: () => void;
   onSave: (sticker: {
     name: string;
@@ -115,15 +116,13 @@ const PRESET_EMOJIS = [
   '🧸💕', '💎🔥', '🧬🔬', '🕸️👁️', '🪐✨', '🎧💿', '🌸🤍', '🗝️💖'
 ];
 
-export function CraftStickerModal({ isOpen, onClose, onSave }: CraftStickerModalProps) {
+export function CraftStickerModal({ originId = 'sticker-forge-badge', onClose, onSave }: CraftStickerModalProps) {
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('💜✨');
   const [description, setDescription] = useState('');
   const [sparkleColor, setSparkleColor] = useState('#F198B7');
   const [glowEffect, setGlowEffect] = useState<'neon' | 'pulse' | 'gold' | 'starlight' | 'holo'>('neon');
   const [badgeShape, setBadgeShape] = useState<'circle' | 'shield' | 'hex' | 'diamond' | 'stamp' | 'ribbon'>('shield');
-
-  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,37 +140,36 @@ export function CraftStickerModal({ isOpen, onClose, onSave }: CraftStickerModal
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#151234]/90 backdrop-blur-sm select-none"
+    <SharedModalShell
+      originId={originId}
+      onClose={onClose}
+      zIndexClassName="z-[70]"
+      panelClassName="w-full max-w-lg rounded-3xl bg-[#20153B] border-[3px] border-[#2C194D] shadow-[0_8px_0_0_#2C194D] p-5 sm:p-6 text-[#F5E1C8] flex flex-col gap-4 max-h-[90vh] overflow-y-auto select-none"
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-3xl bg-[#20153B] border-[3px] border-[#2C194D] shadow-[0_8px_0_0_#2C194D] p-5 sm:p-6 text-[#F5E1C8] flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#2C194D]/60 pb-3">
-          <div className="flex items-center gap-2.5">
-            <span className="p-2 rounded-xl bg-[#F198B7] text-[#2C194D] border border-[#2C194D]">
-              <Sparkles size={18} />
-            </span>
-            <div>
-              <h3 className="text-base sm:text-lg font-black text-[#F5E1C8]">Forge Custom Glowing Badge</h3>
-              <p className="text-xs text-[#B39DE5] font-bold">Craft a bespoke seal for walls & gift cards</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#F5E1C8] border border-[#B39DE5]/30 transition-all"
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-[#2C194D]/60 pb-3 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <SharedModalIcon
+            originId={originId}
+            borderRadius={12}
+            className="p-2 rounded-xl bg-[#F198B7] text-[#2C194D] border border-[#2C194D] shrink-0"
           >
-            <X size={18} />
-          </button>
+            <Sparkles size={18} />
+          </SharedModalIcon>
+          <div>
+            <h3 className="text-base sm:text-lg font-black text-[#F5E1C8]">Forge Custom Glowing Badge</h3>
+            <p className="text-xs text-[#B39DE5] font-bold">Craft a bespoke seal for walls &amp; gift cards</p>
+          </div>
         </div>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-xl bg-[#2C194D] hover:bg-[#2C194D]/80 text-[#F5E1C8] border border-[#B39DE5]/30 transition-all cursor-pointer"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <SharedModalBody className="flex flex-col gap-4">
 
         {/* Live Preview */}
         <div className="p-4 rounded-2xl bg-[#151234] border-[2px] border-[#2C194D] flex flex-col items-center justify-center text-center gap-2">
@@ -314,7 +312,7 @@ export function CraftStickerModal({ isOpen, onClose, onSave }: CraftStickerModal
             </button>
           </div>
         </form>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 }

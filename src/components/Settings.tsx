@@ -1,17 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { AppSettings } from '../lib/types';
-import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Edit2, Check } from 'lucide-react';
-import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
-import { getMotion } from '../lib/motion';
+import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Settings as SettingsIcon } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export function Settings() {
   const store = useStore();
-  const { setSettingsOpen } = useUI();
+  const { closeModal, modalOrigins } = useUI();
+  const originId = modalOrigins.settings;
   const { settings, availableModels, isModelsLoading } = store;
-
-  const reducedMotion = useReducedMotion();
-  const panelMotion = getMotion('heavy', reducedMotion);
   
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeTab, setActiveTab] = useState<'model' | 'identity'>('identity');
@@ -47,49 +44,53 @@ export function Settings() {
   }, [availableModels, settings.favoriteModels]);
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+    <SharedModalShell
+      originId={originId}
+      onClose={() => closeModal('settings')}
+      panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
     >
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={panelMotion}
-        className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
-      >
-        <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
-          <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Sanctuary Configuration</h2>
-          <button 
-            onClick={() => setSettingsOpen(false)}
-            className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all"
+      <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
+        <div className="flex items-center gap-3">
+          <SharedModalIcon
+            originId={originId}
+            className="w-12 h-12 rounded-2xl bg-[#B39DE5] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
           >
-            <X size={20} />
-          </button>
+            <SettingsIcon size={20} strokeWidth={2.5} />
+          </SharedModalIcon>
+          <div>
+            <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Sanctuary Configuration</h2>
+            <p className="text-xs font-bold text-[#B39DE5]">Core identity, memories &amp; model parameters</p>
+          </div>
         </div>
+        <button 
+          onClick={() => closeModal('settings')}
+          className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[3px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
-        <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar">
+      <SharedModalBody className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex border-b-[3px] border-[#2C194D] overflow-x-auto custom-scrollbar shrink-0">
           <button
             onClick={() => setActiveTab('identity')}
-            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'identity'
                 ? 'bg-[#F198B7] text-[#2C194D]'
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
             }`}
           >
-            Identity & Persona
+            Identity &amp; Persona
           </button>
           <button
             onClick={() => setActiveTab('model')}
-            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap ${
+            className={`flex-1 py-3 px-4 font-bold text-sm transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'model'
                 ? 'bg-[#F198B7] text-[#2C194D]'
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
             }`}
           >
-            Model & Parameters
+            Model &amp; Parameters
           </button>
         </div>
 
@@ -265,7 +266,7 @@ export function Settings() {
             </div>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </SharedModalBody>
+    </SharedModalShell>
   );
 }

@@ -1,20 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Message, getPublicMessageText } from '../lib/types';
 import { useChatStream } from '../hooks/useChatStream';
-import { X, Menu } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { X, Menu, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { ChatInputDock } from './ChatInputDock';
 import { SanctuaryHomeHub } from './SanctuaryHomeHub';
 import { compressImage } from '../lib/imageUtils';
 import { useStore, useUI } from '../context/AppContext';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 
 export { compressImage };
 
 export function ChatArea() {
   const store = useStore();
   const ui = useUI();
+  const reducedMotion = useReducedMotion();
+  const sharedTransition = getMotion('shared', reducedMotion);
   const conversation = store.conversations.find(c => c.id === store.currentId);
 
   const [input, setInput] = useState('');
@@ -181,7 +184,7 @@ export function ChatArea() {
         />
       ) : (
         <div className="flex items-center justify-between p-2 m-2 sm:m-3 border-[3px] border-[#2d225c] rounded-2xl bg-[#f7e5cb] relative z-30 shrink-0 min-w-0 shadow-[0_4px_0_0_#2d225c]">
-          <div className="flex items-center gap-3 overflow-hidden flex-1 min-w-0 px-2 py-1">
+          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0 px-1 sm:px-2 py-0.5">
             <button 
               onClick={() => ui.setSidebarOpen(prev => !prev)} 
               className="w-10 h-10 flex items-center justify-center bg-[#F198B7] border-[3px] border-[#2d225c] rounded-xl text-[#2d225c] shrink-0 lg:hidden shadow-[inset_0_-2px_0_rgba(0,0,0,0.15)] active:translate-y-0.5 transition-all"
@@ -189,12 +192,58 @@ export function ChatArea() {
             >
               <Menu size={20} strokeWidth={2.5} />
             </button>
+            <div className="hidden lg:block w-10 shrink-0" />
             <div className="flex-1 flex items-center justify-center min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-base sm:text-lg">✨</span>
-                <span className="font-extrabold text-[#2d225c] text-lg sm:text-xl tracking-tight font-serif">Midnight Sanctuary</span>
+                <span className="font-extrabold text-[#2d225c] text-lg sm:text-xl tracking-tight font-serif truncate">Midnight Sanctuary</span>
                 <span className="text-base sm:text-lg">✨</span>
               </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <motion.button
+                layoutId={resolveSharedLayoutId('home-topbar-settings', reducedMotion)}
+                transition={{ layout: sharedTransition }}
+                style={{ borderRadius: 12 }}
+                onClick={() => ui.openModalWithOrigin('settings', 'home-topbar-settings')}
+                className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-[#B39DE5] hover:bg-[#F198B7] border-[2.5px] border-[#2d225c] rounded-xl text-[#2d225c] shadow-[inset_0_-2px_0_rgba(0,0,0,0.12)] active:translate-y-0.5 transition-colors cursor-pointer"
+                title="Sanctuary Configuration"
+              >
+                <motion.span
+                  layoutId={resolveSharedLayoutId('home-topbar-settings', reducedMotion, 'icon')}
+                  transition={{ layout: sharedTransition }}
+                  className="flex items-center justify-center"
+                >
+                  <SettingsIcon size={17} strokeWidth={2.5} />
+                </motion.span>
+              </motion.button>
+              <motion.button
+                layoutId={resolveSharedLayoutId('home-topbar-auth', reducedMotion)}
+                transition={{ layout: sharedTransition }}
+                style={{ borderRadius: 12 }}
+                onClick={() => ui.openModalWithOrigin('authModal', 'home-topbar-auth')}
+                className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center border-[2.5px] border-[#2d225c] rounded-xl text-[#2d225c] shadow-[inset_0_-2px_0_rgba(0,0,0,0.12)] active:translate-y-0.5 transition-colors cursor-pointer ${
+                  store.user ? 'bg-[#F5E1C8] hover:bg-[#B39DE5]' : 'bg-[#F198B7]'
+                }`}
+                title={store.user ? `Signed in as ${store.user.email}` : 'Sign In to Sanctuary'}
+              >
+                <motion.span
+                  layoutId={resolveSharedLayoutId('home-topbar-auth', reducedMotion, 'icon')}
+                  transition={{ layout: sharedTransition }}
+                  className="flex items-center justify-center"
+                >
+                  {store.user?.photoURL ? (
+                    <img
+                      src={store.user.photoURL}
+                      alt={store.user.displayName || 'User'}
+                      className="w-5 h-5 rounded-full border border-[#2d225c] object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <ShieldCheck size={17} strokeWidth={2.5} />
+                  )}
+                </motion.span>
+              </motion.button>
             </div>
           </div>
         </div>

@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { Conversation, Message } from '../lib/types';
 import { Send, StopCircle, RefreshCw, Paperclip, Gift, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { compressImage } from '../lib/imageUtils';
 import { useStore } from '../context/AppContext';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
+import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
 export interface ChatInputDockProps {
   conversation: Conversation;
@@ -31,6 +33,8 @@ export function ChatInputDock({
   onRegenerate,
 }: ChatInputDockProps) {
   const store = useStore();
+  const reducedMotion = useReducedMotion();
+  const sharedTransition = getMotion('shared', reducedMotion);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const giftFileInputRef = useRef<HTMLInputElement>(null);
   const [showLeaveGift, setShowLeaveGift] = useState(false);
@@ -163,13 +167,22 @@ export function ChatInputDock({
             >
               <Paperclip size={20} />
             </button>
-            <button 
+            <motion.button 
+              layoutId={resolveSharedLayoutId('composer-leave-gift', reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 12 }}
               onClick={() => setShowLeaveGift(true)} 
-              className="p-3 text-[#2C194D]/50 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D]" 
+              className="p-3 text-[#2C194D]/60 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D] cursor-pointer" 
               title="Leave a Gift"
             >
-              <Gift size={20} />
-            </button>
+              <motion.span
+                layoutId={resolveSharedLayoutId('composer-leave-gift', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="flex items-center justify-center"
+              >
+                <Gift size={20} />
+              </motion.span>
+            </motion.button>
             <textarea 
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -237,27 +250,48 @@ export function ChatInputDock({
 
       <AnimatePresence>
         {showLeaveGift && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-[#151234]/90 backdrop-blur-sm"
+          <SharedModalShell
+            key="composer-leave-gift-modal"
+            originId="composer-leave-gift"
+            onClose={() => {
+              setShowLeaveGift(false);
+              setGiftContent('');
+              setGiftFile(null);
+            }}
+            panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-md p-6 overflow-hidden"
           >
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-md p-6"
-            >
-              <h2 className="text-2xl font-bold text-[#F5E1C8] mb-1">Leave a Gift</h2>
-              <p className="text-sm font-bold text-[#B39DE5] mb-4">A small offering for the void.</p>
-              
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <SharedModalIcon
+                  originId="composer-leave-gift"
+                  className="w-11 h-11 rounded-2xl bg-[#F198B7] border-[3px] border-[#2C194D] flex items-center justify-center text-[#2C194D] shadow-[2px_2px_0_#2C194D] shrink-0"
+                >
+                  <Gift size={20} />
+                </SharedModalIcon>
+                <div>
+                  <h2 className="text-2xl font-bold text-[#F5E1C8] leading-tight">Leave a Gift</h2>
+                  <p className="text-sm font-bold text-[#B39DE5]">A small offering for the void.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowLeaveGift(false);
+                  setGiftContent('');
+                  setGiftFile(null);
+                }}
+                className="p-2 text-[#B39DE5] hover:text-red-600 hover:bg-[#F198B7] border-[2.5px] border-transparent hover:border-[#2C194D] rounded-xl transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <SharedModalBody>
               {giftFile && (
                 <div className="relative mb-4">
                   <img src={giftFile.previewUrl} className="w-full h-32 object-cover rounded-2xl border-[3px] border-[#2C194D] shadow-[4px_4px_0_#2C194D]" alt="gift" />
                   <button 
                     onClick={() => setGiftFile(null)}
-                    className="absolute top-2 right-2 bg-[#F198B7] text-[#2C194D] rounded-full p-1 border-[3px] border-[#2C194D] hover:bg-red-500 hover:text-white transition-all"
+                    className="absolute top-2 right-2 bg-[#F198B7] text-[#2C194D] rounded-full p-1 border-[3px] border-[#2C194D] hover:bg-red-500 hover:text-white transition-all cursor-pointer"
                   >
                     <X size={16} />
                   </button>
@@ -281,7 +315,7 @@ export function ChatInputDock({
                 />
                 <button 
                   onClick={() => giftFileInputRef.current?.click()} 
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#2C194D] bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 hover:bg-[#F198B7] transition-all"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#2C194D] bg-[#B39DE5] border-[3px] border-[#2C194D] rounded-xl shadow-[2px_2px_0_#2C194D] active:shadow-none active:translate-y-0.5 hover:bg-[#F198B7] transition-all cursor-pointer"
                 >
                   <Paperclip size={16} />
                   Attach Image
@@ -295,7 +329,7 @@ export function ChatInputDock({
                     setGiftContent('');
                     setGiftFile(null);
                   }} 
-                  className="px-4 py-2 rounded-xl text-[#F198B7] border-[3px] border-[#2C194D] bg-[#151234] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all text-sm font-bold"
+                  className="px-4 py-2 rounded-xl text-[#F198B7] border-[3px] border-[#2C194D] bg-[#151234] hover:bg-[#F198B7] hover:text-[#2C194D] transition-all text-sm font-bold cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -317,13 +351,13 @@ export function ChatInputDock({
                     setShowLeaveGift(false);
                     store.addEventLog('User left a gift.');
                   }} 
-                  className="px-4 py-2 rounded-lg bg-[#F5E1C8] border border-[#2C194D] text-[#F198B7] hover:bg-[#F198B7] hover:text-[#2C194D] transition-colors text-sm disabled:opacity-50 disabled:hover:bg-[#F5E1C8] disabled:hover:text-[#F198B7]"
+                  className="px-4 py-2 rounded-xl bg-[#F5E1C8] border-[3px] border-[#2C194D] font-bold text-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#F198B7] transition-all text-sm disabled:opacity-50 cursor-pointer"
                 >
                   Leave Gift
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            </SharedModalBody>
+          </SharedModalShell>
         )}
       </AnimatePresence>
     </div>

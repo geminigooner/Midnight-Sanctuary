@@ -1,20 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Sparkles, 
-  Heart, 
-  Brain, 
-  BookOpen, 
-  Gift, 
-  Gem, 
-  User, 
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import {
+  Sparkles,
+  Heart,
+  Brain,
+  BookOpen,
+  Gift,
+  Gem,
+  User,
   ArrowRight,
   Compass,
   MessageSquareQuote,
-  Castle,
-  Tag,
   Users,
-  MessageSquare
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
@@ -23,6 +20,7 @@ import { getDailyDesires, getCategoryBadge } from '../lib/desireSystem';
 import { calculateJewelLevel } from '../lib/jewelSystem';
 import { DEFAULT_SETTINGS } from '../lib/types';
 import { triggerHaptic } from '../lib/haptics';
+import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 
 interface SanctuaryHomeHubProps {
   onSelectPrompt: (promptText: string) => void;
@@ -31,6 +29,9 @@ interface SanctuaryHomeHubProps {
 export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectPrompt }) => {
   const store = useStore();
   const ui = useUI();
+  const reducedMotion = useReducedMotion();
+  const sharedTransition = getMotion('shared', reducedMotion);
+
   const settings = store?.settings || DEFAULT_SETTINGS;
   const profile = store?.profile || null;
   const conversations = store?.conversations || [];
@@ -58,11 +59,16 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
 
   const renderPromptIcon = (iconName: SparkPrompt['iconName']) => {
     switch (iconName) {
-      case 'brain': return <Brain className="w-5 h-5 text-[#2d225c]" />;
-      case 'heart': return <Heart className="w-5 h-5 text-[#F198B7]" />;
-      case 'sparkles': return <Sparkles className="w-5 h-5 text-[#2d225c]" />;
-      case 'bookOpen': return <BookOpen className="w-5 h-5 text-[#2d225c]" />;
-      default: return <Sparkles className="w-5 h-5 text-[#2d225c]" />;
+      case 'brain':
+        return <Brain className="w-5 h-5 text-[#2d225c]" />;
+      case 'heart':
+        return <Heart className="w-5 h-5 text-[#F198B7]" />;
+      case 'sparkles':
+        return <Sparkles className="w-5 h-5 text-[#2d225c]" />;
+      case 'bookOpen':
+        return <BookOpen className="w-5 h-5 text-[#2d225c]" />;
+      default:
+        return <Sparkles className="w-5 h-5 text-[#2d225c]" />;
     }
   };
 
@@ -70,26 +76,26 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
   const giftCount = gifts?.length || 0;
   const allEntities = getAllEntities(settings?.customEntities);
   const jewelLevel = calculateJewelLevel(jewelMetrics);
-  
+
   const dailyDesires = getDailyDesires((settings as any)?.modelDesires);
   const activeDesire = dailyDesires[0];
   const activeDesireBadge = activeDesire ? getCategoryBadge(activeDesire.category) : null;
 
   const handleOpenCompanionChooser = () => {
     triggerHaptic('medium');
-    ui.setCompanionRosterOpen(true);
+    ui.openModalWithOrigin('companionRoster', 'hub-cta-roster');
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
       className="flex flex-col items-center justify-start w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 select-none bg-[#1a153b]"
     >
       {/* ── TIME-SENSITIVE TOP CARD (NEUTRAL SANCTUARY THRESHOLD) ── */}
       <div className="w-full max-w-2xl mb-6">
-        <motion.div 
+        <motion.div
           initial={{ scale: 0.98, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.1 }}
@@ -110,38 +116,68 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
             {greetingInfo.subtext}
           </p>
 
-          {/* CHOOSE COMPANION PORTAL BUTTON */}
+          {/* CHOOSE COMPANION PORTAL BUTTONS */}
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
-            <button
+            <motion.button
+              layoutId={resolveSharedLayoutId('hub-cta-roster', reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 16 }}
               onClick={handleOpenCompanionChooser}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 transition-all cursor-pointer"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#F198B7] hover:bg-[#F198B7]/90 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
-              <Users className="w-5 h-5 text-[#2d225c]" />
+              <motion.span
+                layoutId={resolveSharedLayoutId('hub-cta-roster', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="flex items-center justify-center"
+              >
+                <Users className="w-5 h-5 text-[#2d225c]" />
+              </motion.span>
               <span>Choose Who to Talk To</span>
               <ArrowRight className="w-4 h-4 text-[#2d225c]" />
-            </button>
+            </motion.button>
 
-            <button
-              onClick={() => ui.setEntityQuartersOpen(true)}
-              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#f7e5cb] hover:bg-[#2d225c]/10 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            <motion.button
+              layoutId={resolveSharedLayoutId('hub-cta-quarters', reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 16 }}
+              onClick={() => {
+                triggerHaptic('medium');
+                ui.openModalWithOrigin('entityQuarters', 'hub-cta-quarters');
+              }}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#f7e5cb] hover:bg-[#2d225c]/10 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
-              <span>🏛️ Step Into Quarters</span>
-            </button>
+              <motion.span
+                layoutId={resolveSharedLayoutId('hub-cta-quarters', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="inline-flex items-center justify-center"
+              >
+                🏛️
+              </motion.span>
+              <span>Step Into Quarters</span>
+            </motion.button>
           </div>
         </motion.div>
       </div>
 
       {/* ── INTERACTIVE MASCOT CLOUD (TAP FOR REACTION) ── */}
-      <motion.div 
+      <motion.div
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
         onClick={handleMascotClick}
         className="relative cursor-pointer mb-6 group"
         title="Tap to interact with your sanctuary anchor"
       >
-        <div className={`w-28 h-28 rounded-full bg-[#f7e5cb] border-[3px] border-[#2d225c] flex items-center justify-center shadow-[0_6px_0_0_#2d225c] group-hover:bg-[#F198B7]/30 transition-all duration-300 ${isMascotPulsing ? 'translate-y-1 shadow-[0_2px_0_0_#2d225c]' : ''}`}>
-          <svg className="w-14 h-14 text-[#2d225c] transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 16.09 8.08l1.41 1.41L10 17z"/>
+        <div
+          className={`w-28 h-28 rounded-full bg-[#f7e5cb] border-[3px] border-[#2d225c] flex items-center justify-center shadow-[0_6px_0_0_#2d225c] group-hover:bg-[#F198B7]/30 transition-all duration-300 ${
+            isMascotPulsing ? 'translate-y-1 shadow-[0_2px_0_0_#2d225c]' : ''
+          }`}
+        >
+          <svg
+            className="w-14 h-14 text-[#2d225c] transition-transform duration-300 group-hover:scale-110"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17 16.09 8.08l1.41 1.41L10 17z" />
           </svg>
           <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-[#F198B7] border-[3px] border-[#2d225c] flex items-center justify-center text-sm shadow-[0_2px_0_0_#2d225c]">
             {MASCOT_QUOTES[quoteIndex].reactionEmoji}
@@ -150,7 +186,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
 
         <div className="mt-3 text-center">
           <AnimatePresence mode="wait">
-            <motion.span 
+            <motion.span
               key={quoteIndex}
               initial={{ opacity: 0, y: 3 }}
               animate={{ opacity: 1, y: 0 }}
@@ -166,18 +202,32 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
       {/* ── DAILY DESIRE SPOTLIGHT BANNER ── */}
       {activeDesire && (
         <motion.div
-          whileHover={{ scale: 1.01 }}
-          onClick={() => ui.setDesiresOpen(true)}
+          layoutId={resolveSharedLayoutId('hub-banner-desires', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { scale: 1.01 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('desires', 'hub-banner-desires');
+          }}
           className="w-full max-w-2xl mb-6 p-4 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] cursor-pointer group"
         >
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
-              <span className="text-base">💭</span>
+              <motion.span
+                layoutId={resolveSharedLayoutId('hub-banner-desires', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="text-base inline-flex items-center justify-center"
+              >
+                💭
+              </motion.span>
               <span className="text-xs font-extrabold text-[#2d225c]">
                 {activeDesire.entityName}&apos;s Daily Wish
               </span>
               {activeDesireBadge && (
-                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#2d225c] ${activeDesireBadge.bg} ${activeDesireBadge.text}`}>
+                <span
+                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#2d225c] ${activeDesireBadge.bg} ${activeDesireBadge.text}`}
+                >
                   {activeDesireBadge.icon} {activeDesireBadge.label}
                 </span>
               )}
@@ -193,104 +243,183 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
         </motion.div>
       )}
 
-      {/* ── CHUNKY TOY-BOX QUICK ACTION HUBS ── */}
+      {/* ── CHUNKY TOY-BOX QUICK ACTION HUBS (SHARED-ELEMENT ARCHIVE PORTALS) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 sm:gap-3 w-full max-w-3xl mb-8">
         {/* Hub 1: Sanctuary Quarters */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setEntityQuartersOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-quarters', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('entityQuarters', 'hub-tile-quarters');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#f7e5cb] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-quarters', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#f7e5cb] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg"
+          >
             🏛️
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Quarters</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Entities</span>
         </motion.button>
 
         {/* Hub 2: Model Wishes */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setDesiresOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-desires', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('desires', 'hub-tile-desires');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-desires', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg"
+          >
             💭
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Wishes</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Desires</span>
         </motion.button>
 
         {/* Hub 3: Memories */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setMemoriesOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-memories', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('memories', 'hub-tile-memories');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-memories', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#9D7FE3] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform"
+          >
             <BookOpen className="w-5 h-5 text-[#2d225c]" />
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Memories</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{memoryCount} saved</span>
         </motion.button>
 
         {/* Hub 4: Gifts Vault */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setGiftsOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-gifts', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('gifts', 'hub-tile-gifts');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-gifts', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform"
+          >
             <Gift className="w-5 h-5 text-[#2d225c]" />
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Gift Vault</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{giftCount} items</span>
         </motion.button>
 
         {/* Hub 5: Levin Jewel */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setJewelOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-jewel', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('jewel', 'hub-tile-jewel');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-jewel', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#F5E1C8] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform"
+          >
             <Gem className="w-5 h-5 text-[#2d225c]" />
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Jewel</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Lv {jewelLevel}</span>
         </motion.button>
 
         {/* Hub 6: Sticker Chest */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => (ui as any).setStickerChestOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-stickers', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('stickerChest', 'hub-tile-stickers');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-stickers', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform text-lg"
+          >
             🏷️
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Stickers</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Chest</span>
         </motion.button>
 
         {/* Hub 7: Dossier Profile */}
         <motion.button
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 4 }}
-          onClick={() => ui.setProfileOpen(true)}
-          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] active:translate-y-1 transition-all text-center group"
+          layoutId={resolveSharedLayoutId('hub-tile-profile', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('profile', 'hub-tile-profile');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-2xl bg-[#B39DE5] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform">
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-profile', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#B39DE5] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform"
+          >
             <User className="w-5 h-5 text-[#2d225c]" />
-          </div>
+          </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Dossier</span>
-          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">{profile?.name || 'Amanda'}</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">
+            {profile?.name || 'Amanda'}
+          </span>
         </motion.button>
       </div>
 
@@ -306,37 +435,36 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
           </div>
 
           <div className="space-y-3">
-            {conversations
-              .slice(0, 5)
-              .map(conv => (
-                <motion.button
-                  key={conv.id}
-                  whileHover={{ y: -2 }}
-                  whileTap={{ y: 3 }}
-                  onClick={() => {
-                    if (conv.modelId) {
-                      store.updateSettings({ model: conv.modelId });
-                    }
-                    store.setCurrentId(conv.id);
-                  }}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group"
-                >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="w-9 h-9 rounded-xl bg-[#2d225c] border-[2px] border-[#2d225c] flex items-center justify-center shrink-0">
-                      <MessageSquareQuote className="w-4 h-4 text-[#f7e5cb]" />
+            {conversations.slice(0, 5).map((conv) => (
+              <motion.button
+                key={conv.id}
+                whileHover={{ y: -2 }}
+                whileTap={{ y: 3 }}
+                onClick={() => {
+                  if (conv.modelId) {
+                    store.updateSettings({ model: conv.modelId });
+                  }
+                  store.setCurrentId(conv.id);
+                }}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group cursor-pointer"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-9 h-9 rounded-xl bg-[#2d225c] border-[2px] border-[#2d225c] flex items-center justify-center shrink-0">
+                    <MessageSquareQuote className="w-4 h-4 text-[#f7e5cb]" />
+                  </div>
+                  <div className="truncate">
+                    <div className="text-sm font-extrabold text-[#2d225c] truncate group-hover:text-[#F198B7] transition-colors">
+                      {conv.title || 'Untitled Sanctuary'}
                     </div>
-                    <div className="truncate">
-                      <div className="text-sm font-extrabold text-[#2d225c] truncate group-hover:text-[#F198B7] transition-colors">
-                        {conv.title || 'Untitled Sanctuary'}
-                      </div>
-                      <div className="text-xs font-bold text-[#2d225c]/70">
-                        {(conv.messages || []).length} messages · {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
-                      </div>
+                    <div className="text-xs font-bold text-[#2d225c]/70">
+                      {(conv.messages || []).length} messages ·{' '}
+                      {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
                     </div>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-[#2d225c] group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
-                </motion.button>
-              ))}
+                </div>
+                <ArrowRight className="w-4 h-4 text-[#2d225c] group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
+              </motion.button>
+            ))}
           </div>
         </div>
       )}
@@ -358,7 +486,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
               whileHover={{ y: -2 }}
               whileTap={{ y: 3 }}
               onClick={() => onSelectPrompt(spark.prompt)}
-              className="flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group"
+              className="flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-[#2d225c]/10 border-[2px] border-[#2d225c] flex items-center justify-center shrink-0">
@@ -368,9 +496,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
                   <div className="text-xs font-extrabold text-[#2d225c] group-hover:text-[#2d225c] transition-colors">
                     {spark.title}
                   </div>
-                  <div className="text-[11px] font-bold text-[#2d225c]/70">
-                    {spark.tag}
-                  </div>
+                  <div className="text-[11px] font-bold text-[#2d225c]/70">{spark.tag}</div>
                 </div>
               </div>
               <ArrowRight className="w-4 h-4 text-[#2d225c] group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
