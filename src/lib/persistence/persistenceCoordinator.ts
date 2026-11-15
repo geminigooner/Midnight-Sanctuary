@@ -444,6 +444,8 @@ export class PersistenceCoordinator {
       this.monotonicClock = Math.max(this.monotonicClock, conv.revision || conv.updatedAt || 0);
     }
 
+    const interruptedStreamingMsgs: { convId: string; msg: DurableMessage }[] = [];
+
     for (const [convId, msgs] of Object.entries(loaded.messagesByConversation)) {
       if (deletedConvSet.has(convId)) continue;
       const convMeta = this.conversationsMap.get(convId);
@@ -451,8 +453,19 @@ export class PersistenceCoordinator {
       const map = new Map<string, DurableMessage>();
       for (const m of msgs) {
         if (m.isDeleted || deletedMsgSet.has(m.id)) continue;
-        map.set(m.id, m);
-        this.monotonicClock = Math.max(this.monotonicClock, m.revision || m.timestamp || 0);
+        if (m.thoughtStatus === 'thinking') {
+          const recoveredStreamMsg: DurableMessage = {
+            ...m,
+            thoughtStatus: 'complete',
+            revision: Math.max(m.revision || 0, Date.now()),
+          };
+          map.set(m.id, recoveredStreamMsg);
+          interruptedStreamingMsgs.push({ convId, msg: recoveredStreamMsg });
+          this.monotonicClock = Math.max(this.monotonicClock, recoveredStreamMsg.revision);
+        } else {
+          map.set(m.id, m);
+          this.monotonicClock = Math.max(this.monotonicClock, m.revision || m.timestamp || 0);
+        }
       }
       this.messagesMap.set(convId, map);
     }
@@ -488,6 +501,25 @@ export class PersistenceCoordinator {
       if (m.status === 'in_flight') {
         await this.vault.putJournalMutation(recovered);
       }
+    }
+
+    // Enqueue any interrupted mid-stream model turns so they durably commit to Firestore
+    for (const { convId, msg } of interruptedStreamingMsgs) {
+      const convMeta = this.conversationsMap.get(convId);
+      await this.enqueueMutation(
+        {
+          entityType: 'message',
+          entityId: msg.id,
+          parentId: convId,
+          operation: 'upsert',
+          payload: msg,
+          revision: msg.revision,
+        },
+        {
+          conversation: convMeta,
+          messages: [msg],
+        }
+      );
     }
 
     // One-time safe import from legacy localStorage ONLY when vault is brand-new for the owner

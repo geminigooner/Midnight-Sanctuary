@@ -641,7 +641,9 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
 
   const addMessage = useCallback(
     (conversationId: string, message: Message) => {
-      void coordinator.upsertMessage(conversationId, message, { syncCloudImmediately: true });
+      void coordinator.upsertMessage(conversationId, message, {
+        syncCloudImmediately: message.thoughtStatus !== 'thinking',
+      });
     },
     [coordinator]
   );

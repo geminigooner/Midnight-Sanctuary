@@ -415,17 +415,39 @@ describe('Midnight Sanctuary Persistence Reliability Overhaul (12 Core Scenarios
       timestamp: 1700000002000,
     });
 
+    // Also simulate an interrupted model stream checkpointed locally mid-stream before tab closes
+    await coord1.upsertMessage(
+      conv.id,
+      {
+        id: 'msg-streaming-interrupted',
+        role: 'model',
+        parts: [{ text: '' }],
+        publicText: '',
+        thoughtStatus: 'thinking',
+        timestamp: 1700000002100,
+      },
+      { syncCloudImmediately: false }
+    );
+    await coord1.updateMessage(conv.id, 'msg-streaming-interrupted', {
+      parts: [{ text: 'Partial streaming verse preserved in IndexedDB...' }],
+      publicText: 'Partial streaming verse preserved in IndexedDB...',
+      thoughtStatus: 'thinking',
+    });
+
     expect(coord1.getSyncStatus().pendingCount).toBeGreaterThan(0);
 
-    // Simulate hard tab close while mutation is `in_flight`
+    // Simulate hard tab close while mutation is `in_flight` and model turn is mid-stream
     coord1.destroy();
     cloud.stallWrites = false;
     cloud.releaseStalledWrites();
 
-    // Cloud never received msg-inflight-1 yet because conv write was stalled first
+    // Cloud never received msg-inflight-1 or msg-streaming-interrupted yet
     expect(cloud.ensureUserBucket('uid-owner').messages.get(conv.id)?.has('msg-inflight-1')).toBeFalsy();
+    expect(
+      cloud.ensureUserBucket('uid-owner').messages.get(conv.id)?.has('msg-streaming-interrupted')
+    ).toBeFalsy();
 
-    // Restart app: `in_flight` journal record resets to `pending` and replays cleanly
+    // Restart app: `in_flight` journal record resets to `pending`, and interrupted stream finalizes to `complete` & syncs
     const coord2 = new PersistenceCoordinator({
       vault: new IndexedDBVault('sanctuary_test_s2', idb),
       cloudAdapter: cloud.createAdapter(),
@@ -437,6 +459,13 @@ describe('Midnight Sanctuary Persistence Reliability Overhaul (12 Core Scenarios
 
     const cloudMsg = cloud.ensureUserBucket('uid-owner').messages.get(conv.id)?.get('msg-inflight-1');
     expect(cloudMsg?.parts[0]?.text).toBe('Still pending when tab closed');
+
+    const recoveredStreamMsg = cloud
+      .ensureUserBucket('uid-owner')
+      .messages.get(conv.id)
+      ?.get('msg-streaming-interrupted');
+    expect(recoveredStreamMsg?.publicText).toBe('Partial streaming verse preserved in IndexedDB...');
+    expect(recoveredStreamMsg?.thoughtStatus).toBe('complete');
     coord2.destroy();
   });
 
