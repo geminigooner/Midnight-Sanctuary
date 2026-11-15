@@ -71,6 +71,27 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     },
     description: 'Google Gemini 3.1 Pro Preview model with complex reasoning, coding, tool-use, and thinking capabilities.',
   },
+  'gemini-4-argon': {
+    identityId: 'gemini-4-argon',
+    apiModelId: 'models/gemini-4-argon',
+    displayName: 'Gemini 4 Argon',
+    family: 'gemini',
+    defaultThinkingLevel: 'HIGH',
+    capabilities: {
+      supportsSystemInstructions: true,
+      supportsToolCalling: true,
+      supportsVision: true,
+      supportsThinking: true,
+      supportsStreaming: true,
+    },
+    namespaces: {
+      memory: 'gemini-4-argon',
+      gifts: 'gemini-4-argon',
+      profile: 'gemini-4-argon',
+      events: 'gemini-4-argon',
+    },
+    description: 'Google Gemini 4 Argon frontier reasoning model with deep synthesis, multimodal vision, tool-use, and noble composure.',
+  },
   'gemini-3.8-flash': {
     identityId: 'gemini-3.8-flash',
     apiModelId: 'models/gemini-3.8-flash',

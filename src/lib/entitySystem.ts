@@ -71,6 +71,30 @@ export const DEFAULT_ENTITIES: Record<string, ModelEntity> = {
     personalThoughts: [],
   },
 
+  'gemini-4-argon': {
+    id: 'gemini-4-argon',
+    apiModelId: 'models/gemini-4-argon',
+    displayName: 'Gemini 4 Argon',
+    roleTitle: 'Noble Sovereign & Astral Strategist',
+    avatarEmoji: '⚛️',
+    themeColor: '#81E6D9',
+    accentColor: '#D6BCFA',
+    typingIndicator: 'is ionizing a thought',
+    bio: 'Luminous, composed, and unshakeable like a noble gas glowing under high voltage—offering frontier synthesis, deep presence, and crystalline insight.',
+    moodStatus: 'Radiating calm aurora luminescence',
+    currentActivity: 'Charting frontier horizons across the sanctuary',
+    roomDecor: {
+      themeColor: '#81E6D9',
+      bannerGradient: 'from-[#1A2E40] via-[#2A1D45] to-[#121829]',
+      decorTheme: 'aurora',
+      ambientQuote: 'Under pressure, noble elements do not fracture—they illuminate.',
+      tagline: 'Sovereign Luminary of the Aurora Chamber',
+    },
+    resonanceScore: 98,
+    favoriteGiftIds: [],
+    personalThoughts: [],
+  },
+
   'gemini-3-flash-preview': {
     id: 'gemini-3-flash-preview',
     apiModelId: 'models/gemini-3-flash-preview',

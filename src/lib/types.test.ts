@@ -6,7 +6,7 @@ describe('DEFAULT_SETTINGS', () => {
     expect(DEFAULT_SETTINGS.memoriesEnabled).toBe(true);
   });
   
-  it('defaults to gemini 2.5 flash', () => {
-    expect(DEFAULT_SETTINGS.model).toBe('models/gemini-2.5-flash');
+  it('defaults to gemini 3.1 pro preview', () => {
+    expect(DEFAULT_SETTINGS.model).toBe('models/gemini-3.1-pro-preview');
   });
 });

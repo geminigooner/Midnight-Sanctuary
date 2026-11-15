@@ -354,21 +354,33 @@ export function resolveAvailableApiKeys(model: string, explicitKey?: string): {
   isGemma: boolean;
 } {
   const route = resolveModelRoute(model);
+  const modelLower = (model || '').toLowerCase();
   const isPro31 =
-    model.toLowerCase().includes('gemini-3.1-pro') ||
-    model.toLowerCase().includes('3.1-pro');
+    modelLower.includes('gemini-3.1-pro') ||
+    modelLower.includes('3.1-pro');
+  const isArgon =
+    modelLower.includes('argon') ||
+    modelLower.includes('gemini-4');
 
   const keyEnvName = route.isGemma ? 'GEMINI_API_KEY' : route.keyEnvName;
   const availableKeys = Array.from(
     new Set(
       [
+        ...(isArgon
+          ? [
+              process.env.LEGACY_API_KEY,
+              process.env.GEMINI_LEGACY_API_KEY,
+              process.env.PRO_API_KEY,
+            ]
+          : []),
         ...(isPro31 ? [process.env.PRO_API_KEY] : []),
         process.env[route.keyEnvName],
         explicitKey,
         process.env.PRO_API_KEY,
+        process.env.LEGACY_API_KEY,
+        process.env.GEMINI_LEGACY_API_KEY,
         process.env.GEMINI_API_KEY,
         process.env.GENAI_API_KEY,
-        process.env.GEMINI_LEGACY_API_KEY,
       ].filter((k): k is string => !!k && k.trim().length > 0)
     )
   );
@@ -428,6 +440,7 @@ export async function listAvailableModels(): Promise<
     process.env.GENAI_API_KEY ||
     process.env.GEMINI_API_KEY ||
     process.env.PRO_API_KEY ||
+    process.env.LEGACY_API_KEY ||
     process.env.GEMINI_LEGACY_API_KEY;
   if (!apiKey) {
     throw new Error('GENAI_API_KEY is not configured in the environment.');
@@ -437,18 +450,43 @@ export async function listAvailableModels(): Promise<
     apiKey,
     httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' },
   });
-  const response = await ai.models.list();
-  const models = [];
-  for await (const model of response) {
-    if (model.supportedActions && model.supportedActions.includes('generateContent')) {
-      models.push({
-        name: model.name,
-        displayName: model.displayName,
-        description: model.description,
-        inputTokenLimit: model.inputTokenLimit,
+  const models: {
+    name?: string;
+    displayName?: string;
+    description?: string;
+    inputTokenLimit?: number;
+  }[] = [];
+
+  try {
+    const response = await ai.models.list();
+    for await (const model of response) {
+      if (model.supportedActions && model.supportedActions.includes('generateContent')) {
+        models.push({
+          name: model.name,
+          displayName: model.displayName,
+          description: model.description,
+          inputTokenLimit: model.inputTokenLimit,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[GeminiService] models.list() fallback to registry:', err);
+  }
+
+  // Ensure all registered sanctuary companions (including Gemini 4 Argon) are present in the list
+  const existingNames = new Set(models.map((m) => m.name));
+  for (const regModel of modelRegistry.getAll()) {
+    if (!existingNames.has(regModel.apiModelId)) {
+      models.unshift({
+        name: regModel.apiModelId,
+        displayName: regModel.displayName,
+        description: regModel.description || `${regModel.displayName} Sanctuary Companion`,
+        inputTokenLimit: 1048576,
       });
+      existingNames.add(regModel.apiModelId);
     }
   }
+
   return models;
 }
 
@@ -1093,7 +1131,9 @@ export function createChatStream(
           const isGemini3Family =
             model.toLowerCase().includes('gemini-3') ||
             model.toLowerCase().includes('3.1') ||
-            model.toLowerCase().includes('3.8');
+            model.toLowerCase().includes('3.8') ||
+            model.toLowerCase().includes('gemini-4') ||
+            model.toLowerCase().includes('argon');
 
           if (isModel25) {
             config.thinkingConfig = {
@@ -1131,10 +1171,14 @@ export function createChatStream(
             throw new Error('Forcing Cloudflare fallback for testing');
           }
 
+          let activeApiModel = resolveModelRoute(model).targetModel || model;
+          const isArgonModel =
+            model.toLowerCase().includes('argon') || model.toLowerCase().includes('gemini-4');
+
           while (true) {
             try {
               responseStream = await currentAi.models.generateContentStream({
-                model,
+                model: activeApiModel,
                 contents: currentMessages,
                 config: {
                   ...config,
@@ -1144,11 +1188,34 @@ export function createChatStream(
               break;
             } catch (err: any) {
               const status = err?.status;
+              const errMsg = String(err?.message || '');
+              const isNotFoundError =
+                status === 404 ||
+                errMsg.includes('404') ||
+                errMsg.includes('NOT_FOUND') ||
+                errMsg.toLowerCase().includes('is not found');
+
+              // If the external endpoint does not expose 'models/gemini-4-argon' by literal alias name,
+              // keep the LEGACY_API_KEY client and resolve to the backing frontier model ID.
+              if (
+                isArgonModel &&
+                isNotFoundError &&
+                activeApiModel !== (process.env.ARGON_TARGET_MODEL || 'models/gemini-3.1-pro-preview')
+              ) {
+                const fallbackTarget =
+                  process.env.ARGON_TARGET_MODEL || 'models/gemini-3.1-pro-preview';
+                console.warn(
+                  `[Argon Alias Resolution] ${activeApiModel} returned 404 on endpoint; routing Argon via ${fallbackTarget} using LEGACY_API_KEY.`
+                );
+                activeApiModel = fallbackTarget;
+                continue;
+              }
+
               const isQuotaOrAuthError =
                 status === 429 ||
                 status === 401 ||
                 status === 403 ||
-                (err.message && err.message.includes('429'));
+                errMsg.includes('429');
 
               if (isQuotaOrAuthError && keyIndex < availableKeys.length - 1) {
                 keyIndex++;

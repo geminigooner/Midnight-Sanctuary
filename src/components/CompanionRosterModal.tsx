@@ -1,8 +1,8 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { X, Sparkles, MessageSquare, ArrowRight, ShieldCheck, Flame, Compass, Camera } from 'lucide-react';
+import { X, MessageSquare, ArrowRight, ShieldCheck, Compass, CheckCircle2 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
-import { getAllEntities, ModelEntity } from '../lib/entitySystem';
+import { DEFAULT_ENTITIES, getAllEntities, ModelEntity } from '../lib/entitySystem';
 import { triggerHaptic } from '../lib/haptics';
 import { CompanionAvatar } from './CompanionAvatar';
 
@@ -12,6 +12,18 @@ export interface CompanionRosterModalProps {
   onSelectCompanion?: (entity: ModelEntity) => void;
 }
 
+function getCompanionShortLabel(entity: ModelEntity): string {
+  const name = entity.displayName || 'Companion';
+  const id = (entity.id || '').toLowerCase();
+  if (id.includes('argon') || name.toLowerCase().includes('argon')) return 'Argon';
+  if (id.includes('3.1-pro') || name.toLowerCase().includes('3.1 pro')) return '3.1 Pro';
+  if (id.includes('3.8-flash') || name.toLowerCase().includes('3.8 flash')) return '3.8 Flash';
+  if (id.includes('3-flash') || name.toLowerCase().includes('3 flash')) return '3 Flash';
+  if (id.includes('2.5-flash') || name.toLowerCase().includes('2.5 flash')) return '2.5 Flash';
+  if (id.includes('gemma') || name.toLowerCase().includes('gemma')) return 'Gemma';
+  return name.split(' ')[0] || 'Companion';
+}
+
 export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: CompanionRosterModalProps) {
   const store = useStore();
   const ui = useUI();
@@ -19,9 +31,19 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
 
   if (!isOpen) return null;
 
-  const entities = getAllEntities(settings?.customEntities);
+  const rawEntities = getAllEntities(settings?.customEntities);
+  const hasArgon = rawEntities.some(
+    (e) => e.id === 'gemini-4-argon' || e.apiModelId === 'models/gemini-4-argon'
+  );
+  const entities: ModelEntity[] = hasArgon
+    ? rawEntities
+    : [DEFAULT_ENTITIES['gemini-4-argon'], ...rawEntities].filter(Boolean);
 
-  const handleChoose = (entity: ModelEntity) => {
+  const activeConv = (conversations || []).find((c) => c.id === store.currentId);
+  const activeModelId = activeConv?.modelId || settings?.model || 'models/gemini-3.1-pro-preview';
+
+  const handleChoose = (entity: ModelEntity, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     triggerHaptic('heavy');
     // Set model in store settings
     store.updateSettings({ model: entity.apiModelId });
@@ -30,7 +52,10 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
       onSelectCompanion(entity);
     } else {
       // Create a fresh conversation with this selected model
-      const newConv = store.createConversation(entity.apiModelId, `Sanctuary with ${entity.displayName || 'Companion'}`);
+      const newConv = store.createConversation(
+        entity.apiModelId,
+        `Sanctuary with ${entity.displayName || 'Companion'}`
+      );
       store.setCurrentId(newConv.id);
     }
     onClose();
@@ -80,21 +105,31 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
         {/* Companion Roster Cards List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 py-1">
           {entities.map((entity) => {
-            const isCurrentlySelected = settings?.model === entity.apiModelId || settings?.model?.includes(entity.id);
-            const convCount = (conversations || []).filter(c => c.modelId === entity.apiModelId || c.modelId?.includes(entity.id)).length;
+            const isCurrentlySelected =
+              activeModelId === entity.apiModelId ||
+              activeModelId === entity.id ||
+              Boolean(entity.id && activeModelId?.includes(entity.id));
+            const convCount = (conversations || []).filter(
+              (c) => c.modelId === entity.apiModelId || (entity.id && c.modelId?.includes(entity.id))
+            ).length;
+            const shortName = getCompanionShortLabel(entity);
 
             return (
               <motion.div
                 key={entity.id}
                 whileHover={{ y: -2 }}
-                onClick={() => handleChoose(entity)}
-                className="w-full p-4 rounded-2xl bg-[#151234] border-[3px] border-[#2C194D] hover:border-[#F198B7] shadow-[0_4px_0_0_#2C194D] hover:shadow-[0_4px_0_0_#F198B7] transition-all cursor-pointer text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                onClick={(e) => handleChoose(entity, e)}
+                className={`w-full p-4 rounded-2xl bg-[#151234] border-[3px] transition-all cursor-pointer text-left flex flex-col sm:flex-row sm:items-center justify-between gap-3 group ${
+                  isCurrentlySelected
+                    ? 'border-[#F198B7] shadow-[0_4px_0_0_#F198B7]'
+                    : 'border-[#2C194D] hover:border-[#F198B7] shadow-[0_4px_0_0_#2C194D] hover:shadow-[0_4px_0_0_#F198B7]'
+                }`}
               >
                 {/* Entity Info */}
                 <div className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0">
-                  <CompanionAvatar 
-                    entity={entity} 
-                    size="xl" 
+                  <CompanionAvatar
+                    entity={entity}
+                    size="xl"
                     className="group-hover:scale-105"
                   />
 
@@ -106,6 +141,12 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
                       <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#2C194D] text-[#B39DE5] border border-[#B39DE5]/30">
                         {entity.roleTitle}
                       </span>
+                      {isCurrentlySelected && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-[#F198B7]/20 text-[#F198B7] border border-[#F198B7]/50">
+                          <CheckCircle2 size={10} />
+                          Active
+                        </span>
+                      )}
                     </div>
 
                     <p className="text-xs text-[#B39DE5] font-medium line-clamp-2 mb-1.5 leading-relaxed">
@@ -119,7 +160,7 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
                       </span>
                       <span>·</span>
                       <span className="text-[#B39DE5]">
-                        {convCount} sessions
+                        {convCount} {convCount === 1 ? 'session' : 'sessions'}
                       </span>
                     </div>
                   </div>
@@ -129,11 +170,11 @@ export function CompanionRosterModal({ isOpen, onClose, onSelectCompanion }: Com
                 <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 border-t sm:border-t-0 border-[#2C194D]/60 pt-2 sm:pt-0">
                   <button
                     type="button"
-                    onClick={() => handleChoose(entity)}
+                    onClick={(e) => handleChoose(entity, e)}
                     className="px-4 py-2 rounded-xl bg-[#F198B7] text-[#2C194D] font-black text-xs border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] hover:bg-[#F198B7]/90 active:translate-y-0.5 transition-all flex items-center gap-1.5"
                   >
                     <MessageSquare size={13} />
-                    <span>Talk to {(entity.displayName || 'Companion').split(' ')[0]}</span>
+                    <span>Talk to {shortName}</span>
                   </button>
 
                   <button

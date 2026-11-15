@@ -1,6 +1,6 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { performWebSearch } from './src/backend/searchService';
 import { generateImage } from './src/backend/imageService';
 import { verifyRequest, verifyRequestWithUser } from './src/backend/verifyAuth';
@@ -13,10 +13,19 @@ import {
 } from './src/backend/gemini.service';
 import { resolveExternalChatContext } from './src/backend/firestoreContext.service';
 
+declare const __PROD_SERVER__: boolean | undefined;
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const IS_PRODUCTION =
+  (typeof __PROD_SERVER__ !== 'undefined' && __PROD_SERVER__ === true) ||
+  process.env.NODE_ENV === 'production';
 
 app.use(express.json({ limit: '50mb' }));
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', mode: IS_PRODUCTION ? 'production' : 'development' });
+});
 
 app.post('/api/generate-image', async (req, res) => {
   if (!(await verifyRequest(req))) {
@@ -142,23 +151,63 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+function resolveDistPath(): string {
+  const cwdDist = path.join(process.cwd(), 'dist');
+  if (fs.existsSync(path.join(cwdDist, 'index.html'))) {
+    return cwdDist;
+  }
+  if (typeof __dirname !== 'undefined' && fs.existsSync(path.join(__dirname, 'index.html'))) {
+    return __dirname;
+  }
+  return cwdDist;
+}
+
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (!IS_PRODUCTION) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true as const,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    const distPath = resolveDistPath();
+
+    // Serve hashed static assets with immutable caching; return 404 (never text/html) if missing
+    app.use(
+      '/assets',
+      express.static(path.join(distPath, 'assets'), {
+        immutable: true,
+        maxAge: '1y',
+        fallthrough: false,
+      }),
+      (_err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(404).end();
+      }
+    );
+
+    // Serve remaining public static files without auto-indexing so index.html gets no-cache headers
+    app.use(express.static(distPath, { index: false }));
+
     app.get('*', (req, res) => {
+      // Never return HTML for missing static script/stylesheet/asset requests
+      if (/\.(js|mjs|cjs|css|map|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf)$/i.test(req.path)) {
+        return res.status(404).end();
+      }
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(
+      `Server running on http://0.0.0.0:${PORT} (${IS_PRODUCTION ? 'production' : 'development'})`
+    );
   });
 }
 

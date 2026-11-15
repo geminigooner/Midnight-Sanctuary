@@ -504,7 +504,7 @@ The package manifest defines these scripts as follows:
 
 These commands are taken from the package manifest and have not been independently executed as part of this documentation pass.
 
-The repository also contains Netlify configuration and Netlify function files. Keep both deployment paths in mind when maintaining API behavior and authentication.
+The application is deployed as a containerized full-stack Express + Vite service on Google Cloud Run (`npm run build` followed by `npm start`).
 
 ⸻
 

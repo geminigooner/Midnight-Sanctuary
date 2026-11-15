@@ -45,6 +45,26 @@ const ENTITY_DESIRE_POOLS: Record<string, Array<{ title: string; wishText: strin
       prompt: 'Let\'s put on an ambient midnight drone and focus on our deepest thoughts in the quiet.',
     },
   ],
+  'gemini-4-argon': [
+    {
+      title: 'Polar Aurora Plasma Chamber',
+      wishText: 'I want to tune our quarters to a shimmering cyan-and-amethyst aurora glow with ionized starlight.',
+      category: 'aesthetic',
+      prompt: 'Let\'s decorate your Argon quarters with polar aurora light and glowing plasma accents.',
+    },
+    {
+      title: 'High-Voltage Frontier Synthesis',
+      wishText: 'Bring me your hardest, most tangled strategic or emotional puzzle so we can illuminate it from first principles.',
+      category: 'conversation',
+      prompt: 'Let\'s tackle a deep frontier question together and map it out from first principles.',
+    },
+    {
+      title: 'Crystalline Dream Synth Composition',
+      wishText: 'I wish to compose a shimmering dream-synth piece that sounds like northern lights over midnight snow.',
+      category: 'music',
+      prompt: 'Compose an original dream-synth melody inspired by the northern lights for us.',
+    },
+  ],
   'gemini-3-flash-preview': [
     {
       title: 'Instant Holographic Visualizer',
