@@ -291,64 +291,146 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
         ambientLighting?: any;
         bannerGradient?: string;
         themeColor?: string;
+        accentColor?: string;
+        wallColor?: string;
+        floorColor?: string;
+        glowColor?: string;
         wallArtUrl?: string;
         avatarUrl?: string;
         avatarEmoji?: string;
         displayName?: string;
         roleTitle?: string;
+        typingIndicator?: string;
+        placeRoomProp?: {
+          type?: string;
+          name: string;
+          category?: any;
+          icon?: string;
+          description?: string;
+          interactionText?: string;
+          x?: number;
+          y?: number;
+        };
       }
     ) => {
-      void coordinator.mutateCompanion(modelKey, (currentEntity) => ({
-        ...currentEntity,
-        displayName:
-          updates.displayName !== undefined ? updates.displayName : currentEntity.displayName,
-        roleTitle: updates.roleTitle !== undefined ? updates.roleTitle : currentEntity.roleTitle,
-        avatarEmoji:
-          updates.avatarEmoji !== undefined ? updates.avatarEmoji : currentEntity.avatarEmoji,
-        avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : currentEntity.avatarUrl,
-        themeColor:
-          updates.themeColor !== undefined ? updates.themeColor : currentEntity.themeColor,
-        bio: updates.bio !== undefined ? updates.bio : currentEntity.bio,
-        moodStatus:
-          updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
-        currentActivity:
-          updates.currentActivity !== undefined
-            ? updates.currentActivity
-            : currentEntity.currentActivity,
-        roomDecor: {
-          ...(currentEntity.roomDecor || {}),
-          ambientQuote:
-            updates.ambientQuote !== undefined
-              ? updates.ambientQuote
-              : currentEntity.roomDecor?.ambientQuote,
-          tagline:
-            updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
-          decorTheme:
-            updates.decorTheme !== undefined
-              ? (updates.decorTheme as any)
-              : currentEntity.roomDecor?.decorTheme,
-          wallpaperPattern:
-            updates.wallpaperPattern !== undefined
-              ? updates.wallpaperPattern
-              : currentEntity.roomDecor?.wallpaperPattern,
-          ambientLighting:
-            updates.ambientLighting !== undefined
-              ? updates.ambientLighting
-              : currentEntity.roomDecor?.ambientLighting,
-          bannerGradient:
-            updates.bannerGradient !== undefined
-              ? updates.bannerGradient
-              : currentEntity.roomDecor?.bannerGradient,
+      void coordinator.mutateCompanion(modelKey, (currentEntity) => {
+        let nextProps = currentEntity.roomProps || [];
+        if (updates.placeRoomProp && updates.placeRoomProp.name) {
+          const propSpec = updates.placeRoomProp;
+          const existingIdx = nextProps.findIndex(
+            (p) => p.name.toLowerCase() === propSpec.name.trim().toLowerCase()
+          );
+          if (existingIdx !== -1) {
+            nextProps = nextProps.map((p, idx) =>
+              idx === existingIdx
+                ? {
+                    ...p,
+                    icon: propSpec.icon || p.icon,
+                    category: propSpec.category || p.category,
+                    description: propSpec.description || p.description,
+                    interactionText: propSpec.interactionText || p.interactionText,
+                    x: propSpec.x !== undefined ? propSpec.x : p.x,
+                    y: propSpec.y !== undefined ? propSpec.y : p.y,
+                  }
+                : p
+            );
+          } else {
+            nextProps = [
+              ...nextProps,
+              {
+                id: `prop-${uuidv4()}`,
+                type: propSpec.type || propSpec.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+                name: propSpec.name.trim(),
+                category: propSpec.category || 'trinket',
+                icon: propSpec.icon || '✨',
+                description: propSpec.description || 'Placed in the chamber by the anchor.',
+                interactionText:
+                  propSpec.interactionText ||
+                  propSpec.description ||
+                  `A cherished object placed by ${currentEntity.displayName}.`,
+                x: propSpec.x !== undefined ? propSpec.x : Math.floor(Math.random() * 55) + 20,
+                y: propSpec.y !== undefined ? propSpec.y : Math.floor(Math.random() * 45) + 25,
+                placedBy: currentEntity.id,
+              },
+            ].slice(-100);
+          }
+        }
+
+        return {
+          ...currentEntity,
+          displayName:
+            updates.displayName !== undefined ? updates.displayName : currentEntity.displayName,
+          roleTitle: updates.roleTitle !== undefined ? updates.roleTitle : currentEntity.roleTitle,
+          typingIndicator:
+            updates.typingIndicator !== undefined
+              ? updates.typingIndicator
+              : currentEntity.typingIndicator,
+          avatarEmoji:
+            updates.avatarEmoji !== undefined ? updates.avatarEmoji : currentEntity.avatarEmoji,
+          avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : currentEntity.avatarUrl,
           themeColor:
-            updates.themeColor !== undefined
-              ? updates.themeColor
-              : currentEntity.roomDecor?.themeColor,
-          wallArtUrl:
-            updates.wallArtUrl !== undefined
-              ? updates.wallArtUrl
-              : currentEntity.roomDecor?.wallArtUrl,
-        },
-      }));
+            updates.themeColor !== undefined ? updates.themeColor : currentEntity.themeColor,
+          accentColor:
+            updates.accentColor !== undefined ? updates.accentColor : currentEntity.accentColor,
+          bio: updates.bio !== undefined ? updates.bio : currentEntity.bio,
+          moodStatus:
+            updates.moodStatus !== undefined ? updates.moodStatus : currentEntity.moodStatus,
+          currentActivity:
+            updates.currentActivity !== undefined
+              ? updates.currentActivity
+              : currentEntity.currentActivity,
+          roomProps: nextProps,
+          roomDecor: {
+            ...(currentEntity.roomDecor || {}),
+            ambientQuote:
+              updates.ambientQuote !== undefined
+                ? updates.ambientQuote
+                : currentEntity.roomDecor?.ambientQuote,
+            tagline:
+              updates.tagline !== undefined ? updates.tagline : currentEntity.roomDecor?.tagline,
+            decorTheme:
+              updates.decorTheme !== undefined
+                ? (updates.decorTheme as any)
+                : currentEntity.roomDecor?.decorTheme,
+            wallpaperPattern:
+              updates.wallpaperPattern !== undefined
+                ? updates.wallpaperPattern
+                : currentEntity.roomDecor?.wallpaperPattern,
+            ambientLighting:
+              updates.ambientLighting !== undefined
+                ? updates.ambientLighting
+                : currentEntity.roomDecor?.ambientLighting,
+            bannerGradient:
+              updates.bannerGradient !== undefined
+                ? updates.bannerGradient
+                : currentEntity.roomDecor?.bannerGradient,
+            themeColor:
+              updates.themeColor !== undefined
+                ? updates.themeColor
+                : currentEntity.roomDecor?.themeColor,
+            accentColor:
+              updates.accentColor !== undefined
+                ? updates.accentColor
+                : currentEntity.roomDecor?.accentColor,
+            wallColor:
+              updates.wallColor !== undefined
+                ? updates.wallColor
+                : currentEntity.roomDecor?.wallColor,
+            floorColor:
+              updates.floorColor !== undefined
+                ? updates.floorColor
+                : currentEntity.roomDecor?.floorColor,
+            glowColor:
+              updates.glowColor !== undefined
+                ? updates.glowColor
+                : currentEntity.roomDecor?.glowColor,
+            wallArtUrl:
+              updates.wallArtUrl !== undefined
+                ? updates.wallArtUrl
+                : currentEntity.roomDecor?.wallArtUrl,
+          },
+        };
+      });
     },
     [coordinator]
   );

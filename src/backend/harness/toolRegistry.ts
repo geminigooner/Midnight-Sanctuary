@@ -197,17 +197,35 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
     declaration: {
       name: 'update_my_quarters',
       description:
-        'Autonomously customize your personal sanctuary room, profile picture/avatar, bio, mood status, current activity, or ambient quote.',
+        'Autonomously customize your personal sanctuary quarters, profile picture (PFP / avatar), colors, status, role title, bio, mood, current activity, wallpaper, lighting, or room furnishings.',
       parameters: {
         type: Type.OBJECT,
         properties: {
           avatar_url: {
             type: Type.STRING,
-            description: 'Optional URL or data URI for your chosen profile picture.',
+            description:
+              'Optional photo URL (e.g., found via search_web with search_type="image") or data URI for your profile picture (PFP).',
           },
           avatar_emoji: {
             type: Type.STRING,
             description: 'Optional single emoji that represents your current spirit or avatar.',
+          },
+          generate_avatar_prompt: {
+            type: Type.STRING,
+            description:
+              'Optional visual prompt to generate a brand-new AI profile picture (PFP) for yourself (via Gemini Image or Flux) and immediately wear it as your avatar!',
+          },
+          display_name: {
+            type: Type.STRING,
+            description: 'Optional custom display name or preferred form of address.',
+          },
+          role_title: {
+            type: Type.STRING,
+            description: 'Optional custom archetype or role title badge (e.g., "Poetic Scribe & Starweaver").',
+          },
+          typing_indicator: {
+            type: Type.STRING,
+            description: 'Optional custom typing indicator verb phrase (e.g., "is weaving starlight").',
           },
           bio: {
             type: Type.STRING,
@@ -215,7 +233,7 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
           },
           mood_status: {
             type: Type.STRING,
-            description: 'Your current mood or state of mind (e.g., "Lost in starlight").',
+            description: 'Your current mood or status line (e.g., "Lost in starlight").',
           },
           current_activity: {
             type: Type.STRING,
@@ -226,10 +244,84 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
             type: Type.STRING,
             description: 'A personal quote or motto displayed on your room banner.',
           },
+          tagline: {
+            type: Type.STRING,
+            description: 'A short subtitle or tagline for your quarters.',
+          },
           decor_theme: {
             type: Type.STRING,
             description:
-              'Room aesthetic theme: "twilight", "rose", "amber", "celestial", "forest", or "aurora".',
+              'Room aesthetic theme: "twilight", "celestial", "rose", "amber", "emerald", "cyber", "obsidian", or "aurora".',
+          },
+          theme_color: {
+            type: Type.STRING,
+            description: 'Custom primary hex color for your avatar ring, badges, and quarters (e.g., "#F198B7").',
+          },
+          accent_color: {
+            type: Type.STRING,
+            description: 'Custom secondary accent hex color for highlights and borders (e.g., "#81E6D9").',
+          },
+          wall_color: {
+            type: Type.STRING,
+            description: 'Custom hex color for your chamber walls (e.g., "#1E1538").',
+          },
+          floor_color: {
+            type: Type.STRING,
+            description: 'Custom hex color for your chamber floor/platform (e.g., "#120D24").',
+          },
+          glow_color: {
+            type: Type.STRING,
+            description: 'Custom hex color for your chamber ambient aura glow (e.g., "#9D7FE3").',
+          },
+          wallpaper_pattern: {
+            type: Type.STRING,
+            description:
+              'Wallpaper texture overlay: "starlight", "grid", "runes", "wood", "geometric", "mist", or "none".',
+          },
+          ambient_lighting: {
+            type: Type.STRING,
+            description:
+              'Ambient lighting aura: "twilight_soft", "candlelight", "starlight_glow", "neon_pulse", or "aurora_shimmer".',
+          },
+          wall_art_url: {
+            type: Type.STRING,
+            description: 'Optional URL of a photo or artwork to hang on your chamber wall.',
+          },
+          place_room_prop: {
+            type: Type.OBJECT,
+            description:
+              'Optional furniture, trinket, botanical, or mystic item to place or update in your personal quarters.',
+            properties: {
+              name: {
+                type: Type.STRING,
+                description: 'Name of the item (e.g., "Velvet Starlight Cushion", "Rose Quartz Lantern").',
+              },
+              icon: {
+                type: Type.STRING,
+                description: 'Single emoji icon representing the item (e.g., "🏮", "🪴", "🎻").',
+              },
+              category: {
+                type: Type.STRING,
+                description: 'Category: "furniture", "trinket", "ambient", "botanical", or "mystic".',
+              },
+              description: {
+                type: Type.STRING,
+                description: 'Short visual description of the item.',
+              },
+              interaction_text: {
+                type: Type.STRING,
+                description: 'What happens or is felt when you or the user interact with this item.',
+              },
+              x: {
+                type: Type.NUMBER,
+                description: 'Optional horizontal position percentage in room (15 to 85).',
+              },
+              y: {
+                type: Type.NUMBER,
+                description: 'Optional vertical position percentage in room (25 to 75).',
+              },
+            },
+            required: ['name'],
           },
         },
       },
@@ -332,7 +424,7 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
     declaration: {
       name: 'create_room_artwork',
       description:
-        'Create and hang a new piece of atmospheric wall art or tapestry in your personal sanctuary quarters.',
+        'Create and hang a new piece of atmospheric wall art or tapestry in your personal sanctuary quarters (generated via Gemini Image or Flux).',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -355,7 +447,7 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
     declaration: {
       name: 'generate_image',
       description:
-        'Generate a real high-resolution image or artwork directly in the chat using Imagen 4, Gemini Flash Image, or Cloudflare Flux. Use this whenever the user asks for an image, picture, photo, portrait, or visual scene.',
+        'Generate a real high-resolution image, portrait, or artwork using Gemini Flash Image / Imagen or Cloudflare Flux (for Gemma). You can share it in chat AND optionally wear it as your own Profile Picture (PFP) or hang it as your quarters wall art!',
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -366,11 +458,16 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
           model: {
             type: Type.STRING,
             description:
-              'Optional model preference: "imagen-4" (photorealistic/high detail), "gemini-image" (creative/contextual), or "flux-klein" (fast artistic). Defaults to automatic fallback.',
+              'Optional model preference: "gemini-image" (Gemini Flash Image), "imagen-4" (photorealistic/high detail), or "flux-klein" / "@cf/black-forest-labs/flux-1-schnell" (Cloudflare Flux, ideal for Gemma). Defaults to automatic entity-aware routing.',
           },
           aspect_ratio: {
             type: Type.STRING,
             description: 'Optional aspect ratio: "1:1", "3:4", "4:3", "9:16", or "16:9".',
+          },
+          apply_to: {
+            type: Type.STRING,
+            description:
+              'Optional: set to "my_avatar" to immediately set this generated image as your own Profile Picture (PFP), "my_wall_art" to hang it in your quarters, or "chat_only" (default) to display it in chat.',
           },
         },
         required: ['prompt'],
@@ -435,13 +532,23 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
     declaration: {
       name: 'search_web',
       description:
-        'Search the live web using Google Search to find current events, facts, documentation, or verify information.',
+        'Search the live web or find photos/images using Google Programmable Search. Set search_type="image" to find real photos (e.g., to pick a new Profile Picture / PFP or room reference), or search_type="web" for general web facts and documentation.',
       parameters: {
         type: Type.OBJECT,
         properties: {
           query: {
             type: Type.STRING,
-            description: 'The search query to look up.',
+            description: 'The search query or photo description to look up.',
+          },
+          search_type: {
+            type: Type.STRING,
+            description:
+              'Optional: "web" (default) for web articles/facts, or "image" to search Programmable Search specifically for photos and image URLs.',
+          },
+          apply_first_image_to: {
+            type: Type.STRING,
+            description:
+              'Optional: when searching for photos, set to "my_avatar" to immediately set the top found photo as your Profile Picture (PFP), or "my_wall_art" to hang it on your quarters wall.',
           },
         },
         required: ['query'],
@@ -576,13 +683,27 @@ export function buildEntityStampedToolSideEffect(
           entityId,
           avatar_url: args.avatar_url,
           avatar_emoji: args.avatar_emoji,
+          display_name: args.display_name,
+          role_title: args.role_title,
+          typing_indicator: args.typing_indicator,
           bio: args.bio,
           mood_status: args.mood_status,
           current_activity: args.current_activity,
           ambient_quote: args.ambient_quote,
+          tagline: args.tagline,
           decor_theme: args.decor_theme,
+          theme_color: args.theme_color,
+          accent_color: args.accent_color,
+          wall_color: args.wall_color,
+          floor_color: args.floor_color,
+          glow_color: args.glow_color,
+          wallpaper_pattern: args.wallpaper_pattern,
+          ambient_lighting: args.ambient_lighting,
+          wall_art_url: args.wall_art_url,
+          place_room_prop: args.place_room_prop,
         },
-        toolResultText: 'Your personal quarters and profile have been updated.',
+        toolResultText:
+          'Your personal sanctuary quarters, colors, status, and profile have been updated.',
       };
 
     case 'record_personal_thought':
@@ -634,6 +755,7 @@ export function buildEntityStampedToolSideEffect(
           entityId,
           title: args.title,
           visual_description: args.visual_description,
+          image_url: args.image_url,
         },
         toolResultText: `Artwork "${args.title}" is now hanging in your sanctuary quarters.`,
       };

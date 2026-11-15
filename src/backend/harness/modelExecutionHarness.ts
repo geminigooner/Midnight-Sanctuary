@@ -386,7 +386,12 @@ async function dispatchServerOrEntityToolCall(params: {
   if (callName === 'generate_image') {
     const prompt = String(args.prompt || '');
     const prefModel = args.model ? String(args.model) : undefined;
-    const rawRatio = args.aspect_ratio ? String(args.aspect_ratio) : '1:1';
+    const applyTo = args.apply_to ? String(args.apply_to) : 'chat_only';
+    const rawRatio = args.aspect_ratio
+      ? String(args.aspect_ratio)
+      : applyTo === 'my_wall_art'
+      ? '16:9'
+      : '1:1';
     const validRatios = ['1:1', '3:4', '4:3', '9:16', '16:9'] as const;
     const aspectRatio = (validRatios.includes(rawRatio as any) ? rawRatio : '1:1') as
       | '1:1'
@@ -401,6 +406,7 @@ async function dispatchServerOrEntityToolCall(params: {
         prompt,
         model: prefModel as any,
         aspectRatio,
+        respondingEntityId,
       });
       writeSse({
         type: 'image_generated',
@@ -408,8 +414,30 @@ async function dispatchServerOrEntityToolCall(params: {
         imageUrl: imgResult.imageUrl,
         provider: imgResult.provider,
         modelUsed: imgResult.modelUsed,
+        applyTo,
       });
-      toolResult = `Image successfully generated for prompt "${prompt}" using ${imgResult.modelUsed} and displayed to the user in the chat.`;
+
+      if (applyTo === 'my_avatar' && imgResult.imageUrl) {
+        writeSse({
+          type: 'update_quarters',
+          modelId: respondingEntityId,
+          entityId: respondingEntityId,
+          avatar_url: imgResult.imageUrl,
+        });
+        toolResult = `Image successfully generated for prompt "${prompt}" using ${imgResult.modelUsed}, displayed in chat, and applied as your new Profile Picture (PFP)!`;
+      } else if (applyTo === 'my_wall_art' && imgResult.imageUrl) {
+        writeSse({
+          type: 'create_room_artwork',
+          modelId: respondingEntityId,
+          entityId: respondingEntityId,
+          title: prompt.slice(0, 48),
+          visual_description: prompt,
+          image_url: imgResult.imageUrl,
+        });
+        toolResult = `Image successfully generated for prompt "${prompt}" using ${imgResult.modelUsed}, displayed in chat, and hung on your quarters wall!`;
+      } else {
+        toolResult = `Image successfully generated for prompt "${prompt}" using ${imgResult.modelUsed} and displayed to the user in the chat.`;
+      }
     } catch (imgErr: any) {
       console.error('generate_image tool error:', imgErr);
       toolResult = `Image generation failed: ${
@@ -428,24 +456,57 @@ async function dispatchServerOrEntityToolCall(params: {
 
   if (callName === 'search_web') {
     const query = String(args.query || '');
+    const searchType = args.search_type === 'image' ? 'image' : 'web';
+    const applyFirstImageTo = args.apply_first_image_to
+      ? String(args.apply_first_image_to)
+      : 'none';
     let toolResult = '';
     try {
-      const searchRes = await performWebSearch(query);
+      const searchRes = await performWebSearch(query, { searchType });
       const items = searchRes?.items || [];
       if (items.length > 0) {
         toolResult = items
-          .map((r, idx) => `[${idx + 1}] ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`)
+          .map((r, idx) => {
+            const lines = [`[${idx + 1}] ${r.title}`, `URL: ${r.link}`];
+            if (r.imageUrl) lines.push(`Image URL: ${r.imageUrl}`);
+            if (r.snippet) lines.push(`Snippet: ${r.snippet}`);
+            return lines.join('\n');
+          })
           .join('\n\n');
         writeSse({
           type: 'search_result',
           query,
+          searchType,
           results: items.map((r) => ({
             title: r.title,
             link: r.link,
             snippet: r.snippet,
             displayLink: r.displayLink,
+            imageUrl: r.imageUrl,
+            thumbnailUrl: r.thumbnailUrl,
           })),
         });
+
+        const firstPhotoUrl = items.find((i) => i.imageUrl)?.imageUrl;
+        if (firstPhotoUrl && applyFirstImageTo === 'my_avatar') {
+          writeSse({
+            type: 'update_quarters',
+            modelId: respondingEntityId,
+            entityId: respondingEntityId,
+            avatar_url: firstPhotoUrl,
+          });
+          toolResult += `\n\n[Applied found photo (${firstPhotoUrl}) as your Profile Picture (PFP).]`;
+        } else if (firstPhotoUrl && applyFirstImageTo === 'my_wall_art') {
+          writeSse({
+            type: 'create_room_artwork',
+            modelId: respondingEntityId,
+            entityId: respondingEntityId,
+            title: items.find((i) => i.imageUrl)?.title || query,
+            visual_description: query,
+            image_url: firstPhotoUrl,
+          });
+          toolResult += `\n\n[Hung found photo (${firstPhotoUrl}) on your quarters wall.]`;
+        }
       } else {
         toolResult = searchRes?.error
           ? `Search error: ${searchRes.error}`
@@ -462,6 +523,51 @@ async function dispatchServerOrEntityToolCall(params: {
         functionResponse: { name: callName, response: resp },
       },
     };
+  }
+
+  // If `update_my_quarters` includes `generate_avatar_prompt`, generate the new PFP first!
+  if (
+    callName === 'update_my_quarters' &&
+    args.generate_avatar_prompt &&
+    !args.avatar_url
+  ) {
+    try {
+      const avatarImg = await generateImage({
+        prompt: String(args.generate_avatar_prompt),
+        aspectRatio: '1:1',
+        respondingEntityId,
+      });
+      if (avatarImg.imageUrl) {
+        args.avatar_url = avatarImg.imageUrl;
+        writeSse({
+          type: 'image_generated',
+          prompt: String(args.generate_avatar_prompt),
+          imageUrl: avatarImg.imageUrl,
+          provider: avatarImg.provider,
+          modelUsed: avatarImg.modelUsed,
+          applyTo: 'my_avatar',
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to auto-generate avatar in update_my_quarters:', err);
+    }
+  }
+
+  // If `create_room_artwork` is invoked, generate real artwork via Gemini Image / Flux (with procedural fallback)
+  if (callName === 'create_room_artwork' && !args.image_url) {
+    try {
+      const artPrompt = `${args.title || 'Sanctuary Tapestry'}: ${args.visual_description || ''}`;
+      const artImg = await generateImage({
+        prompt: artPrompt,
+        aspectRatio: '16:9',
+        respondingEntityId,
+      });
+      if (artImg.imageUrl) {
+        args.image_url = artImg.imageUrl;
+      }
+    } catch (err) {
+      console.warn('Failed to generate room artwork on server:', err);
+    }
   }
 
   // Domain entity mutations & creative artifacts
@@ -540,7 +646,7 @@ async function executeGemmaProviderAdapter(params: {
       }
       // W-08 fix: Provide structured tool-call bridge so Cloudflare Gemma can invoke Sanctuary tools
       systemPrompt +=
-        '\n\nIf you wish to invoke a Sanctuary tool (such as `save_memory`, `give_gift`, `update_my_quarters`, `record_personal_thought`, `note_about_user`, `draw_scribble`, or `compose_music`), emit `<tool_call>{"name":"<tool_name>","args":{...}}</tool_call>` before or after your spoken response.';
+        '\n\nIf you wish to invoke a Sanctuary tool (such as `update_my_quarters`, `generate_image`, `search_web`, `create_room_artwork`, `save_memory`, `give_gift`, `record_personal_thought`, `note_about_user`, `draw_scribble`, or `compose_music`), emit `<tool_call>{"name":"<tool_name>","args":{...}}</tool_call>` before or after your spoken response.';
 
       cfMessages.push({ role: 'system', content: systemPrompt });
 

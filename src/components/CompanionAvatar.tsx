@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ModelEntity } from '../lib/entitySystem';
 
 export interface CompanionAvatarProps {
@@ -24,10 +24,17 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
   showBadge = false,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
+
+  // Reset imageFailed whenever the entity's avatarUrl is updated (e.g. via AI generation, Programmable Search, or upload)
+  useEffect(() => {
+    setImageFailed(false);
+  }, [entity?.avatarUrl]);
+
   const sizeClass = sizeClasses[size] || sizeClasses.md;
   const hasValidPhoto = Boolean(entity?.avatarUrl && !imageFailed);
   const displayName = entity?.displayName || 'Anchor';
-  const themeColor = entity?.themeColor || '#9D7FE3';
+  const themeColor = entity?.themeColor || entity?.roomDecor?.themeColor || '#9D7FE3';
+  const accentColor = entity?.accentColor || entity?.roomDecor?.accentColor || '#F198B7';
   const emoji = entity?.avatarEmoji || '✨';
 
   return (
@@ -47,15 +54,14 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
             className="w-full h-full object-cover"
           />
         ) : (
-          <span className="leading-none flex items-center justify-center">
-            {emoji}
-          </span>
+          <span className="leading-none flex items-center justify-center">{emoji}</span>
         )}
       </div>
 
       {showBadge && (
         <span
-          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#F198B7] border-2 border-[#2C194D] flex items-center justify-center text-[9px] shadow-sm"
+          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#2C194D] flex items-center justify-center text-[9px] text-[#2C194D] font-black shadow-sm"
+          style={{ backgroundColor: accentColor }}
           title={entity?.roleTitle || 'Anchor'}
         >
           ✦
@@ -64,4 +70,3 @@ export const CompanionAvatar: React.FC<CompanionAvatarProps> = ({
     </div>
   );
 };
-

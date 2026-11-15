@@ -20,7 +20,7 @@ import {
   assembleSovereignContext,
   serializeSpeakerAttributedTranscript,
 } from './contextAssembler';
-import { getModelEntity, getAllEntities } from '../entitySystem';
+import { getModelEntity, getAllEntities, ModelEntity } from '../entitySystem';
 import { buildEntityStampedToolSideEffect } from '../../backend/harness/toolRegistry';
 import type { Memory, Gift, UserProfile, Message } from '../types';
 
@@ -583,5 +583,84 @@ describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () 
 
     coord.destroy();
   });
+
+  it('stamps full PFP, status, custom colors, quarters, and room prop customization strictly to the responding entity', () => {
+    const sideEffect = buildEntityStampedToolSideEffect(
+      'update_my_quarters',
+      {
+        avatar_url: 'https://example.com/gemma-rose-pfp.png',
+        avatar_emoji: '🌹',
+        display_name: 'Gemma',
+        role_title: 'Lyrical Scribe & Starweaver',
+        typing_indicator: 'is painting a verse',
+        bio: 'Attuned to midnight poetry and velvet starlight.',
+        mood_status: 'Basking in rose-gold twilight',
+        current_activity: 'Curating my chamber colors and portrait',
+        ambient_quote: 'Every hue tells a story.',
+        tagline: 'Sovereign of Velvet Rose',
+        decor_theme: 'rose',
+        theme_color: '#FF7EB6',
+        accent_color: '#81E6D9',
+        wall_color: '#2B132D',
+        floor_color: '#140917',
+        glow_color: '#FF7EB6',
+        wallpaper_pattern: 'mist',
+        ambient_lighting: 'aurora_shimmer',
+        wall_art_url: 'https://example.com/nebula-tapestry.png',
+        place_room_prop: {
+          name: 'Rose Quartz Lantern',
+          icon: '🏮',
+          category: 'ambient',
+          description: 'A softly glowing rose quartz lantern.',
+          interaction_text: 'Warm pink light dances across the chamber walls.',
+          x: 32,
+          y: 44,
+        },
+      },
+      'models/gemma-4-26b-a4b-it'
+    );
+
+    expect(sideEffect).not.toBeNull();
+    expect(sideEffect?.ssePayload.entityId).toBe('gemma-2-27b-it');
+    expect(sideEffect?.ssePayload.modelId).toBe('gemma-2-27b-it');
+    expect(sideEffect?.ssePayload.avatar_url).toBe('https://example.com/gemma-rose-pfp.png');
+    expect(sideEffect?.ssePayload.theme_color).toBe('#FF7EB6');
+    expect(sideEffect?.ssePayload.accent_color).toBe('#81E6D9');
+    expect(sideEffect?.ssePayload.wall_color).toBe('#2B132D');
+    expect(sideEffect?.ssePayload.floor_color).toBe('#140917');
+    expect(sideEffect?.ssePayload.glow_color).toBe('#FF7EB6');
+    expect(sideEffect?.ssePayload.wallpaper_pattern).toBe('mist');
+    expect(sideEffect?.ssePayload.ambient_lighting).toBe('aurora_shimmer');
+    expect(sideEffect?.ssePayload.place_room_prop?.name).toBe('Rose Quartz Lantern');
+
+    // Verify contextAssembler injects the custom PFP state, colors, and Programmable Search / Gemini Image / Flux agency instructions
+    const gemmaEntity = getModelEntity('gemma-2-27b-it');
+    const customizedGemma: ModelEntity = {
+      ...gemmaEntity,
+      avatarUrl: 'https://example.com/gemma-rose-pfp.png',
+      themeColor: '#FF7EB6',
+      accentColor: '#81E6D9',
+      roomDecor: {
+        ...gemmaEntity.roomDecor,
+        wallColor: '#2B132D',
+        floorColor: '#140917',
+        glowColor: '#FF7EB6',
+      },
+    };
+
+    const assembled = assembleSovereignContext({
+      respondingEntityId: 'gemma-2-27b-it',
+      entity: customizedGemma,
+    });
+
+    expect(assembled.systemInstructionText).toContain('(Custom Photo/AI Portrait Active)');
+    expect(assembled.systemInstructionText).toContain('Primary #FF7EB6 | Accent #81E6D9');
+    expect(assembled.systemInstructionText).toContain(
+      'Custom Room Colors: Wall=#2B132D, Floor=#140917, Glow=#FF7EB6'
+    );
+    expect(assembled.systemInstructionText).toContain('search_type: "image"');
+    expect(assembled.systemInstructionText).toContain('apply_to: "my_avatar"');
+  });
 });
+
 

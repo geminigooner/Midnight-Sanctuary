@@ -18,6 +18,10 @@ import type {
 
 export interface EntityRoomDecor {
   themeColor: string;
+  accentColor?: string;
+  wallColor?: string;
+  floorColor?: string;
+  glowColor?: string;
   bannerGradient: string;
   decorTheme: string;
   wallpaperPattern?: 'starlight' | 'grid' | 'runes' | 'wood' | 'geometric' | 'mist' | 'none';

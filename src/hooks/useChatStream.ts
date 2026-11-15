@@ -421,15 +421,38 @@ export function useChatStream({
           } else if (chunk.type === 'update_quarters') {
             hasToolCalls = true;
             if (onUpdateEntityQuarters) {
+              const rawProp = (chunk as any).place_room_prop;
               onUpdateEntityQuarters(chunk.modelId || effectiveSettings.model, {
                 avatarUrl: chunk.avatar_url,
                 avatarEmoji: chunk.avatar_emoji,
+                displayName: (chunk as any).display_name,
+                roleTitle: (chunk as any).role_title,
+                typingIndicator: (chunk as any).typing_indicator,
                 bio: chunk.bio,
                 moodStatus: chunk.mood_status,
                 currentActivity: chunk.current_activity,
                 ambientQuote: chunk.ambient_quote,
                 tagline: chunk.tagline,
                 decorTheme: chunk.decor_theme,
+                themeColor: (chunk as any).theme_color,
+                accentColor: (chunk as any).accent_color,
+                wallColor: (chunk as any).wall_color,
+                floorColor: (chunk as any).floor_color,
+                glowColor: (chunk as any).glow_color,
+                wallpaperPattern: (chunk as any).wallpaper_pattern,
+                ambientLighting: (chunk as any).ambient_lighting,
+                wallArtUrl: (chunk as any).wall_art_url,
+                placeRoomProp: rawProp
+                  ? {
+                      name: rawProp.name,
+                      icon: rawProp.icon,
+                      category: rawProp.category,
+                      description: rawProp.description,
+                      interactionText: rawProp.interaction_text || rawProp.interactionText,
+                      x: rawProp.x,
+                      y: rawProp.y,
+                    }
+                  : undefined,
               });
             }
           } else if (chunk.type === 'record_thought') {
@@ -472,10 +495,12 @@ export function useChatStream({
           } else if (chunk.type === 'create_room_artwork') {
             hasToolCalls = true;
             if (onAddRoomArtwork) {
-              const generatedUrl = generateProceduralSanctuaryArt(
-                `${chunk.title}: ${chunk.visual_description || ''}`,
-                chunk.modelId || effectiveSettings.model
-              );
+              const generatedUrl =
+                (chunk as any).image_url ||
+                generateProceduralSanctuaryArt(
+                  `${chunk.title}: ${chunk.visual_description || ''}`,
+                  chunk.modelId || effectiveSettings.model
+                );
               onAddRoomArtwork(chunk.modelId || effectiveSettings.model, {
                 title: chunk.title,
                 prompt: chunk.visual_description,

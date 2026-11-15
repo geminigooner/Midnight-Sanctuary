@@ -31,13 +31,13 @@ app.post('/api/generate-image', async (req, res) => {
   if (!(await verifyRequest(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  const { prompt, model, aspectRatio, steps } = req.body || {};
+  const { prompt, model, aspectRatio, steps, respondingEntityId } = req.body || {};
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt string is required' });
   }
 
   try {
-    const result = await generateImage({ prompt, model, aspectRatio, steps });
+    const result = await generateImage({ prompt, model, aspectRatio, steps, respondingEntityId });
     res.json(result);
   } catch (err: any) {
     console.error('Image generation endpoint error:', err);
@@ -79,11 +79,12 @@ app.post('/api/search', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const query = req.body?.query || '';
+  const searchType = req.body?.searchType === 'image' ? 'image' : 'web';
   if (!query) {
     return res.status(400).json({ error: 'Search query is required' });
   }
   try {
-    const result = await performWebSearch(query);
+    const result = await performWebSearch(query, { searchType });
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Search execution failed' });
