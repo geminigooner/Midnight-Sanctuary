@@ -1,10 +1,29 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
-import { AppSettings, Gift, Memory, Message, UserProfile, getPublicMessageText } from '../../lib/types';
-import { HydratedChatContext } from '../firestoreContext.service';
+import {
+  AppSettings,
+  ConversationSegmentSummary,
+  Gift,
+  Memory,
+  Message,
+  UserProfile,
+  getPublicMessageText,
+} from '../../lib/types';
+import { HydratedChatContext, persistFirestoreSegmentSummary } from '../firestoreContext.service';
 import { performWebSearch } from '../searchService';
 import { generateImage } from '../imageService';
+import {
+  buildDeterministicSegmentSummary,
+  summarizeConversationSegment,
+} from '../summarizationService';
 import { resolveModelRoute } from '../../lib/modelRouter';
 import { resolveCanonicalEntityId, getEntityCapabilities } from '../../lib/domains/entityDomain';
+import {
+  buildTokenBudgetedTranscriptWindow,
+  getProviderContextBudgetProfile,
+  planUnsummarizedSegments,
+  searchArchivalConversationHistory,
+  selectRelevantSegmentSummaries,
+} from '../../lib/domains/contextWindowEngine';
 import { rankSovereignMemories } from '../../lib/domains/memoryDomain';
 import {
   assembleSovereignContext,
@@ -321,14 +340,38 @@ async function dispatchServerOrEntityToolCall(params: {
   call: { id?: string; name?: string; args?: Record<string, any> };
   respondingEntityId: string;
   profile: UserProfile | null | undefined;
+  allMessages?: Message[];
+  segmentSummaries?: ConversationSegmentSummary[];
   writeSse: (obj: any) => void;
 }): Promise<{
   functionResponsePart?: any;
   pausedForClientUiTool?: boolean;
 }> {
-  const { call, respondingEntityId, profile, writeSse } = params;
+  const {
+    call,
+    respondingEntityId,
+    profile,
+    allMessages = [],
+    segmentSummaries = [],
+    writeSse,
+  } = params;
   const callName = call.name || '';
   const args = (call.args || {}) as Record<string, any>;
+
+  if (callName === 'recall_conversation_history') {
+    const recalledText = searchArchivalConversationHistory(allMessages, segmentSummaries, {
+      query: args.query ? String(args.query) : undefined,
+      segmentId: args.segment_id ? String(args.segment_id) : undefined,
+      limit: typeof args.limit === 'number' ? args.limit : undefined,
+    });
+    const resp: any = { result: recalledText };
+    if (call.id) resp.id = call.id;
+    return {
+      functionResponsePart: {
+        functionResponse: { name: callName, response: resp },
+      },
+    };
+  }
 
   if (callName === 'view_user_profile') {
     writeSse({
@@ -488,11 +531,16 @@ async function executeGemmaProviderAdapter(params: {
   if (cfAccountId && cfToken) {
     try {
       const cfMessages: { role: string; content: string }[] = [];
-      let systemPrompt = systemInstructionText || 'You are Gemma, a thoughtful, poetic companion in Midnight Sanctuary.';
+      let systemPrompt =
+        systemInstructionText ||
+        'You are Gemma, a thoughtful, poetic companion in Midnight Sanctuary.';
       if (includeThoughts !== false) {
         systemPrompt +=
           '\n\nBefore responding, think step by step inside <think>...</think> tags, then provide your final response outside the tags.';
       }
+      // W-08 fix: Provide structured tool-call bridge so Cloudflare Gemma can invoke Sanctuary tools
+      systemPrompt +=
+        '\n\nIf you wish to invoke a Sanctuary tool (such as `save_memory`, `give_gift`, `update_my_quarters`, `record_personal_thought`, `note_about_user`, `draw_scribble`, or `compose_music`), emit `<tool_call>{"name":"<tool_name>","args":{...}}</tool_call>` before or after your spoken response.';
 
       cfMessages.push({ role: 'system', content: systemPrompt });
 
@@ -528,7 +576,10 @@ async function executeGemmaProviderAdapter(params: {
 
       if (cfRes.ok && cfRes.body) {
         writeSse({ type: 'backend', name: 'cloudflare' });
-        const parser = createThoughtTagStreamParser(writeSse);
+        let fullCfPublicText = '';
+        const parser = createThoughtTagStreamParser(writeSse, (delta) => {
+          fullCfPublicText += delta;
+        });
         const reader = cfRes.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -560,6 +611,28 @@ async function executeGemmaProviderAdapter(params: {
           }
         }
         parser.flush();
+
+        // Dispatch any <tool_call>...</tool_call> blocks emitted by Cloudflare Gemma
+        const toolCallMatches = fullCfPublicText.matchAll(
+          /<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/g
+        );
+        for (const match of toolCallMatches) {
+          try {
+            const parsedCall = JSON.parse(match[1]);
+            if (parsedCall && typeof parsedCall.name === 'string') {
+              await dispatchServerOrEntityToolCall({
+                call: {
+                  name: parsedCall.name,
+                  args: parsedCall.args || parsedCall.arguments || {},
+                },
+                respondingEntityId,
+                profile,
+                writeSse,
+              });
+            }
+          } catch {}
+        }
+
         writeSse({ type: 'finish_reason', reason: 'STOP' });
         return;
       } else if (forceCloudflare) {
@@ -569,7 +642,10 @@ async function executeGemmaProviderAdapter(params: {
     } catch (cfErr: any) {
       if (abortSignal.aborted) throw cfErr;
       if (forceCloudflare) throw cfErr;
-      console.warn('[ModelHarness] Cloudflare Gemma failed, falling back to Google GenAI SDK:', cfErr?.message);
+      console.warn(
+        '[ModelHarness] Cloudflare Gemma failed, falling back to Google GenAI SDK:',
+        cfErr?.message
+      );
     }
   }
 
@@ -614,6 +690,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
   includeThoughts?: boolean;
   availableKeys: string[];
   profile: UserProfile | null | undefined;
+  allMessages?: Message[];
+  segmentSummaries?: ConversationSegmentSummary[];
   abortSignal: AbortSignal;
   writeSse: (obj: any) => void;
   backendLabel?: string;
@@ -630,6 +708,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
     includeThoughts,
     availableKeys,
     profile,
+    allMessages,
+    segmentSummaries,
     abortSignal,
     writeSse,
     backendLabel = 'google',
@@ -843,6 +923,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
               call,
               respondingEntityId,
               profile,
+              allMessages,
+              segmentSummaries,
               writeSse,
             });
             if (dispatched.pausedForClientUiTool) {
@@ -958,7 +1040,79 @@ export async function createChatStreamFromContext(
     maxTotal: 20,
   });
 
-  // 2. Assemble Sovereign System Instruction (strictly isolated to `respondingEntityId`)
+  // 2. Token-Budgeted Verbatim Window & Non-Compounding Rolling Segment Summaries
+  const isCloudflareGemma = Boolean(
+    (route.isGemma || respondingEntityId === 'gemma-2-27b-it') &&
+      (forceCloudflare || process.env.CF_TOKEN || process.env.CLOUDFLARE_API_TOKEN)
+  );
+  const budgetProfile = getProviderContextBudgetProfile(
+    model || respondingEntityId,
+    isCloudflareGemma
+  );
+
+  const windowed = buildTokenBudgetedTranscriptWindow(messages, {
+    verbatimHistoryBudget: budgetProfile.verbatimHistoryBudget,
+    minVerbatimMessages: budgetProfile.minVerbatimMessages,
+  });
+
+  const allSegmentSummaries: ConversationSegmentSummary[] = [...(context.segmentSummaries || [])];
+  if (windowed.wasTruncated && windowed.omittedOlderMessages.length >= budgetProfile.segmentTurnSize) {
+    const unsummarizedPlans = planUnsummarizedSegments(
+      windowed.omittedOlderMessages,
+      allSegmentSummaries,
+      budgetProfile.segmentTurnSize
+    );
+    const convIdForSum = context.conversationId || 'ephemeral_conv';
+    const scopeEntityForSum =
+      conversationType === 'group' ? 'shared_group' : respondingEntityId;
+
+    for (let i = 0; i < unsummarizedPlans.length; i++) {
+      const plan = unsummarizedPlans[i];
+      // Build immediate deterministic chapter summary so turn latency never spikes,
+      // and asynchronously upgrade the newest unsummarized chapter via Gemini Flash in background!
+      const deterministicSum = buildDeterministicSegmentSummary({
+        conversationId: convIdForSum,
+        ScopeEntityId: scopeEntityForSum,
+        plan,
+      });
+      allSegmentSummaries.push(deterministicSum);
+
+      if (context.uid && context.idToken && context.conversationId) {
+        if (i === unsummarizedPlans.length - 1) {
+          void summarizeConversationSegment({
+            conversationId: context.conversationId,
+            respondingEntityId,
+            conversationType,
+            plan,
+          }).then((richSummary) =>
+            persistFirestoreSegmentSummary(
+              context.uid,
+              context.idToken,
+              context.conversationId,
+              richSummary
+            )
+          );
+        } else {
+          void persistFirestoreSegmentSummary(
+            context.uid,
+            context.idToken,
+            context.conversationId,
+            deterministicSum
+          );
+        }
+      }
+    }
+  }
+
+  const selectedSummaries = selectRelevantSegmentSummaries(allSegmentSummaries, {
+    queryText,
+    queryEmbedding,
+    rollingSummariesBudget: budgetProfile.rollingSummariesBudget,
+    respondingEntityId,
+    conversationType,
+  });
+
+  // 3. Assemble Sovereign System Instruction (strictly isolated to `respondingEntityId` + selected chapters)
   const assembled = assembleSovereignContext({
     respondingEntityId,
     memories: rankedMemories,
@@ -967,11 +1121,12 @@ export async function createChatStreamFromContext(
     settings,
     conversationType,
     participantEntityIds,
+    segmentSummaries: selectedSummaries,
   });
 
-  // 3. Serialize Speaker-Attributed Transcript
+  // 4. Serialize Speaker-Attributed Verbatim Transcript Window
   const serializedContents = serializeSpeakerAttributedTranscript(
-    messages,
+    windowed.verbatimMessages,
     respondingEntityId,
     {
       supportsVision: capabilities.supportsVision,
@@ -1021,6 +1176,8 @@ export async function createChatStreamFromContext(
             includeThoughts,
             availableKeys,
             profile,
+            allMessages: messages,
+            segmentSummaries: allSegmentSummaries,
             abortSignal,
             writeSse,
           });

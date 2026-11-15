@@ -16,7 +16,7 @@
     },
     "AppSettingsDoc": {
       "title": "AppSettingsDoc",
-      "description": "Global application configuration, jewel resonance metrics, and sanctuary profile dossier.",
+      "description": "Global application configuration, jewel resonance metrics, sanctuary profile dossier, and multi-device sync client acknowledgment cursors.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "enum": ["app"] },
@@ -28,6 +28,7 @@
         "jewelRevision": { "type": "number" },
         "userProfile": { "type": "object" },
         "profileRevision": { "type": "number" },
+        "syncClients": { "type": "object" },
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "userId"]
@@ -42,6 +43,7 @@
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" },
         "revision": { "type": "number" },
+        "lastSyncedRevision": { "type": "number" },
         "scope": { "type": "string", "enum": ["shared", "legacy"] },
         "origin": { "type": "string", "maxLength": 100 },
         "author": { "type": "string", "enum": ["user", "model"] },
@@ -51,7 +53,9 @@
         "lockReason": { "type": "string", "maxLength": 1000 },
         "memoryType": { "type": "string", "enum": ["fact", "preference", "episodic", "reflection"] },
         "embedding": { "type": "array" },
-        "isDeleted": { "type": "boolean" }
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "content", "createdAt", "scope"]
     },
@@ -66,6 +70,7 @@
         "roleTitle": { "type": "string", "maxLength": 200 },
         "avatarEmoji": { "type": "string", "maxLength": 32 },
         "avatarUrl": { "type": "string", "maxLength": 900000 },
+        "avatarAssetId": { "type": "string", "maxLength": 128 },
         "themeColor": { "type": "string", "maxLength": 64 },
         "accentColor": { "type": "string", "maxLength": 64 },
         "typingIndicator": { "type": "string", "maxLength": 200 },
@@ -85,7 +90,11 @@
         "relationshipEvents": { "type": "array" },
         "fulfilledDesires": { "type": "array" },
         "revision": { "type": "number" },
-        "updatedAt": { "type": "number" }
+        "lastSyncedRevision": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id"]
     },
@@ -99,6 +108,7 @@
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" },
         "revision": { "type": "number" },
+        "lastSyncedRevision": { "type": "number" },
         "scope": { "type": "string", "enum": ["companion"] },
         "entityId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "origin": { "type": "string", "maxLength": 100 },
@@ -109,7 +119,9 @@
         "lockReason": { "type": "string", "maxLength": 1000 },
         "memoryType": { "type": "string", "enum": ["fact", "preference", "episodic", "reflection"] },
         "embedding": { "type": "array" },
-        "isDeleted": { "type": "boolean" }
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "content", "createdAt", "scope", "entityId"]
     },
@@ -128,7 +140,10 @@
         "createdAt": { "type": "number" },
         "updatedAt": { "type": "number" },
         "revision": { "type": "number" },
-        "isDeleted": { "type": "boolean" }
+        "lastSyncedRevision": { "type": "number" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id"]
     },
@@ -143,6 +158,7 @@
         "parts": { "type": "array" },
         "timestamp": { "type": "number" },
         "revision": { "type": "number" },
+        "lastSyncedRevision": { "type": "number" },
         "publicText": { "type": "string", "maxLength": 500000 },
         "thoughtText": { "type": "string", "maxLength": 500000 },
         "thoughtStatus": { "type": "string", "enum": ["thinking", "complete", "error"] },
@@ -156,9 +172,63 @@
         "authorEntityId": { "type": "string", "maxLength": 128 },
         "authorDisplayName": { "type": "string", "maxLength": 200 },
         "authorAvatar": { "type": "string", "maxLength": 2000 },
-        "isDeleted": { "type": "boolean" }
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "conversationId", "role", "parts", "timestamp"]
+    },
+    "ConversationSummary": {
+      "title": "ConversationSummary",
+      "description": "Immutable contiguous 30-turn rolling conversation segment summary chapter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-\\.@:]+$" },
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "scope": { "type": "string", "enum": ["direct", "group"] },
+        "participantEntityIds": { "type": "array" },
+        "segmentIndex": { "type": "number" },
+        "startMessageId": { "type": "string", "maxLength": 128 },
+        "endMessageId": { "type": "string", "maxLength": 128 },
+        "startTimestamp": { "type": "number" },
+        "endTimestamp": { "type": "number" },
+        "messageCount": { "type": "number" },
+        "narrativeSummary": { "type": "string", "maxLength": 8000 },
+        "keyEventsAndDecisions": { "type": "array" },
+        "userPreferencesAndFacts": { "type": "array" },
+        "unresolvedThreads": { "type": "array" },
+        "emotionalArc": { "type": "string", "maxLength": 1000 },
+        "embedding": { "type": "array" },
+        "sourceHash": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "number" },
+        "revision": { "type": "number" }
+      },
+      "required": ["id", "conversationId", "scope", "segmentIndex", "narrativeSummary", "createdAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Deduplicated content-addressable media asset reference and reference-count ledger.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-\\.@:]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "enum": ["user_avatar", "companion_avatar", "message_attachment", "generated_image", "room_decor", "gift_media", "audio_track"] },
+        "mimeType": { "type": "string", "maxLength": 128 },
+        "byteSize": { "type": "number" },
+        "sha256": { "type": "string", "maxLength": 128 },
+        "storagePath": { "type": "string", "maxLength": 512 },
+        "downloadUrl": { "type": "string", "maxLength": 900000 },
+        "references": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "revision": { "type": "number" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "ownerUid", "category", "mimeType", "sha256", "storagePath", "createdAt"]
     },
     "Gift": {
       "title": "Gift",
@@ -172,12 +242,15 @@
         "reason": { "type": "string", "maxLength": 4000 },
         "timestamp": { "type": "number" },
         "revision": { "type": "number" },
+        "lastSyncedRevision": { "type": "number" },
         "inlineData": { "type": "object" },
         "scribble": { "type": "object" },
         "musicTrack": { "type": "object" },
         "modelId": { "type": "string", "maxLength": 128 },
         "targetModelId": { "type": "string", "maxLength": 128 },
-        "isDeleted": { "type": "boolean" }
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" },
+        "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "from", "content", "gift_type", "timestamp"]
     }
@@ -189,7 +262,7 @@
     },
     "/users/{userId}/settings/{settingId}": {
       "schema": { "$ref": "#/entities/AppSettingsDoc" },
-      "description": "Application settings, jewel metrics, and sanctuary user profile."
+      "description": "Application settings, jewel metrics, sanctuary user profile, and sync client cursors."
     },
     "/users/{userId}/memories/{memoryId}": {
       "schema": { "$ref": "#/entities/SharedMemory" },
@@ -214,6 +287,14 @@
     "/users/{userId}/conversations/{conversationId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/Message" },
       "description": "Granular message subcollection documents bound to parent conversation."
+    },
+    "/users/{userId}/conversations/{conversationId}/summaries/{summaryId}": {
+      "schema": { "$ref": "#/entities/ConversationSummary" },
+      "description": "Immutable 30-turn rolling conversation segment summaries bound to parent conversation."
+    },
+    "/users/{userId}/mediaAssets/{assetId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Deduplicated content-addressable media asset reference and reference-count ledger."
     }
   }
 }

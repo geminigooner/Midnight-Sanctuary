@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Bookmark, Trash2, Lock, Unlock } from 'lucide-react';
-import { normalizeMemoryNamespace } from '../lib/memorySystem';
-import { resolveModelIdentity } from '../lib/modelSystem';
+import {
+  combineIsolatedMemories,
+  getLegacyMemories,
+  getModelMemories,
+  getUserMemories,
+} from '../lib/memorySystem';
+import { getModelEntity } from '../lib/entitySystem';
 import { useStore, useUI } from '../context/AppContext';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
@@ -10,16 +15,22 @@ export function MemoriesArchive() {
   const { closeModal, modalOrigins } = useUI();
   const originId = modalOrigins.memories;
   const { settings } = store;
-  const memories = settings.memories || [];
+
+  const memories = useMemo(() => {
+    const combined = combineIsolatedMemories(
+      store.sharedMemories || [],
+      store.companionMemories || {}
+    );
+    return combined.length > 0 ? combined : settings.memories || [];
+  }, [store.sharedMemories, store.companionMemories, settings.memories]);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'model' | 'user' | 'legacy'>('model');
 
   const activeConv = store.conversations.find(c => c.id === store.currentId);
   const activeModelId = activeConv?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
-  const modelDef = resolveModelIdentity(activeModelId);
-  const activeModelDisplayName = modelDef?.displayName || activeModelId?.split('/').pop() || 'Current Model';
-  const currentNamespace = normalizeMemoryNamespace(activeModelId);
+  const activeEntity = getModelEntity(activeModelId, settings.customEntities);
+  const activeModelDisplayName = activeEntity.displayName || activeModelId?.split('/').pop() || 'Current Model';
   
   useEffect(() => {
     const handleClickOutside = () => {
@@ -33,9 +44,15 @@ export function MemoriesArchive() {
     };
   }, [confirmDeleteId]);
 
-  const modelMemories = memories.filter(m => m.modelId ? normalizeMemoryNamespace(m.modelId) === currentNamespace : false);
-  const userMemories = memories.filter(m => m.author === 'user');
-  const legacyMemories = memories.filter(m => !m.modelId && m.author !== 'user');
+  const modelMemories = useMemo(
+    () => getModelMemories(memories, activeEntity.id),
+    [memories, activeEntity.id]
+  );
+  const userMemories = useMemo(() => getUserMemories(memories), [memories]);
+  const legacyMemories = useMemo(
+    () => getLegacyMemories(memories, activeEntity.id),
+    [memories, activeEntity.id]
+  );
 
   const getActiveMemories = () => {
     if (activeTab === 'model') return modelMemories;

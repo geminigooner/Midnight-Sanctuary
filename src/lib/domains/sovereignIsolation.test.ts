@@ -417,4 +417,171 @@ describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () 
       entityId: 'gemini-4-argon',
     });
   });
+
+  it('enforces token-budgeted context windows, non-compounding 30-turn rolling summaries, and archival recall', async () => {
+    const {
+      getProviderContextBudgetProfile,
+      buildTokenBudgetedTranscriptWindow,
+      planUnsummarizedSegments,
+      selectRelevantSegmentSummaries,
+      searchArchivalConversationHistory,
+    } = await import('./contextWindowEngine');
+
+    const proProfile = getProviderContextBudgetProfile('gemini-3.1-pro-preview');
+    const cfProfile = getProviderContextBudgetProfile('@cf/google/gemma-4-26b-a4b-it', true);
+    expect(proProfile.verbatimHistoryBudget).toBeGreaterThan(cfProfile.verbatimHistoryBudget);
+
+    // Generate 75 messages (enough for 2 full 30-turn archival blocks + 15 active messages)
+    const longMessages: Message[] = Array.from({ length: 75 }, (_, i) => ({
+      id: `msg-${i + 1}`,
+      role: i % 2 === 0 ? 'user' : 'model',
+      parts: [
+        {
+          text:
+            i === 5
+              ? 'We planted silver moonflowers in the northern conservatory.'
+              : `Turn number ${i + 1} discussing Sanctuary astronomy and constellations.`,
+        },
+      ],
+      timestamp: 1700000000000 + i * 1000,
+      authorEntityId: i % 2 === 1 ? 'gemini-3.1-pro-preview' : undefined,
+      authorDisplayName: i % 2 === 1 ? 'Gemini 3.1 Pro' : undefined,
+    }));
+
+    // Token-budgeted window preserves recent turns and reports omitted archival messages
+    const windowed = buildTokenBudgetedTranscriptWindow(longMessages, {
+      verbatimHistoryBudget: 250,
+      minVerbatimMessages: 12,
+    });
+    expect(windowed.wasTruncated).toBe(true);
+    expect(windowed.omittedOlderMessages.length).toBeGreaterThanOrEqual(60);
+    expect(windowed.verbatimMessages[windowed.verbatimMessages.length - 1].id).toBe('msg-75');
+
+    const planned = planUnsummarizedSegments(windowed.omittedOlderMessages, [], 30);
+    expect(planned).toHaveLength(2);
+    expect(planned[0].segmentId).toBe('seg_0_29');
+    expect(planned[0].messages).toHaveLength(30);
+    expect(planned[0].startTurnIndex).toBe(0);
+    expect(planned[0].endTurnIndex).toBe(29);
+    expect(planned[1].segmentId).toBe('seg_30_59');
+    expect(planned[1].messages).toHaveLength(30);
+    expect(planned[1].startTurnIndex).toBe(30);
+    expect(planned[1].endTurnIndex).toBe(59);
+
+    // Once summarized with matching sourceHash, planUnsummarizedSegments never re-summarizes them
+    const existingSummaries = planned.map((seg) => ({
+      id: seg.segmentId,
+      conversationId: 'conv-long',
+      ScopeEntityId: 'gemini-3.1-pro-preview',
+      startTurnIndex: seg.startTurnIndex,
+      endTurnIndex: seg.endTurnIndex,
+      startMessageId: seg.messages[0].id,
+      endMessageId: seg.messages[seg.messages.length - 1].id,
+      startTimestamp: seg.messages[0].timestamp || 1000,
+      endTimestamp: seg.messages[seg.messages.length - 1].timestamp || 2000,
+      turnCount: seg.messages.length,
+      narrativeSummary:
+        seg.startTurnIndex === 0
+          ? 'Planted silver moonflowers in the northern conservatory.'
+          : 'Discussed deep-sky constellations.',
+      keyEventsAndDecisions: ['Planted silver moonflowers'],
+      userPreferencesAndFacts: ['Loves moonflowers'],
+      unresolvedThreads: ['Watering schedule'],
+      emotionalArc: 'Serene and curious',
+      sourceHash: seg.sourceHash,
+      createdAt: Date.now(),
+      revision: 1,
+    }));
+
+    expect(
+      planUnsummarizedSegments(windowed.omittedOlderMessages, existingSummaries, 30)
+    ).toHaveLength(0);
+
+    // Sovereign isolation on segment summaries: Gemma cannot read Gemini 3.1 Pro's direct 1:1 summaries
+    expect(
+      selectRelevantSegmentSummaries(existingSummaries, {
+        respondingEntityId: 'gemma-2-27b-it',
+        conversationType: 'direct',
+        queryText: 'moonflowers',
+      })
+    ).toHaveLength(0);
+    expect(
+      selectRelevantSegmentSummaries(existingSummaries, {
+        respondingEntityId: 'gemini-3.1-pro-preview',
+        conversationType: 'direct',
+        queryText: 'moonflowers',
+      })
+    ).toHaveLength(2);
+
+    // On-demand recall_conversation_history searches both summaries and older verbatim turns
+    const recalled = searchArchivalConversationHistory(longMessages, existingSummaries, {
+      query: 'silver moonflowers conservatory',
+    });
+    expect(recalled).toContain('silver moonflowers');
+    expect(recalled).toContain('Turn 6');
+  });
+
+  it('deduplicates media per user by SHA-256 and enforces reference-counted deletion safety', async () => {
+    const { IDBFactory } = await import('fake-indexeddb');
+    const { IndexedDBVault } = await import('../persistence/indexedDbVault');
+    const { PersistenceCoordinator } = await import('../persistence/persistenceCoordinator');
+    const { MediaStorageService } = await import('../media/mediaStorageService');
+
+    const vault = new IndexedDBVault('sanctuary_media_test', new IDBFactory());
+    const coord = new PersistenceCoordinator({
+      vault,
+      cloudAdapter: null,
+      channelName: null,
+      legacyStorage: null,
+    });
+    await coord.attachUser('uid-owner');
+
+    const mediaService = new MediaStorageService(coord, { allowCloudStorage: false });
+
+    const sampleDataUrl =
+      'data:image/svg+xml;base64,' +
+      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>').toString(
+        'base64'
+      );
+
+    // Upload the exact same image for a message attachment in conv-1 AND as a companion avatar
+    const res1 = await mediaService.storeMediaAsset({
+      dataUrlOrBase64: sampleDataUrl,
+      category: 'message_attachment',
+      referenceTag: 'conv:conv-1:msg:m1',
+      ownerEntityId: 'gemini-3.1-pro-preview',
+    });
+
+    const res2 = await mediaService.storeMediaAsset({
+      dataUrlOrBase64: sampleDataUrl,
+      category: 'companion_avatar',
+      referenceTag: 'entity:gemini-3.1-pro-preview:avatar',
+      ownerEntityId: 'gemini-3.1-pro-preview',
+    });
+
+    // Must deduplicate to the exact same asset ID and accumulate both reference tags
+    expect(res1.asset.id).toBe(res2.asset.id);
+    expect(res2.asset.references).toEqual(
+      expect.arrayContaining(['conv:conv-1:msg:m1', 'entity:gemini-3.1-pro-preview:avatar'])
+    );
+
+    // Deleting conv-1 removes ONLY its reference tag and preserves the underlying media asset!
+    const cleanup1 = await mediaService.removeMediaReferencesByPrefix('conv:conv-1');
+    expect(cleanup1.deletedUnreferencedAssets).toHaveLength(0);
+    expect(cleanup1.updatedAssets).toEqual([res1.asset.id]);
+    expect(coord.getDomainState().mediaAssets).toHaveLength(1);
+    expect(coord.getDomainState().mediaAssets[0].references).toEqual([
+      'entity:gemini-3.1-pro-preview:avatar',
+    ]);
+
+    // Removing the final reference tag deletes the unreferenced blob and tombstones the asset record
+    const cleanup2 = await mediaService.removeMediaReferencesByPrefix(
+      'entity:gemini-3.1-pro-preview'
+    );
+    expect(cleanup2.deletedUnreferencedAssets).toEqual([res1.asset.id]);
+    expect(coord.getDomainState().mediaAssets).toHaveLength(0);
+
+    coord.destroy();
+  });
 });
+

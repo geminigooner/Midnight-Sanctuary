@@ -312,7 +312,10 @@ export function StickerChestModal() {
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {placedStickers.map(placed => {
-                  const targetEntity = entities.find(e => e.id === placed.targetId);
+                  const canonicalTarget = placed.targetId.startsWith('gift:') || placed.targetId === 'user_dossier'
+                    ? placed.targetId
+                    : entities.find(e => e.id === placed.targetId || e.apiModelId === placed.targetId || placed.targetId.includes(e.id))?.id || placed.targetId;
+                  const targetEntity = entities.find(e => e.id === canonicalTarget);
                   let targetLabel = targetEntity ? `${targetEntity.displayName}'s Room` : 'User Dossier';
                   if (placed.targetId.startsWith('gift:')) {
                     const giftId = placed.targetId.replace('gift:', '');

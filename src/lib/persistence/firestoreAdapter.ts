@@ -1,7 +1,6 @@
 import { db, auth } from '../firebase';
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -11,6 +10,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { DEFAULT_ENTITIES } from '../entitySystem';
+import { resolveCanonicalEntityId } from '../domains/sovereignRegistry';
 import { toScopedMemory } from '../memorySystem';
 import {
   decodeCompanionDocId,
@@ -21,7 +21,7 @@ import {
   OperationType,
   removeUndefined,
 } from '../persistenceSystem';
-import { Gift, Message } from '../types';
+import { ConversationSegmentSummary, Gift, MediaAssetRecord, Message } from '../types';
 import {
   CloudPersistenceAdapter,
   CloudRemoteSnapshot,
@@ -82,8 +82,10 @@ export function deriveConsistentPreviewMessages(
 
 /**
  * Authoritative Firestore Cloud Adapter with:
+ * - Soft-delete tombstone propagation (`isDeleted: true`, `deletedAt`, `revision`) so deletions synchronize across all devices without resurrection
  * - Atomic batch updates keeping conversation previews + tombstones strictly synchronized with message subcollections
  * - Dedicated shared memory (`users/{uid}/memories`) and private companion memory (`users/{uid}/companions/{id}/memories`) collections
+ * - Segment summaries (`users/{uid}/conversations/{convId}/summaries`) and deduplicated media asset catalog (`users/{uid}/mediaAssets`)
  * - Clean subscription lifecycle management
  */
 export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
@@ -98,11 +100,12 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
     let active = true;
     const unsubs: Unsubscribe[] = [];
     const messageUnsubs = new Map<string, Unsubscribe>();
+    const summaryUnsubs = new Map<string, Unsubscribe>();
     const companionMemUnsubs = new Map<string, Unsubscribe>();
 
     const attachCompanionMemoryListener = (rawCompanionId: string) => {
-      const canonicalId = rawCompanionId.replace(/^models\//, '').trim();
-      if (!canonicalId || companionMemUnsubs.has(canonicalId)) return;
+      const canonicalId = resolveCanonicalEntityId(rawCompanionId);
+      if (!canonicalId || canonicalId === 'unknown' || companionMemUnsubs.has(canonicalId)) return;
       const safeCompDocId = ensureValidDocId(canonicalId, 'companion');
       const memColRef = collection(db, 'users', uid, 'companions', safeCompDocId, 'memories');
 
@@ -113,7 +116,24 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const memories: ScopedMemory[] = [];
           snap.forEach((mDoc) => {
             const raw = mDoc.data() as any;
-            if (raw?.isDeleted) return;
+            const rev = raw?.revision || raw?.updatedAt || raw?.createdAt || 0;
+            if (raw?.isDeleted) {
+              memories.push({
+                id: mDoc.id,
+                content: raw?.content || '',
+                createdAt: raw?.createdAt || 0,
+                scope: 'companion',
+                entityId: canonicalId,
+                modelId: canonicalId,
+                author: 'model',
+                revision: rev,
+                updatedAt: raw?.updatedAt || raw?.deletedAt || rev,
+                isDeleted: true,
+                deletedAt: raw?.deletedAt || rev,
+                deletedByClientId: raw?.deletedByClientId,
+              });
+              return;
+            }
             const scoped = toScopedMemory(
               {
                 ...raw,
@@ -121,13 +141,14 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                 author: 'model',
                 modelId: canonicalId,
               },
-              raw?.revision || raw?.updatedAt || raw?.createdAt || 0
+              rev
             );
             memories.push({
               ...scoped,
               scope: 'companion',
               entityId: canonicalId,
               modelId: canonicalId,
+              isDeleted: false,
             });
           });
           onRemoteUpdate({
@@ -174,6 +195,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                 : undefined,
               profileRevision: data.profileRevision || data.updatedAt || 0,
               memoriesMigratedV2: Boolean(data.memoriesMigratedV2),
+              syncClients: data.syncClients,
             });
           } else {
             onRemoteUpdate({
@@ -198,17 +220,32 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const sharedMemories: ScopedMemory[] = [];
           snap.forEach((mDoc) => {
             const raw = mDoc.data() as any;
-            if (raw?.isDeleted) return;
+            const rev = raw?.revision || raw?.updatedAt || raw?.createdAt || 0;
+            if (raw?.isDeleted) {
+              sharedMemories.push({
+                id: mDoc.id,
+                content: raw?.content || '',
+                createdAt: raw?.createdAt || 0,
+                scope: raw?.scope === 'legacy' ? 'legacy' : 'shared',
+                revision: rev,
+                updatedAt: raw?.updatedAt || raw?.deletedAt || rev,
+                isDeleted: true,
+                deletedAt: raw?.deletedAt || rev,
+                deletedByClientId: raw?.deletedByClientId,
+              });
+              return;
+            }
             const scoped = toScopedMemory(
               {
                 ...raw,
                 id: mDoc.id,
               },
-              raw?.revision || raw?.updatedAt || raw?.createdAt || 0
+              rev
             );
             sharedMemories.push({
               ...scoped,
               scope: raw?.scope === 'legacy' ? 'legacy' : 'shared',
+              isDeleted: false,
             });
           });
           onRemoteUpdate({ sharedMemories });
@@ -220,7 +257,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
       )
     );
 
-    // 3. Conversations & Dynamic Message Subcollections (`users/{uid}/conversations`)
+    // 3. Conversations & Dynamic Message + Summary Subcollections (`users/{uid}/conversations`)
     const convsRef = collection(db, 'users', uid, 'conversations');
     unsubs.push(
       onSnapshot(
@@ -233,14 +270,34 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           snap.forEach((cDoc) => {
             const convId = cDoc.id;
             const data = cDoc.data();
-            if (data?.isDeleted) return;
-
-            activeConvIds.add(convId);
             const updatedAt = data.updatedAt || data.createdAt || 0;
             const createdAt = data.createdAt || updatedAt;
             const deletedMessageIds: string[] = Array.isArray(data.deletedMessageIds)
               ? data.deletedMessageIds
               : [];
+
+            if (data?.isDeleted) {
+              conversations.push({
+                meta: {
+                  id: convId,
+                  title: data.title || 'Deleted Sanctuary',
+                  modelId: data.modelId || 'models/gemini-3.1-pro-preview',
+                  createdAt,
+                  updatedAt,
+                  revision: data.revision || data.deletedAt || updatedAt || 0,
+                  type: data.type || 'direct',
+                  participantEntityIds: data.participantEntityIds,
+                  deletedMessageIds,
+                  isDeleted: true,
+                  deletedAt: data.deletedAt || updatedAt,
+                  deletedByClientId: data.deletedByClientId,
+                },
+                previewMessages: [],
+              });
+              return;
+            }
+
+            activeConvIds.add(convId);
             const deletedSet = new Set(deletedMessageIds);
 
             const previewMessages = Array.isArray(data.messages)
@@ -262,6 +319,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                 type: data.type || 'direct',
                 participantEntityIds: data.participantEntityIds,
                 deletedMessageIds,
+                isDeleted: false,
               },
               previewMessages,
             });
@@ -276,7 +334,20 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                   let idx = 0;
                   msgsSnap.forEach((mDoc) => {
                     const mData = mDoc.data() as any;
-                    if (mData?.isDeleted) return;
+                    if (mData?.isDeleted) {
+                      messages.push({
+                        id: mDoc.id,
+                        conversationId: convId,
+                        role: mData?.role || 'user',
+                        parts: [{ text: '' }],
+                        timestamp: mData?.timestamp || 0,
+                        revision: mData?.revision || mData?.deletedAt || 0,
+                        isDeleted: true,
+                        deletedAt: mData?.deletedAt || mData?.revision || 0,
+                        deletedByClientId: mData?.deletedByClientId,
+                      });
+                      return;
+                    }
                     const normalized = normalizeMessageSchema(
                       { ...mData, id: mDoc.id },
                       convId,
@@ -286,6 +357,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                       ...normalized,
                       conversationId: convId,
                       revision: mData?.revision || normalized.timestamp || 0,
+                      isDeleted: false,
                     });
                   });
                   onRemoteUpdate({
@@ -306,12 +378,52 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               );
               messageUnsubs.set(convId, unsubMsgs);
             }
+
+            if (!summaryUnsubs.has(convId)) {
+              const sumRef = collection(db, 'users', uid, 'conversations', convId, 'summaries');
+              const unsubSum = onSnapshot(
+                sumRef,
+                (sumSnap) => {
+                  if (!active) return;
+                  const summaries: ConversationSegmentSummary[] = [];
+                  sumSnap.forEach((sDoc) => {
+                    const sData = sDoc.data() as any;
+                    if (sData?.isDeleted) return;
+                    summaries.push({
+                      ...(sData as ConversationSegmentSummary),
+                      id: sDoc.id,
+                      conversationId: convId,
+                    });
+                  });
+                  onRemoteUpdate({
+                    conversationSummaries: {
+                      conversationId: convId,
+                      summaries,
+                    },
+                  });
+                },
+                (err) => {
+                  logFirestoreError(
+                    err,
+                    OperationType.LIST,
+                    `users/${uid}/conversations/${convId}/summaries`
+                  );
+                }
+              );
+              summaryUnsubs.set(convId, unsubSum);
+            }
           });
 
           for (const [convId, unsub] of messageUnsubs.entries()) {
             if (!activeConvIds.has(convId)) {
               unsub();
               messageUnsubs.delete(convId);
+            }
+          }
+          for (const [convId, unsub] of summaryUnsubs.entries()) {
+            if (!activeConvIds.has(convId)) {
+              unsub();
+              summaryUnsubs.delete(convId);
             }
           }
 
@@ -334,12 +446,27 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const gifts: DurableGift[] = [];
           snap.forEach((gDoc) => {
             const gData = gDoc.data() as any;
-            if (gData?.isDeleted) return;
+            if (gData?.isDeleted) {
+              gifts.push({
+                id: gDoc.id,
+                from: gData.from || 'Companion',
+                content: gData.content || '',
+                gift_type: gData.gift_type || 'keepsake',
+                reason: gData.reason || '',
+                timestamp: gData.timestamp || 0,
+                revision: gData.revision || gData.deletedAt || gData.timestamp || 0,
+                isDeleted: true,
+                deletedAt: gData.deletedAt || gData.revision || 0,
+                deletedByClientId: gData.deletedByClientId,
+              });
+              return;
+            }
             gifts.push({
               ...(gData as Gift),
               id: gDoc.id,
               timestamp: gData.timestamp || 0,
               revision: gData.revision || gData.timestamp || 0,
+              isDeleted: false,
             });
           });
           onRemoteUpdate({ gifts });
@@ -361,12 +488,16 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const companions: Record<string, DurableCompanion> = {};
           snap.forEach((cDoc) => {
             const data = cDoc.data() as any;
-            const canonicalId = decodeCompanionDocId(cDoc.id, data?.id);
+            const rawDecoded = decodeCompanionDocId(cDoc.id, data?.id);
+            const canonicalId = resolveCanonicalEntityId(rawDecoded);
             companions[canonicalId] = {
               ...data,
               id: canonicalId,
               updatedAt: data?.updatedAt || 0,
               revision: data?.revision || data?.updatedAt || 0,
+              isDeleted: Boolean(data?.isDeleted),
+              deletedAt: data?.deletedAt,
+              deletedByClientId: data?.deletedByClientId,
             };
             attachCompanionMemoryListener(canonicalId);
           });
@@ -379,7 +510,32 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
       )
     );
 
-    // 6. One-time Legacy Monolithic Document Recovery (`users/{uid}` and `users/{email}`)
+    // 6. Media Assets (`users/{uid}/mediaAssets`)
+    const mediaAssetsRef = collection(db, 'users', uid, 'mediaAssets');
+    unsubs.push(
+      onSnapshot(
+        mediaAssetsRef,
+        (snap) => {
+          if (!active) return;
+          const mediaAssets: MediaAssetRecord[] = [];
+          snap.forEach((mDoc) => {
+            const mData = mDoc.data() as any;
+            mediaAssets.push({
+              ...(mData as MediaAssetRecord),
+              id: mDoc.id,
+              uid,
+              references: Array.isArray(mData?.references) ? mData.references : [],
+            });
+          });
+          onRemoteUpdate({ mediaAssets });
+        },
+        (err) => {
+          logFirestoreError(err, OperationType.LIST, `users/${uid}/mediaAssets`);
+        }
+      )
+    );
+
+    // 7. One-time Legacy Monolithic Document Recovery (`users/{uid}` and `users/{email}`)
     void (async () => {
       try {
         const userDocSnap = await getDoc(doc(db, 'users', uid));
@@ -421,6 +577,8 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
       unsubs.forEach((u) => u());
       messageUnsubs.forEach((u) => u());
       messageUnsubs.clear();
+      summaryUnsubs.forEach((u) => u());
+      summaryUnsubs.clear();
       companionMemUnsubs.forEach((u) => u());
       companionMemUnsubs.clear();
     };
@@ -453,6 +611,9 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               settingsRevision: revision,
               ...(payload.memoriesMigratedV2 !== undefined
                 ? { memoriesMigratedV2: payload.memoriesMigratedV2 }
+                : {}),
+              ...(payload.syncClients !== undefined
+                ? { syncClients: payload.syncClients }
                 : {}),
               updatedAt: mutation.clientTimestamp,
             }),
@@ -526,7 +687,20 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               let batch = writeBatch(db);
               let count = 0;
               for (const mDoc of msgSnap.docs) {
-                batch.delete(mDoc.ref);
+                batch.set(
+                  mDoc.ref,
+                  {
+                    id: mDoc.id,
+                    conversationId: safeConvId,
+                    role: mDoc.data()?.role || 'user',
+                    parts: [{ text: '' }],
+                    timestamp: mDoc.data()?.timestamp || mutation.clientTimestamp,
+                    isDeleted: true,
+                    deletedAt: mutation.clientTimestamp,
+                    revision,
+                  },
+                  { merge: true }
+                );
                 count++;
                 if (count >= 400) {
                   await batch.commit();
@@ -538,7 +712,20 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                 await batch.commit();
               }
             }
-            await deleteDoc(convRef);
+            // Write soft-delete tombstone on the conversation doc so other signed-in devices purge it immediately
+            await setDoc(
+              convRef,
+              removeUndefined({
+                id: safeConvId,
+                title: payload?.title || context.conversationMeta?.title || 'Deleted Sanctuary',
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+                messages: [],
+              }),
+              { merge: true }
+            );
             return;
           }
 
@@ -562,6 +749,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               createdAt: convMeta.createdAt || convMeta.updatedAt || mutation.clientTimestamp,
               updatedAt: convMeta.updatedAt || mutation.clientTimestamp,
               revision,
+              isDeleted: false,
               deletedMessageIds: deletedIds,
               messages: previewMessages,
             }),
@@ -588,7 +776,20 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const batch = writeBatch(db);
 
           if (operation === 'delete') {
-            batch.delete(msgRef);
+            batch.set(
+              msgRef,
+              removeUndefined({
+                id: safeMsgId,
+                conversationId: safeConvId,
+                role: payload?.role || 'user',
+                parts: [{ text: '' }],
+                timestamp: payload?.timestamp || mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+                deletedAt: mutation.clientTimestamp,
+              }),
+              { merge: true }
+            );
           } else {
             const normalized = normalizeMessageSchema(payload, safeConvId, 0);
             batch.set(
@@ -598,6 +799,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
                 id: safeMsgId,
                 conversationId: safeConvId,
                 revision,
+                isDeleted: false,
               }),
               { merge: true }
             );
@@ -622,12 +824,56 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           return;
         }
 
+        case 'conversation_summary': {
+          const safeConvId = ensureValidDocId(mutation.parentId || payload?.conversationId, 'conv');
+          const safeSumId = ensureValidDocId(mutation.entityId, 'sum');
+          const sumRef = doc(db, 'users', uid, 'conversations', safeConvId, 'summaries', safeSumId);
+          if (operation === 'delete') {
+            await setDoc(
+              sumRef,
+              removeUndefined({
+                id: safeSumId,
+                conversationId: safeConvId,
+                narrativeSummary: '',
+                createdAt: mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+                deletedAt: mutation.clientTimestamp,
+              }),
+              { merge: true }
+            );
+            return;
+          }
+          await setDoc(
+            sumRef,
+            removeUndefined({
+              ...payload,
+              id: safeSumId,
+              conversationId: safeConvId,
+              revision,
+              isDeleted: false,
+            }),
+            { merge: true }
+          );
+          return;
+        }
+
         case 'companion': {
-          const canonicalId = mutation.entityId.replace(/^models\//, '').trim();
+          const canonicalId = resolveCanonicalEntityId(mutation.entityId);
           const safeDocId = ensureValidDocId(canonicalId, 'companion');
           const compRef = doc(db, 'users', uid, 'companions', safeDocId);
           if (operation === 'delete') {
-            await deleteDoc(compRef);
+            await setDoc(
+              compRef,
+              removeUndefined({
+                id: canonicalId,
+                revision,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
             return;
           }
           await setDoc(
@@ -637,6 +883,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               id: canonicalId,
               revision,
               updatedAt: mutation.clientTimestamp,
+              isDeleted: false,
             }),
             { merge: true }
           );
@@ -644,15 +891,10 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
         }
 
         case 'companion_memory': {
-          const canonicalCompId = (
-            mutation.parentId ||
-            payload?.entityId ||
-            payload?.modelId ||
-            ''
-          )
-            .replace(/^models\//, '')
-            .trim();
-          if (!canonicalCompId) {
+          const canonicalCompId = resolveCanonicalEntityId(
+            mutation.parentId || payload?.entityId || payload?.modelId || ''
+          );
+          if (!canonicalCompId || canonicalCompId === 'unknown') {
             throw new Error('companionId required for private companion memory mutation');
           }
           const safeCompDocId = ensureValidDocId(canonicalCompId, 'companion');
@@ -667,7 +909,23 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
             safeMemId
           );
           if (operation === 'delete') {
-            await deleteDoc(memRef);
+            await setDoc(
+              memRef,
+              removeUndefined({
+                id: safeMemId,
+                content: payload?.content || '[deleted]',
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
+                scope: 'companion',
+                entityId: canonicalCompId,
+                modelId: canonicalCompId,
+                author: 'model',
+                revision,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
             return;
           }
           await setDoc(
@@ -681,6 +939,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               author: 'model',
               revision,
               updatedAt: mutation.clientTimestamp,
+              isDeleted: false,
             }),
             { merge: true }
           );
@@ -691,7 +950,20 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const safeMemId = ensureValidDocId(mutation.entityId, 'mem');
           const memRef = doc(db, 'users', uid, 'memories', safeMemId);
           if (operation === 'delete') {
-            await deleteDoc(memRef);
+            await setDoc(
+              memRef,
+              removeUndefined({
+                id: safeMemId,
+                content: payload?.content || '[deleted]',
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
+                scope: payload?.scope === 'legacy' ? 'legacy' : 'shared',
+                revision,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
             return;
           }
           await setDoc(
@@ -702,6 +974,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               scope: payload?.scope === 'legacy' ? 'legacy' : 'shared',
               revision,
               updatedAt: mutation.clientTimestamp,
+              isDeleted: false,
             }),
             { merge: true }
           );
@@ -712,7 +985,21 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const safeGiftId = ensureValidDocId(mutation.entityId, 'gift');
           const giftRef = doc(db, 'users', uid, 'gifts', safeGiftId);
           if (operation === 'delete') {
-            await deleteDoc(giftRef);
+            await setDoc(
+              giftRef,
+              removeUndefined({
+                id: safeGiftId,
+                from: payload?.from || 'Companion',
+                content: payload?.content || '[deleted]',
+                gift_type: payload?.gift_type || 'keepsake',
+                reason: payload?.reason || '',
+                revision,
+                timestamp: payload?.timestamp || mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
             return;
           }
           await setDoc(
@@ -722,6 +1009,47 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               id: safeGiftId,
               revision,
               timestamp: payload?.timestamp || mutation.clientTimestamp,
+              isDeleted: false,
+            }),
+            { merge: true }
+          );
+          return;
+        }
+
+        case 'media_asset': {
+          const safeAssetId = ensureValidDocId(mutation.entityId, 'media');
+          const assetRef = doc(db, 'users', uid, 'mediaAssets', safeAssetId);
+          if (operation === 'delete') {
+            await setDoc(
+              assetRef,
+              removeUndefined({
+                id: safeAssetId,
+                uid,
+                sha256: payload?.sha256 || safeAssetId,
+                mimeType: payload?.mimeType || 'application/octet-stream',
+                sizeBytes: payload?.sizeBytes || 0,
+                category: payload?.category || 'attachment',
+                storageBackend: payload?.storageBackend || 'vault_chunked',
+                references: [],
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
+            return;
+          }
+          await setDoc(
+            assetRef,
+            removeUndefined({
+              ...payload,
+              id: safeAssetId,
+              uid,
+              revision,
+              updatedAt: mutation.clientTimestamp,
+              isDeleted: false,
             }),
             { merge: true }
           );
@@ -749,6 +1077,8 @@ function resolveMutationPath(uid: string, m: MutationRecord): string {
       return `users/${uid}/conversations/${ensureValidDocId(m.entityId, 'conv')}`;
     case 'message':
       return `users/${uid}/conversations/${ensureValidDocId(m.parentId, 'conv')}/messages/${ensureValidDocId(m.entityId, 'msg')}`;
+    case 'conversation_summary':
+      return `users/${uid}/conversations/${ensureValidDocId(m.parentId, 'conv')}/summaries/${ensureValidDocId(m.entityId, 'sum')}`;
     case 'companion':
       return `users/${uid}/companions/${ensureValidDocId(m.entityId, 'companion')}`;
     case 'companion_memory':
@@ -757,5 +1087,7 @@ function resolveMutationPath(uid: string, m: MutationRecord): string {
       return `users/${uid}/memories/${ensureValidDocId(m.entityId, 'mem')}`;
     case 'gift':
       return `users/${uid}/gifts/${ensureValidDocId(m.entityId, 'gift')}`;
+    case 'media_asset':
+      return `users/${uid}/mediaAssets/${ensureValidDocId(m.entityId, 'media')}`;
   }
 }

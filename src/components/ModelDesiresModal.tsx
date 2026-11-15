@@ -19,7 +19,7 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
 
   const [desires, setDesires] = useState<EntityDesire[]>(() => {
     const stored = (store?.settings as any)?.modelDesires;
-    return getDailyDesires(stored);
+    return getDailyDesires(stored, store?.settings?.customEntities);
   });
 
   const [activeFilter, setActiveFilter] = useState<'all' | DesireCategory>('all');
@@ -30,6 +30,10 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
   const handleFulfill = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('medium');
+    const targetDesire = desires.find(d => d.id === id);
+    if (targetDesire) {
+      store.fulfillEntityDesire?.(targetDesire.entityId, targetDesire.id);
+    }
     setDesires(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, status: 'fulfilled' as const, fulfilledAt: Date.now() } : d);
       store.updateSettings({
@@ -44,7 +48,8 @@ export const ModelDesiresModal: React.FC<ModelDesiresModalProps> = ({ onSelectPr
     // Normalize target model ID
     const targetModel = desire.entityId.startsWith('models/') ? desire.entityId : `models/${desire.entityId}`;
     
-    // 1. Mark desire as fulfilled
+    // 1. Mark desire as fulfilled on the sovereign entity and in settings
+    store.fulfillEntityDesire?.(desire.entityId, desire.id);
     const updated = desires.map(d => d.id === desire.id ? { ...d, status: 'fulfilled' as const, fulfilledAt: Date.now() } : d);
     setDesires(updated);
 

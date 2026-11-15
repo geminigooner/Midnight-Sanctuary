@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { generateProceduralSanctuaryArt } from '../lib/media/proceduralArt';
 
 export interface ImageGenerationOptions {
   prompt: string;
@@ -168,10 +169,9 @@ export async function generateImage(options: ImageGenerationOptions): Promise<Im
     }
   }
 
-  // 3. Graceful Procedural / Atmospheric Visual Fallback (always guarantees a working visual)
-  console.log('[ImageService] Providing atmospheric visual fallback for prompt:', prompt);
-  const seed = encodeURIComponent(prompt.slice(0, 40).replace(/[^a-zA-Z0-9]/g, '-'));
-  const fallbackUrl = `https://picsum.photos/seed/${seed}/800/800`;
+  // 3. Graceful Procedural / Atmospheric Visual Fallback (always guarantees a working visual with zero external prompt leakage)
+  console.log('[ImageService] Providing atmospheric procedural visual fallback for prompt:', prompt);
+  const fallbackUrl = generateProceduralSanctuaryArt(prompt);
 
   return {
     success: true,

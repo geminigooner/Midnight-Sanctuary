@@ -7,6 +7,7 @@ import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
 import { triggerHaptic } from '../lib/haptics';
 import { getModelEntity } from '../lib/entitySystem';
+import { generateProceduralSanctuaryArt } from '../lib/media/proceduralArt';
 
 export interface UseChatStreamOptions {
   conversation: Conversation | undefined;
@@ -231,6 +232,12 @@ export function useChatStream({
     resetIdleTimeout();
 
     const activeEntity = getModelEntity(effectiveSettings.model, effectiveSettings.customEntities);
+    // W-01 fix: Never embed a >2000 char inline Base64 avatarUrl into every message document (violates firestore.rules).
+    // Message bubbles dynamically resolve the full custom avatar from activeEntity/customEntities via authorEntityId.
+    const safeAuthorAvatar =
+      activeEntity.avatarUrl && !activeEntity.avatarUrl.startsWith('data:') && activeEntity.avatarUrl.length <= 1800
+        ? activeEntity.avatarUrl
+        : activeEntity.avatarEmoji;
 
     const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
       if (!modelMsgAdded) {
@@ -243,7 +250,7 @@ export function useChatStream({
           thoughtStatus: status,
           authorEntityId: activeEntity.id,
           authorDisplayName: activeEntity.displayName,
-          authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
+          authorAvatar: safeAuthorAvatar,
           timestamp: Date.now(),
         });
         modelMsgAdded = true;
@@ -279,7 +286,7 @@ export function useChatStream({
         thoughtStatus: status,
         authorEntityId: activeEntity.id,
         authorDisplayName: activeEntity.displayName,
-        authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
+        authorAvatar: safeAuthorAvatar,
         finishReason: currentModelFinishReason,
         backend: currentModelBackend,
         searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
@@ -309,7 +316,7 @@ export function useChatStream({
         thoughtStatus: 'thinking',
         authorEntityId: activeEntity.id,
         authorDisplayName: activeEntity.displayName,
-        authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
+        authorAvatar: safeAuthorAvatar,
         timestamp: Math.max(Date.now(), now + 1)
       });
       modelMsgAdded = true;
@@ -458,16 +465,17 @@ export function useChatStream({
                 sparkleColor: chunk.sparkle_color,
                 glowEffect: chunk.glow_effect as any,
                 badgeShape: chunk.badge_shape as any,
-                customSvg: chunk.custom_svg,
+                customSvg: chunk.custom_svg ? sanitizeSvg(chunk.custom_svg) : undefined,
                 craftedBy: chunk.modelId || effectiveSettings.model,
               });
             }
           } else if (chunk.type === 'create_room_artwork') {
             hasToolCalls = true;
             if (onAddRoomArtwork) {
-              // Generate procedural or seed-based atmospheric art for this model's quarters
-              const seedStr = encodeURIComponent(`${chunk.modelId || 'room'}-${chunk.title}`);
-              const generatedUrl = `https://picsum.photos/seed/${seedStr}/800/600`;
+              const generatedUrl = generateProceduralSanctuaryArt(
+                `${chunk.title}: ${chunk.visual_description || ''}`,
+                chunk.modelId || effectiveSettings.model
+              );
               onAddRoomArtwork(chunk.modelId || effectiveSettings.model, {
                 title: chunk.title,
                 prompt: chunk.visual_description,
@@ -541,6 +549,7 @@ export function useChatStream({
               searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
               generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
               scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
+              musicTracks: currentModelMusicTracks.length > 0 ? currentModelMusicTracks : undefined,
             });
             if (msgs.length > 1 && msgs[1]) {
               onAddMessage(requestConversationId, {
@@ -557,6 +566,7 @@ export function useChatStream({
             currentModelSearchResults = [];
             currentModelGeneratedImages = [];
             currentModelScribbles = [];
+            currentModelMusicTracks = [];
             rawTextAccumulator = '';
             apiThoughtAccumulator = '';
             isFirstChunk = true;
@@ -569,7 +579,7 @@ export function useChatStream({
               thoughtStatus: 'thinking',
               authorEntityId: activeEntity.id,
               authorDisplayName: activeEntity.displayName,
-              authorAvatar: activeEntity.avatarUrl || activeEntity.avatarEmoji,
+              authorAvatar: safeAuthorAvatar,
               timestamp: Date.now(),
             });
             modelMsgAdded = true;

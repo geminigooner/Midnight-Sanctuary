@@ -1,15 +1,26 @@
 import firebaseConfig from '../../firebase-applet-config.json';
 import { canonicalCompanionId, getContextMemories, toScopedMemory } from '../lib/memorySystem';
 import { ScopedMemory } from '../lib/persistence/types';
-import { AppSettings, DEFAULT_SETTINGS, Gift, Memory, Message, UserProfile } from '../lib/types';
+import {
+  AppSettings,
+  ConversationSegmentSummary,
+  DEFAULT_SETTINGS,
+  Gift,
+  Memory,
+  Message,
+  UserProfile,
+} from '../lib/types';
 
 export interface HydratedChatContext {
+  uid?: string;
+  idToken?: string;
   conversationId?: string;
   model: string;
   respondingEntityId: string;
   conversationType?: 'direct' | 'group';
   participantEntityIds?: string[];
   messages: Message[];
+  segmentSummaries?: ConversationSegmentSummary[];
   settings: AppSettings;
   gifts: Gift[];
   profile: UserProfile | null;
@@ -47,6 +58,28 @@ function parseFirestoreValue(val: any): any {
     return out;
   }
   return val;
+}
+
+function toFirestoreValue(val: any): any {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (typeof val === 'string') return { stringValue: val };
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map(toFirestoreValue) } };
+  }
+  if (typeof val === 'object') {
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) {
+        fields[k] = toFirestoreValue(v);
+      }
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
 }
 
 function parseFirestoreDoc(docObj: any): Record<string, any> | null {
@@ -127,6 +160,105 @@ async function fetchFirestoreCollection(
 }
 
 /**
+ * Queries a Firestore subcollection ordered by `timestamp DESC` via `:runQuery` (W-04 fix)
+ * so conversations exceeding 200 messages always hydrate the newest turns instead of lexicographical UUIDs.
+ * Automatically falls back to `fetchFirestoreCollection` if `:runQuery` is unavailable.
+ */
+async function queryFirestoreMessagesOrdered(
+  parentDocPath: string,
+  collectionId: string,
+  idToken: string,
+  limit = 200
+): Promise<Record<string, any>[]> {
+  const projectId = firebaseConfig.projectId;
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    projectId
+  )}/databases/${encodeURIComponent(databaseId)}/documents/${parentDocPath}:runQuery`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId }],
+          orderBy: [
+            {
+              field: { fieldPath: 'timestamp' },
+              direction: 'DESCENDING',
+            },
+          ],
+          limit,
+        },
+      }),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json)) {
+        const docs = json
+          .map((row: any) => (row?.document ? parseFirestoreDoc(row.document) : null))
+          .filter((d: Record<string, any> | null): d is Record<string, any> => d !== null);
+        if (docs.length > 0) {
+          return docs.reverse();
+        }
+      }
+    }
+  } catch {
+    // Fall back to standard collection list below
+  }
+
+  return fetchFirestoreCollection(`${parentDocPath}/${collectionId}`, idToken, limit);
+}
+
+/**
+ * Persists a newly generated `ConversationSegmentSummary` chapter to Firestore REST API
+ * (`users/{uid}/conversations/{conversationId}/summaries/{summaryId}`).
+ */
+export async function persistFirestoreSegmentSummary(
+  uid: string | undefined,
+  idToken: string | undefined,
+  conversationId: string | undefined,
+  summary: ConversationSegmentSummary
+): Promise<void> {
+  if (!uid || !idToken || !conversationId || !summary?.id) return;
+  const safeConvId = sanitizeDocId(conversationId);
+  const safeSumId = sanitizeDocId(summary.id);
+  if (!safeConvId || !safeSumId) return;
+
+  const projectId = firebaseConfig.projectId;
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const docPath = `users/${uid}/conversations/${safeConvId}/summaries/${safeSumId}`;
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+    projectId
+  )}/databases/${encodeURIComponent(databaseId)}/documents/${docPath}`;
+
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries({ ...summary, id: safeSumId, conversationId: safeConvId })) {
+    if (v !== undefined) {
+      fields[k] = toFirestoreValue(v);
+    }
+  }
+
+  try {
+    await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fields }),
+    });
+  } catch (err) {
+    console.warn(`[FirestoreContext] Failed to persist segment summary ${safeSumId}:`, err);
+  }
+}
+
+/**
  * Merges Firestore-stored conversation messages with any optimistic/in-flight client messages,
  * honoring `deletedMessageIds` tombstones so truncated/deleted messages never resurrect.
  */
@@ -174,8 +306,9 @@ function mergeMessages(
 }
 
 /**
- * Hydrates conversation history, user profile, settings, sovereign companion memories,
- * shared Sanctuary memories, and gifts from Firestore for the authenticated user.
+ * Hydrates conversation history, rolling segment summaries, user profile, settings,
+ * sovereign companion memories, shared Sanctuary memories, and gifts from Firestore
+ * for the authenticated user.
  *
  * Strictly enforces entity memory sovereignty: ONLY the active companion (`resolvedModel`)
  * has its private `users/{uid}/companions/{companionId}/memories` subcollection hydrated,
@@ -194,6 +327,7 @@ export async function resolveExternalChatContext(
   let firestoreProfile: UserProfile | null = null;
   let firestoreGifts: Gift[] = [];
   let firestoreMessages: Message[] = [];
+  let firestoreSummaries: ConversationSegmentSummary[] = [];
   let firestoreConvModelId: string | undefined;
   let firestoreConvType: 'direct' | 'group' | undefined;
   let firestoreParticipantEntityIds: string[] | undefined;
@@ -251,32 +385,51 @@ export async function resolveExternalChatContext(
       })
     );
 
-    // 4. Fetch conversation metadata & messages subcollection if conversationId is provided
+    // 4. Fetch conversation metadata, ordered messages, & rolling segment summaries if conversationId is provided
     if (conversationId) {
       tasks.push(
         Promise.all([
           fetchFirestoreDocument(`users/${uid}/conversations/${conversationId}`, idToken),
-          fetchFirestoreCollection(
-            `users/${uid}/conversations/${conversationId}/messages`,
+          queryFirestoreMessagesOrdered(
+            `users/${uid}/conversations/${conversationId}`,
+            'messages',
             idToken,
             200
           ),
-        ]).then(([convDoc, msgDocs]) => {
-          if (convDoc?.modelId) {
-            firestoreConvModelId = convDoc.modelId;
+          fetchFirestoreCollection(
+            `users/${uid}/conversations/${conversationId}/summaries`,
+            idToken,
+            50
+          ),
+        ]).then(([convDoc, msgDocs, summaryDocs]) => {
+          if (convDoc && !convDoc.isDeleted) {
+            if (convDoc.modelId) {
+              firestoreConvModelId = convDoc.modelId;
+            }
+            if (convDoc.type === 'group' || convDoc.type === 'direct') {
+              firestoreConvType = convDoc.type;
+            }
+            if (Array.isArray(convDoc.participantEntityIds)) {
+              firestoreParticipantEntityIds = convDoc.participantEntityIds;
+            }
+            if (Array.isArray(convDoc.deletedMessageIds)) {
+              deletedMessageIds = new Set(convDoc.deletedMessageIds);
+            }
+            const previewMsgs: Message[] = Array.isArray(convDoc.messages) ? convDoc.messages : [];
+            const subMsgs: Message[] = msgDocs as unknown as Message[];
+            firestoreMessages = mergeMessages(previewMsgs, subMsgs, deletedMessageIds);
+          } else if (!convDoc) {
+            const subMsgs: Message[] = msgDocs as unknown as Message[];
+            firestoreMessages = mergeMessages([], subMsgs, deletedMessageIds);
           }
-          if (convDoc?.type === 'group' || convDoc?.type === 'direct') {
-            firestoreConvType = convDoc.type;
-          }
-          if (Array.isArray(convDoc?.participantEntityIds)) {
-            firestoreParticipantEntityIds = convDoc.participantEntityIds;
-          }
-          if (Array.isArray(convDoc?.deletedMessageIds)) {
-            deletedMessageIds = new Set(convDoc!.deletedMessageIds);
-          }
-          const previewMsgs: Message[] = Array.isArray(convDoc?.messages) ? convDoc!.messages : [];
-          const subMsgs: Message[] = msgDocs as unknown as Message[];
-          firestoreMessages = mergeMessages(previewMsgs, subMsgs, deletedMessageIds);
+
+          firestoreSummaries = (summaryDocs || [])
+            .filter((s) => s && !s.isDeleted)
+            .map((s) => ({
+              ...(s as unknown as ConversationSegmentSummary),
+              conversationId,
+            }))
+            .sort((a, b) => (a.startTurnIndex || 0) - (b.startTurnIndex || 0));
         })
       );
     }
@@ -311,7 +464,9 @@ export async function resolveExternalChatContext(
         200
       ),
     ]);
-    activeCompanionEntityDoc = compDoc;
+    if (compDoc && !compDoc.isDeleted) {
+      activeCompanionEntityDoc = compDoc;
+    }
     activeCompanionPrivateMemories = compMemDocs
       .filter((d) => !d.isDeleted)
       .map((d) => ({
@@ -377,7 +532,21 @@ export async function resolveExternalChatContext(
       ? mergeMessages(firestoreMessages, clientMessages, deletedMessageIds)
       : clientMessages.filter((m) => m && !deletedMessageIds.has(m.id));
 
+  const clientSummaries: ConversationSegmentSummary[] = Array.isArray(
+    reqBody?.segmentSummaries || clientFallback.segmentSummaries
+  )
+    ? reqBody?.segmentSummaries || clientFallback.segmentSummaries
+    : [];
+  const summariesById = new Map<string, ConversationSegmentSummary>();
+  for (const s of [...clientSummaries, ...firestoreSummaries]) {
+    if (s && s.id && !s.isDeleted) {
+      summariesById.set(s.id, s);
+    }
+  }
+
   return {
+    uid,
+    idToken,
     conversationId: conversationId || undefined,
     model: resolvedModel,
     respondingEntityId: activeEntityId !== 'unknown' ? activeEntityId : 'gemini-3.1-pro-preview',
@@ -385,6 +554,9 @@ export async function resolveExternalChatContext(
     participantEntityIds:
       reqBody?.participantEntityIds || firestoreParticipantEntityIds || undefined,
     messages: resolvedMessages,
+    segmentSummaries: Array.from(summariesById.values()).sort(
+      (a, b) => a.startTurnIndex - b.startTurnIndex
+    ),
     settings: mergedSettings,
     gifts: resolvedGifts,
     profile: resolvedProfile,

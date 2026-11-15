@@ -70,3 +70,5 @@ if (typeof window !== 'undefined') {
 }
 
 export { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged };
+export default app;
+

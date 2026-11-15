@@ -79,6 +79,7 @@ service cloud.firestore {
         && (!('jewelRevision' in data) || data.jewelRevision is number)
         && (!('userProfile' in data) || data.userProfile == null || data.userProfile is map)
         && (!('profileRevision' in data) || data.profileRevision is number)
+        && (!('syncClients' in data) || data.syncClients is map)
         && (!('updatedAt' in data) || data.updatedAt is number);
     }
 
@@ -88,6 +89,7 @@ service cloud.firestore {
         && (!('createdAt' in data) || data.createdAt is number)
         && (!('updatedAt' in data) || data.updatedAt is number)
         && (!('revision' in data) || data.revision is number)
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
         && (!('scope' in data) || (data.scope is string && data.scope in ['shared', 'legacy']))
         && (!('entityId' in data) || isBoundedString(data.entityId, 128))
         && (!('origin' in data) || isBoundedString(data.origin, 100))
@@ -98,7 +100,9 @@ service cloud.firestore {
         && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
         && (!('memoryType' in data) || isBoundedString(data.memoryType, 64))
         && (!('embedding' in data) || (data.embedding is list && data.embedding.size() <= 3072))
-        && (!('isDeleted' in data) || data.isDeleted is bool);
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     function isValidCompanionDoc(data) {
@@ -108,6 +112,7 @@ service cloud.firestore {
         && (!('roleTitle' in data) || isBoundedString(data.roleTitle, 200))
         && (!('avatarEmoji' in data) || isBoundedString(data.avatarEmoji, 32))
         && (!('avatarUrl' in data) || isBoundedString(data.avatarUrl, 900000))
+        && (!('avatarAssetId' in data) || isBoundedString(data.avatarAssetId, 128))
         && (!('themeColor' in data) || isBoundedString(data.themeColor, 64))
         && (!('accentColor' in data) || isBoundedString(data.accentColor, 64))
         && (!('typingIndicator' in data) || isBoundedString(data.typingIndicator, 200))
@@ -127,7 +132,11 @@ service cloud.firestore {
         && (!('roomProps' in data) || (data.roomProps is list && data.roomProps.size() <= 100))
         && (!('diaryEntries' in data) || (data.diaryEntries is list && data.diaryEntries.size() <= 100))
         && (!('revision' in data) || data.revision is number)
-        && (!('updatedAt' in data) || data.updatedAt is number);
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     function isValidCompanionMemoryDoc(data, memoryId) {
@@ -140,13 +149,16 @@ service cloud.firestore {
         && (!('createdAt' in data) || data.createdAt is number)
         && (!('updatedAt' in data) || data.updatedAt is number)
         && (!('revision' in data) || data.revision is number)
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
         && (!('origin' in data) || isBoundedString(data.origin, 100))
         && (!('caption' in data) || isBoundedString(data.caption, 1000))
         && (!('isLocked' in data) || data.isLocked is bool)
         && (!('lockReason' in data) || isBoundedString(data.lockReason, 1000))
         && (!('memoryType' in data) || isBoundedString(data.memoryType, 64))
         && (!('embedding' in data) || (data.embedding is list && data.embedding.size() <= 3072))
-        && (!('isDeleted' in data) || data.isDeleted is bool);
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     function isValidConversationDoc(data, conversationId) {
@@ -160,7 +172,10 @@ service cloud.firestore {
         && (!('createdAt' in data) || data.createdAt is number)
         && (!('updatedAt' in data) || data.updatedAt is number)
         && (!('revision' in data) || data.revision is number)
-        && (!('isDeleted' in data) || data.isDeleted is bool);
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     function isValidMessageDoc(data, conversationId, messageId) {
@@ -170,6 +185,7 @@ service cloud.firestore {
         && ('parts' in data && data.parts is list && data.parts.size() >= 1 && data.parts.size() <= 50)
         && ('timestamp' in data && data.timestamp is number)
         && (!('revision' in data) || data.revision is number)
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
         && (!('publicText' in data) || isBoundedString(data.publicText, 500000))
         && (!('thoughtText' in data) || isBoundedString(data.thoughtText, 500000))
         && (!('thoughtStatus' in data) || (data.thoughtStatus is string && data.thoughtStatus in ['thinking', 'complete', 'error']))
@@ -183,7 +199,54 @@ service cloud.firestore {
         && (!('authorEntityId' in data) || isBoundedString(data.authorEntityId, 128))
         && (!('authorDisplayName' in data) || isBoundedString(data.authorDisplayName, 200))
         && (!('authorAvatar' in data) || isBoundedString(data.authorAvatar, 2000))
-        && (!('isDeleted' in data) || data.isDeleted is bool);
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
+    }
+
+    function isValidConversationSummaryDoc(data, conversationId, summaryId) {
+      return ('id' in data && data.id is string && data.id == summaryId && data.id.size() <= 128)
+        && ('conversationId' in data && data.conversationId is string && data.conversationId == conversationId && data.conversationId.size() <= 128)
+        && (!('entityId' in data) || isBoundedString(data.entityId, 128))
+        && ('scope' in data && data.scope is string && data.scope in ['direct', 'group'])
+        && (!('participantEntityIds' in data) || isBoundedStringList(data.participantEntityIds, 20))
+        && ('segmentIndex' in data && data.segmentIndex is number)
+        && (!('startMessageId' in data) || isBoundedString(data.startMessageId, 128))
+        && (!('endMessageId' in data) || isBoundedString(data.endMessageId, 128))
+        && (!('startTimestamp' in data) || data.startTimestamp is number)
+        && (!('endTimestamp' in data) || data.endTimestamp is number)
+        && (!('messageCount' in data) || data.messageCount is number)
+        && ('narrativeSummary' in data && isBoundedString(data.narrativeSummary, 8000))
+        && (!('keyEventsAndDecisions' in data) || (data.keyEventsAndDecisions is list && data.keyEventsAndDecisions.size() <= 30))
+        && (!('userPreferencesAndFacts' in data) || (data.userPreferencesAndFacts is list && data.userPreferencesAndFacts.size() <= 30))
+        && (!('unresolvedThreads' in data) || (data.unresolvedThreads is list && data.unresolvedThreads.size() <= 30))
+        && (!('emotionalArc' in data) || isBoundedString(data.emotionalArc, 1000))
+        && (!('embedding' in data) || (data.embedding is list && data.embedding.size() <= 3072))
+        && (!('sourceHash' in data) || isBoundedString(data.sourceHash, 128))
+        && ('createdAt' in data && data.createdAt is number)
+        && (!('revision' in data) || data.revision is number);
+    }
+
+    function isValidMediaAssetDoc(data, userId, assetId) {
+      return ('id' in data && data.id is string && data.id == assetId && data.id.size() <= 128)
+        && ('ownerUid' in data && data.ownerUid is string && data.ownerUid == userId && data.ownerUid.size() <= 128)
+        && (!('entityId' in data) || isBoundedString(data.entityId, 128))
+        && ('category' in data && data.category is string && data.category in [
+          'user_avatar', 'companion_avatar', 'message_attachment', 'generated_image',
+          'room_decor', 'gift_media', 'audio_track'
+        ])
+        && ('mimeType' in data && isBoundedString(data.mimeType, 128))
+        && (!('byteSize' in data) || data.byteSize is number)
+        && ('sha256' in data && isBoundedString(data.sha256, 128))
+        && ('storagePath' in data && isBoundedString(data.storagePath, 512))
+        && (!('downloadUrl' in data) || isBoundedString(data.downloadUrl, 900000))
+        && (!('references' in data) || isBoundedStringList(data.references, 500))
+        && ('createdAt' in data && data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     function isValidGiftDoc(data, giftId) {
@@ -194,12 +257,15 @@ service cloud.firestore {
         && (!('reason' in data) || isBoundedString(data.reason, 4000))
         && ('timestamp' in data && data.timestamp is number)
         && (!('revision' in data) || data.revision is number)
+        && (!('lastSyncedRevision' in data) || data.lastSyncedRevision is number)
         && (!('inlineData' in data) || data.inlineData is map)
         && (!('scribble' in data) || data.scribble is map)
         && (!('musicTrack' in data) || data.musicTrack is map)
         && (!('modelId' in data) || isBoundedString(data.modelId, 128))
         && (!('targetModelId' in data) || isBoundedString(data.targetModelId, 128))
-        && (!('isDeleted' in data) || data.isDeleted is bool);
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number)
+        && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
     // -------------------------------------------------------------------------
@@ -239,7 +305,8 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id', 'userId'])
           && incoming().keys().hasOnly([
             'id', 'userId', 'settings', 'settingsRevision', 'memoriesMigratedV2',
-            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision', 'updatedAt'
+            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision',
+            'syncClients', 'updatedAt'
           ])
           && isValidSettingsDoc(incoming(), userId);
 
@@ -248,7 +315,8 @@ service cloud.firestore {
           && settingId == 'app'
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'userId', 'settings', 'settingsRevision', 'memoriesMigratedV2',
-            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision', 'updatedAt'
+            'jewelMetrics', 'jewelRevision', 'userProfile', 'profileRevision',
+            'syncClients', 'updatedAt'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && settingId == 'app';
@@ -263,9 +331,9 @@ service cloud.firestore {
           && isValidId(memoryId)
           && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope'])
           && incoming().keys().hasOnly([
-            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'lastSyncedRevision', 'scope',
             'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
-            'memoryType', 'embedding', 'isDeleted'
+            'memoryType', 'embedding', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ])
           && isValidSharedMemoryDoc(incoming(), memoryId);
 
@@ -273,9 +341,9 @@ service cloud.firestore {
           && isValidSharedMemoryDoc(incoming(), memoryId)
           && isValidId(memoryId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
-            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+            'id', 'content', 'createdAt', 'updatedAt', 'revision', 'lastSyncedRevision', 'scope',
             'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
-            'memoryType', 'embedding', 'isDeleted'
+            'memoryType', 'embedding', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(memoryId);
@@ -291,7 +359,8 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id', 'from', 'content', 'gift_type', 'timestamp'])
           && incoming().keys().hasOnly([
             'id', 'from', 'content', 'gift_type', 'reason', 'timestamp', 'revision',
-            'inlineData', 'scribble', 'musicTrack', 'modelId', 'targetModelId', 'isDeleted'
+            'lastSyncedRevision', 'inlineData', 'scribble', 'musicTrack', 'modelId',
+            'targetModelId', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ])
           && isValidGiftDoc(incoming(), giftId);
 
@@ -300,7 +369,8 @@ service cloud.firestore {
           && isValidId(giftId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'from', 'content', 'gift_type', 'reason', 'timestamp', 'revision',
-            'inlineData', 'scribble', 'musicTrack', 'modelId', 'targetModelId', 'isDeleted'
+            'lastSyncedRevision', 'inlineData', 'scribble', 'musicTrack', 'modelId',
+            'targetModelId', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(giftId);
@@ -316,10 +386,11 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id'])
           && incoming().keys().hasOnly([
             'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
-            'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster', 'bio', 'moodStatus',
-            'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore', 'favoriteGiftIds',
-            'personalThoughts', 'bondState', 'observations', 'relationshipEvents', 'fulfilledDesires',
-            'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+            'avatarAssetId', 'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster',
+            'bio', 'moodStatus', 'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore',
+            'favoriteGiftIds', 'personalThoughts', 'bondState', 'observations', 'relationshipEvents',
+            'fulfilledDesires', 'roomProps', 'diaryEntries', 'revision', 'lastSyncedRevision',
+            'updatedAt', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ])
           && isValidCompanionDoc(incoming());
 
@@ -328,10 +399,11 @@ service cloud.firestore {
           && isValidId(companionId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'apiModelId', 'displayName', 'roleTitle', 'avatarEmoji', 'avatarUrl',
-            'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster', 'bio', 'moodStatus',
-            'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore', 'favoriteGiftIds',
-            'personalThoughts', 'bondState', 'observations', 'relationshipEvents', 'fulfilledDesires',
-            'roomProps', 'diaryEntries', 'revision', 'updatedAt'
+            'avatarAssetId', 'themeColor', 'accentColor', 'typingIndicator', 'isPrimaryRoster',
+            'bio', 'moodStatus', 'currentActivity', 'roomDecor', 'runtimeConfig', 'resonanceScore',
+            'favoriteGiftIds', 'personalThoughts', 'bondState', 'observations', 'relationshipEvents',
+            'fulfilledDesires', 'roomProps', 'diaryEntries', 'revision', 'lastSyncedRevision',
+            'updatedAt', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(companionId);
@@ -346,9 +418,9 @@ service cloud.firestore {
             && isValidId(memoryId)
             && incoming().keys().hasAll(['id', 'content', 'createdAt', 'scope', 'entityId'])
             && incoming().keys().hasOnly([
-              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'lastSyncedRevision', 'scope',
               'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
-              'memoryType', 'embedding', 'isDeleted'
+              'memoryType', 'embedding', 'isDeleted', 'deletedAt', 'deletedByClientId'
             ])
             && isValidCompanionMemoryDoc(incoming(), memoryId);
 
@@ -357,9 +429,9 @@ service cloud.firestore {
             && isValidId(companionId)
             && isValidId(memoryId)
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'scope',
+              'id', 'content', 'createdAt', 'updatedAt', 'revision', 'lastSyncedRevision', 'scope',
               'entityId', 'origin', 'author', 'modelId', 'caption', 'isLocked', 'lockReason',
-              'memoryType', 'embedding', 'isDeleted'
+              'memoryType', 'embedding', 'isDeleted', 'deletedAt', 'deletedByClientId'
             ]);
 
           allow delete: if isVerifiedOwner(userId) && isValidId(companionId) && isValidId(memoryId);
@@ -376,7 +448,8 @@ service cloud.firestore {
           && incoming().keys().hasAll(['id'])
           && incoming().keys().hasOnly([
             'id', 'title', 'modelId', 'type', 'participantEntityIds',
-            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt', 'revision', 'isDeleted'
+            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt',
+            'revision', 'lastSyncedRevision', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ])
           && isValidConversationDoc(incoming(), conversationId);
 
@@ -385,7 +458,8 @@ service cloud.firestore {
           && isValidId(conversationId)
           && incoming().diff(existing()).affectedKeys().hasOnly([
             'id', 'title', 'modelId', 'type', 'participantEntityIds',
-            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt', 'revision', 'isDeleted'
+            'deletedMessageIds', 'messages', 'createdAt', 'updatedAt',
+            'revision', 'lastSyncedRevision', 'isDeleted', 'deletedAt', 'deletedByClientId'
           ]);
 
         allow delete: if isVerifiedOwner(userId) && isValidId(conversationId);
@@ -400,10 +474,11 @@ service cloud.firestore {
             && isValidId(messageId)
             && incoming().keys().hasAll(['id', 'conversationId', 'role', 'parts', 'timestamp'])
             && incoming().keys().hasOnly([
-              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision',
+              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision', 'lastSyncedRevision',
               'publicText', 'thoughtText', 'thoughtStatus', 'finishReason', 'backend',
               'reaction', 'searchResults', 'generatedImages', 'scribbles', 'musicTracks',
-              'authorEntityId', 'authorDisplayName', 'authorAvatar', 'isDeleted'
+              'authorEntityId', 'authorDisplayName', 'authorAvatar',
+              'isDeleted', 'deletedAt', 'deletedByClientId'
             ])
             && isValidMessageDoc(incoming(), conversationId, messageId)
             && existsAfter(/databases/$(database)/documents/users/$(userId)/conversations/$(conversationId));
@@ -413,15 +488,74 @@ service cloud.firestore {
             && isValidId(conversationId)
             && isValidId(messageId)
             && incoming().diff(existing()).affectedKeys().hasOnly([
-              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision',
+              'id', 'conversationId', 'role', 'parts', 'timestamp', 'revision', 'lastSyncedRevision',
               'publicText', 'thoughtText', 'thoughtStatus', 'finishReason', 'backend',
               'reaction', 'searchResults', 'generatedImages', 'scribbles', 'musicTracks',
-              'authorEntityId', 'authorDisplayName', 'authorAvatar', 'isDeleted'
+              'authorEntityId', 'authorDisplayName', 'authorAvatar',
+              'isDeleted', 'deletedAt', 'deletedByClientId'
             ])
             && existsAfter(/databases/$(database)/documents/users/$(userId)/conversations/$(conversationId));
 
           allow delete: if isVerifiedOwner(userId) && isValidId(conversationId) && isValidId(messageId);
         }
+
+        // 8. Rolling Conversation Segment Summaries (`users/{userId}/conversations/{conversationId}/summaries/{summaryId}`)
+        match /summaries/{summaryId} {
+          allow get: if isOwner(userId) && isValidId(conversationId) && isValidId(summaryId);
+          allow list: if isOwner(userId);
+
+          allow create: if isVerifiedOwner(userId)
+            && isValidId(conversationId)
+            && isValidId(summaryId)
+            && incoming().keys().hasAll(['id', 'conversationId', 'scope', 'segmentIndex', 'narrativeSummary', 'createdAt'])
+            && incoming().keys().hasOnly([
+              'id', 'conversationId', 'entityId', 'scope', 'participantEntityIds',
+              'segmentIndex', 'startMessageId', 'endMessageId', 'startTimestamp', 'endTimestamp',
+              'messageCount', 'narrativeSummary', 'keyEventsAndDecisions', 'userPreferencesAndFacts',
+              'unresolvedThreads', 'emotionalArc', 'embedding', 'sourceHash', 'createdAt', 'revision'
+            ])
+            && isValidConversationSummaryDoc(incoming(), conversationId, summaryId);
+
+          allow update: if isVerifiedOwner(userId)
+            && isValidConversationSummaryDoc(incoming(), conversationId, summaryId)
+            && isValidId(conversationId)
+            && isValidId(summaryId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'id', 'conversationId', 'entityId', 'scope', 'participantEntityIds',
+              'segmentIndex', 'startMessageId', 'endMessageId', 'startTimestamp', 'endTimestamp',
+              'messageCount', 'narrativeSummary', 'keyEventsAndDecisions', 'userPreferencesAndFacts',
+              'unresolvedThreads', 'emotionalArc', 'embedding', 'sourceHash', 'createdAt', 'revision'
+            ]);
+
+          allow delete: if isVerifiedOwner(userId) && isValidId(conversationId) && isValidId(summaryId);
+        }
+      }
+
+      // 9. Deduplicated Media Assets (`users/{userId}/mediaAssets/{assetId}`)
+      match /mediaAssets/{assetId} {
+        allow get: if isOwner(userId) && isValidId(assetId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(assetId)
+          && incoming().keys().hasAll(['id', 'ownerUid', 'category', 'mimeType', 'sha256', 'storagePath', 'createdAt'])
+          && incoming().keys().hasOnly([
+            'id', 'ownerUid', 'entityId', 'category', 'mimeType', 'byteSize',
+            'sha256', 'storagePath', 'downloadUrl', 'references',
+            'createdAt', 'updatedAt', 'revision', 'isDeleted', 'deletedAt', 'deletedByClientId'
+          ])
+          && isValidMediaAssetDoc(incoming(), userId, assetId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidMediaAssetDoc(incoming(), userId, assetId)
+          && isValidId(assetId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'ownerUid', 'entityId', 'category', 'mimeType', 'byteSize',
+            'sha256', 'storagePath', 'downloadUrl', 'references',
+            'createdAt', 'updatedAt', 'revision', 'isDeleted', 'deletedAt', 'deletedByClientId'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(assetId);
       }
     }
   }

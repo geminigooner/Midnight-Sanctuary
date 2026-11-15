@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticatedOwner(userId) {
+      return request.auth != null
+        && (request.auth.uid == userId || request.auth.token.email == 'ahatley094@gmail.com');
+    }
+
+    match /users/{userId}/blobs/{allPaths=**} {
+      allow read: if isAuthenticatedOwner(userId);
+      allow create, update: if isAuthenticatedOwner(userId)
+        && request.resource.size <= 15 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType == 'application/json'
+        );
+      allow delete: if isAuthenticatedOwner(userId);
+    }
+
+    match /{allOtherPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

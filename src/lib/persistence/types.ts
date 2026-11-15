@@ -1,8 +1,10 @@
 import {
   AppSettings,
   Conversation,
+  ConversationSegmentSummary,
   Gift,
   JewelMetrics,
+  MediaAssetRecord,
   Memory,
   Message,
   UserProfile,
@@ -11,39 +13,64 @@ import { ModelEntity } from '../entitySystem';
 
 export type MemoryScope = 'companion' | 'shared' | 'legacy';
 
+export interface SyncClientCursor {
+  clientId: string;
+  lastAckedRevision: number;
+  lastAckedTimestamp: number;
+  lastSeenAt: number;
+}
+
 export interface ScopedMemory extends Memory {
   scope: MemoryScope;
   entityId?: string;
   revision?: number;
+  lastSyncedRevision?: number;
   updatedAt?: number;
   isDeleted?: boolean;
+  deletedAt?: number;
+  deletedByClientId?: string;
 }
 
-export interface DurableConversationMeta extends Omit<Conversation, 'messages'> {
+export interface DurableConversationMeta extends Omit<Conversation, 'messages' | 'segmentSummaries'> {
   revision: number;
+  lastSyncedRevision?: number;
   deletedMessageIds?: string[];
   previewMessages?: Message[];
   isDeleted?: boolean;
+  deletedAt?: number;
+  deletedByClientId?: string;
 }
 
 export interface DurableMessage extends Message {
   conversationId: string;
   revision: number;
+  lastSyncedRevision?: number;
   isDeleted?: boolean;
+  deletedAt?: number;
+  deletedByClientId?: string;
 }
 
 export interface DurableGift extends Gift {
   revision: number;
+  lastSyncedRevision?: number;
   isDeleted?: boolean;
+  deletedAt?: number;
+  deletedByClientId?: string;
 }
 
 export interface DurableCompanion extends ModelEntity {
   revision: number;
+  lastSyncedRevision?: number;
   updatedAt: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
+  deletedByClientId?: string;
 }
 
 export interface UserScopedStateRecord {
   uid: string;
+  clientId?: string;
+  syncClients?: Record<string, SyncClientCursor>;
   settings: AppSettings;
   jewelMetrics: JewelMetrics;
   userProfile: UserProfile | null;
@@ -64,6 +91,8 @@ export type MutationEntityType =
   | 'companion_memory'
   | 'shared_memory'
   | 'gift'
+  | 'media_asset'
+  | 'conversation_summary'
   | 'settings'
   | 'jewel'
   | 'profile';
@@ -79,7 +108,7 @@ export interface MutationRecord {
   sequence: number;
   entityType: MutationEntityType;
   entityId: string;
-  parentId?: string; // conversationId for messages, companionId for companion_memory
+  parentId?: string; // conversationId for messages/summaries, companionId for companion_memory
   operation: MutationOperation;
   payload: any;
   revision: number;
@@ -88,6 +117,7 @@ export interface MutationRecord {
   attempts: number;
   nextRetryAt: number;
   lastError?: string;
+  errorClassification?: 'transient' | 'permanent_policy';
 }
 
 export type SyncPhase = 'idle' | 'hydrating' | 'synced' | 'syncing' | 'offline' | 'error';
@@ -108,10 +138,12 @@ export interface HydratedVaultState {
   userState: UserScopedStateRecord | null;
   conversations: DurableConversationMeta[];
   messagesByConversation: Record<string, DurableMessage[]>;
+  summariesByConversation?: Record<string, ConversationSegmentSummary[]>;
   companions: Record<string, DurableCompanion>;
   companionMemories: Record<string, ScopedMemory[]>;
   sharedMemories: ScopedMemory[];
   gifts: DurableGift[];
+  mediaAssets?: MediaAssetRecord[];
   pendingMutations: MutationRecord[];
 }
 
@@ -123,6 +155,7 @@ export interface CloudRemoteSnapshot {
   userProfile?: UserProfile | null;
   profileRevision?: number;
   memoriesMigratedV2?: boolean;
+  syncClients?: Record<string, SyncClientCursor>;
   conversations?: {
     meta: DurableConversationMeta;
     previewMessages: Message[];
@@ -131,6 +164,10 @@ export interface CloudRemoteSnapshot {
     conversationId: string;
     messages: DurableMessage[];
   };
+  conversationSummaries?: {
+    conversationId: string;
+    summaries: ConversationSegmentSummary[];
+  };
   companions?: Record<string, DurableCompanion>;
   companionMemories?: {
     companionId: string;
@@ -138,6 +175,7 @@ export interface CloudRemoteSnapshot {
   };
   sharedMemories?: ScopedMemory[];
   gifts?: DurableGift[];
+  mediaAssets?: MediaAssetRecord[];
   legacyMonolithicData?: {
     settings?: AppSettings;
     jewelMetrics?: JewelMetrics;
@@ -175,6 +213,8 @@ export interface SanctuaryBackupManifest {
   legacyMemories: number;
   gifts: number;
   stickers: number;
+  segmentSummaries?: number;
+  mediaAssets?: number;
 }
 
 export interface SanctuaryBackupData {
@@ -187,11 +227,13 @@ export interface SanctuaryBackupData {
   sharedMemories: ScopedMemory[];
   legacyMemories: ScopedMemory[];
   gifts: Gift[];
+  conversationSummaries?: Record<string, ConversationSegmentSummary[]>;
+  mediaAssets?: MediaAssetRecord[];
 }
 
 export interface SanctuaryBackupEnvelope {
   format: 'midnight-sanctuary-backup';
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   appVersion: string;
   exportedAt: string;
   exportedTimestamp: number;

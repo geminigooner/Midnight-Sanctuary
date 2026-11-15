@@ -56,7 +56,7 @@ export function Settings() {
 
   const addMemory = () => {
     if (!newMemory.trim()) return;
-    store.addMemory(newMemory.trim(), 'user_settings', 'user', undefined, 'fact');
+    store.addMemory(newMemory.trim(), 'user_settings', 'user', undefined, undefined, false, undefined, 'fact');
     setNewMemory('');
   };
 

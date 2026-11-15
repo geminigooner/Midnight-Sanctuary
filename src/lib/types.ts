@@ -1,7 +1,7 @@
 export interface MessagePart {
   text?: string;
   thought?: boolean;
-  inlineData?: { mimeType: string; data: string };
+  inlineData?: { mimeType: string; data: string; mediaAssetId?: string; downloadUrl?: string };
   functionCall?: any;
   functionResponse?: any;
   thoughtSignature?: string;
@@ -52,7 +52,7 @@ export interface Message {
   backend?: string;
   reaction?: string;
   searchResults?: { query: string; results: { title: string; link: string; snippet: string; displayLink?: string }[] }[];
-  generatedImages?: { prompt: string; imageUrl: string; provider: string; modelUsed: string }[];
+  generatedImages?: { prompt: string; imageUrl: string; provider: string; modelUsed: string; mediaAssetId?: string }[];
   scribbles?: SvgScribbleData[];
   musicTracks?: MusicTrackData[];
   // Multi-Entity & Group metadata
@@ -82,6 +82,80 @@ export function getApiMessageParts(msg: Message): MessagePart[] {
   return msg.parts;
 }
 
+export interface ConversationSegmentSummary {
+  id: string;
+  conversationId: string;
+  ScopeEntityId?: string;
+  entityId?: string;
+  scope?: 'direct' | 'group';
+  authorizedEntityIds?: string[];
+  participantEntityIds?: string[];
+  segmentIndex?: number;
+  startTurnIndex: number;
+  endTurnIndex: number;
+  startIndex?: number;
+  endIndex?: number;
+  startMessageId?: string;
+  endMessageId?: string;
+  startTimestamp?: number;
+  endTimestamp?: number;
+  messageIds?: string[];
+  messageCount?: number;
+  turnCount?: number;
+  tokenCountOriginal?: number;
+  sourceHash: string;
+  narrativeSummary: string;
+  keyEventsAndDecisions: string[];
+  userPreferencesAndFacts: string[];
+  unresolvedThreads: string[];
+  emotionalArc: string;
+  embedding?: number[];
+  createdAt: number;
+  updatedAt?: number;
+  revision?: number;
+  lastSyncedRevision?: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
+}
+
+export type MediaAssetCategory =
+  | 'user_avatar'
+  | 'companion_avatar'
+  | 'chat_attachment'
+  | 'message_attachment'
+  | 'generated_image'
+  | 'room_art'
+  | 'room_decor'
+  | 'gift_media'
+  | 'audio'
+  | 'audio_track';
+
+export interface MediaAssetRecord {
+  id: string; // SHA-256 hex digest scoped to ownerUid
+  ownerUid?: string;
+  uid?: string;
+  ownerEntityId?: string;
+  associatedEntityId?: string;
+  entityId?: string;
+  sha256?: string;
+  category: MediaAssetCategory;
+  mimeType: string;
+  byteSize?: number;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  storageBackend: 'firebase_storage' | 'vault_chunked' | 'vault_fallback';
+  storagePath: string;
+  downloadUrl?: string;
+  references: string[];
+  createdAt: number;
+  updatedAt: number;
+  revision?: number;
+  lastSyncedRevision?: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -91,6 +165,7 @@ export interface Conversation {
   updatedAt: number;
   type?: 'direct' | 'group';
   participantEntityIds?: string[];
+  segmentSummaries?: ConversationSegmentSummary[];
 }
 
 export interface ModelInfo {
@@ -129,7 +204,7 @@ export interface Gift {
   gift_type: string;
   reason: string;
   timestamp: number;
-  inlineData?: { mimeType: string; data: string; previewUrl?: string };
+  inlineData?: { mimeType: string; data: string; previewUrl?: string; mediaAssetId?: string };
   scribble?: SvgScribbleData;
   musicTrack?: MusicTrackData;
   modelId?: string;
@@ -204,8 +279,8 @@ export interface UserProfile {
   favorites?: string;
   askMeAbout?: string;
   pleaseKnow?: string;
-  photo?: { mimeType: string; data: string };
-  backgroundImage?: { mimeType: string; data: string };
+  photo?: { mimeType: string; data: string; mediaAssetId?: string };
+  backgroundImage?: { mimeType: string; data: string; mediaAssetId?: string };
   gemmaNotes?: { id?: string; text: string; timestamp: number; authorEntityId?: string }[];
   updatedAt?: number;
 }

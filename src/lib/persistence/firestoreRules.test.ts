@@ -359,12 +359,14 @@ describe('Firestore Zero-Trust Security Rules & Blueprint Audit', () => {
         '/users/{userId}/companions/{companionId}/memories/{memoryId}',
         '/users/{userId}/conversations/{conversationId}',
         '/users/{userId}/conversations/{conversationId}/messages/{messageId}',
+        '/users/{userId}/conversations/{conversationId}/summaries/{summaryId}',
+        '/users/{userId}/mediaAssets/{assetId}',
       ])
     );
 
     // Every allow update block must invoke its isValid[Entity] helper AND affectedKeys().hasOnly(...)
     const updateBlocks = rulesText.split('allow update: if').slice(1);
-    expect(updateBlocks.length).toBe(8);
+    expect(updateBlocks.length).toBe(10);
     for (const block of updateBlocks) {
       const ruleBody = block.split('allow ')[0];
       expect(ruleBody).toMatch(/isValid[A-Za-z]+Doc\(/);

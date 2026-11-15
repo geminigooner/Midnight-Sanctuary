@@ -1,3 +1,4 @@
+import { ConversationSegmentSummary, MediaAssetRecord } from '../types';
 import {
   DurableCompanion,
   DurableConversationMeta,
@@ -10,18 +11,30 @@ import {
 } from './types';
 
 const DEFAULT_DB_NAME = 'midnight_sanctuary_vault_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = {
   USER_STATE: 'user_state',
   MUTATION_JOURNAL: 'mutation_journal',
   CONVERSATIONS: 'conversations',
   MESSAGES: 'messages',
+  CONVERSATION_SUMMARIES: 'conversation_summaries',
   COMPANIONS: 'companions',
   COMPANION_MEMORIES: 'companion_memories',
   SHARED_MEMORIES: 'shared_memories',
   GIFTS: 'gifts',
+  MEDIA_ASSETS: 'media_assets',
+  MEDIA_BLOBS: 'media_blobs',
 } as const;
+
+export interface StoredMediaBlob {
+  assetId: string;
+  ownerUid: string;
+  mimeType: string;
+  dataUrl: string;
+  byteSize: number;
+  createdAt: number;
+}
 
 interface StoredEnvelope<T> {
   pk: string;
@@ -239,6 +252,10 @@ export class IndexedDBVault {
     return `msg::${uid}::${convId}::${msgId}`;
   }
 
+  private summaryPk(uid: string, convId: string, summaryId: string): string {
+    return `sum::${uid}::${convId}::${summaryId}`;
+  }
+
   private companionPk(uid: string, companionId: string): string {
     return `comp::${uid}::${companionId}`;
   }
@@ -255,6 +272,14 @@ export class IndexedDBVault {
     return `gift::${uid}::${giftId}`;
   }
 
+  private mediaAssetPk(uid: string, assetId: string): string {
+    return `media::${uid}::${assetId}`;
+  }
+
+  private mediaBlobPk(uid: string, assetId: string): string {
+    return `mblob::${uid}::${assetId}`;
+  }
+
   // ---------------------------------------------------------------------------
   // Hydration & Snapshot Loading
   // ---------------------------------------------------------------------------
@@ -264,19 +289,23 @@ export class IndexedDBVault {
       userState,
       conversations,
       allMessages,
+      allSummaries,
       companionList,
       allCompanionMemories,
       sharedMemories,
       gifts,
+      mediaAssets,
       journalEntries,
     ] = await Promise.all([
       this.getByPk<UserScopedStateRecord>(STORES.USER_STATE, this.userPk(uid)),
       this.getAllByUid<DurableConversationMeta>(STORES.CONVERSATIONS, uid),
       this.getAllByUid<DurableMessage>(STORES.MESSAGES, uid),
+      this.getAllByUid<ConversationSegmentSummary>(STORES.CONVERSATION_SUMMARIES, uid),
       this.getAllByUid<DurableCompanion>(STORES.COMPANIONS, uid),
       this.getAllByUid<ScopedMemory>(STORES.COMPANION_MEMORIES, uid),
       this.getAllByUid<ScopedMemory>(STORES.SHARED_MEMORIES, uid),
       this.getAllByUid<DurableGift>(STORES.GIFTS, uid),
+      this.getAllByUid<MediaAssetRecord>(STORES.MEDIA_ASSETS, uid),
       this.getAllByUid<MutationRecord>(STORES.MUTATION_JOURNAL, uid),
     ]);
 
@@ -289,9 +318,18 @@ export class IndexedDBVault {
       messagesByConversation[msg.conversationId].push(msg);
     }
 
+    const summariesByConversation: Record<string, ConversationSegmentSummary[]> = {};
+    for (const sum of allSummaries) {
+      if (!sum || sum.isDeleted || !sum.conversationId) continue;
+      if (!summariesByConversation[sum.conversationId]) {
+        summariesByConversation[sum.conversationId] = [];
+      }
+      summariesByConversation[sum.conversationId].push(sum);
+    }
+
     const companions: Record<string, DurableCompanion> = {};
     for (const comp of companionList) {
-      if (comp?.id) {
+      if (comp?.id && !comp.isDeleted) {
         companions[comp.id] = comp;
       }
     }
@@ -313,10 +351,12 @@ export class IndexedDBVault {
       userState,
       conversations: conversations.filter((c) => c && !c.isDeleted),
       messagesByConversation,
+      summariesByConversation,
       companions,
       companionMemories,
       sharedMemories: sharedMemories.filter((m) => m && !m.isDeleted),
       gifts: gifts.filter((g) => g && !g.isDeleted),
+      mediaAssets: mediaAssets.filter((a) => a && !a.isDeleted),
       pendingMutations,
     };
   }
@@ -331,10 +371,12 @@ export class IndexedDBVault {
       userState?: UserScopedStateRecord;
       conversation?: DurableConversationMeta;
       messages?: DurableMessage[];
+      conversationSummary?: ConversationSegmentSummary;
       companion?: DurableCompanion;
       companionMemory?: ScopedMemory;
       sharedMemory?: ScopedMemory;
       gift?: DurableGift;
+      mediaAsset?: MediaAssetRecord;
     }
   ): Promise<void> {
     const uid = mutation.uid;
@@ -387,6 +429,22 @@ export class IndexedDBVault {
       }
     }
 
+    if (entityWrites.conversationSummary && entityWrites.conversationSummary.conversationId) {
+      writes.push({
+        storeName: STORES.CONVERSATION_SUMMARIES,
+        envelope: {
+          pk: this.summaryPk(
+            uid,
+            entityWrites.conversationSummary.conversationId,
+            entityWrites.conversationSummary.id
+          ),
+          uid,
+          parentKey: `${uid}::${entityWrites.conversationSummary.conversationId}`,
+          record: entityWrites.conversationSummary,
+        },
+      });
+    }
+
     if (entityWrites.companion) {
       writes.push({
         storeName: STORES.COMPANIONS,
@@ -432,6 +490,17 @@ export class IndexedDBVault {
           pk: this.giftPk(uid, entityWrites.gift.id),
           uid,
           record: entityWrites.gift,
+        },
+      });
+    }
+
+    if (entityWrites.mediaAsset) {
+      writes.push({
+        storeName: STORES.MEDIA_ASSETS,
+        envelope: {
+          pk: this.mediaAssetPk(uid, entityWrites.mediaAsset.id),
+          uid,
+          record: entityWrites.mediaAsset,
         },
       });
     }
@@ -502,6 +571,23 @@ export class IndexedDBVault {
     await this.putBatch(writes);
   }
 
+  public async saveConversationSummaries(
+    uid: string,
+    conversationId: string,
+    summaries: ConversationSegmentSummary[]
+  ): Promise<void> {
+    const writes = summaries.map((s) => ({
+      storeName: STORES.CONVERSATION_SUMMARIES,
+      envelope: {
+        pk: this.summaryPk(uid, conversationId, s.id),
+        uid,
+        parentKey: `${uid}::${conversationId}`,
+        record: s,
+      },
+    }));
+    await this.putBatch(writes);
+  }
+
   public async saveCompanions(uid: string, companions: DurableCompanion[]): Promise<void> {
     const writes = companions.map((c) => ({
       storeName: STORES.COMPANIONS,
@@ -553,6 +639,34 @@ export class IndexedDBVault {
       },
     }));
     await this.putBatch(writes);
+  }
+
+  public async saveMediaAssets(uid: string, assets: MediaAssetRecord[]): Promise<void> {
+    const writes = assets.map((a) => ({
+      storeName: STORES.MEDIA_ASSETS,
+      envelope: {
+        pk: this.mediaAssetPk(uid, a.id),
+        uid,
+        record: a,
+      },
+    }));
+    await this.putBatch(writes);
+  }
+
+  public async putMediaBlob(blob: StoredMediaBlob): Promise<void> {
+    await this.putEnvelope(STORES.MEDIA_BLOBS, {
+      pk: this.mediaBlobPk(blob.ownerUid, blob.assetId),
+      uid: blob.ownerUid,
+      record: blob,
+    });
+  }
+
+  public async getMediaBlob(uid: string, assetId: string): Promise<StoredMediaBlob | null> {
+    return this.getByPk<StoredMediaBlob>(STORES.MEDIA_BLOBS, this.mediaBlobPk(uid, assetId));
+  }
+
+  public async deleteMediaBlob(uid: string, assetId: string): Promise<void> {
+    await this.deleteByPk(STORES.MEDIA_BLOBS, this.mediaBlobPk(uid, assetId));
   }
 
   public async clearUserVaultData(uid: string, preserveJournal = false): Promise<void> {

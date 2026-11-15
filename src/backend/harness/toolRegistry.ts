@@ -448,6 +448,34 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'recall_conversation_history',
+    category: 'server_query',
+    declaration: {
+      name: 'recall_conversation_history',
+      description:
+        'Search and retrieve verbatim earlier turns or specific chapter summaries from the full conversation archive when an older moment has aged out of the recent verbatim window.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          query: {
+            type: Type.STRING,
+            description:
+              'Keywords, topic, or phrase to search for in earlier verbatim conversation turns.',
+          },
+          segment_id: {
+            type: Type.STRING,
+            description:
+              'Optional specific chapter ID (e.g., "seg_0_29") from Earlier Conversation Chapters to expand verbatim.',
+          },
+          limit: {
+            type: Type.NUMBER,
+            description: 'Maximum number of matching verbatim turns to return (default 6, max 15).',
+          },
+        },
+      },
+    },
+  },
 ];
 
 export const gemmaTools = [

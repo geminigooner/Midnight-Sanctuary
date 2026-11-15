@@ -1,7 +1,0 @@
-name = "MidnightSanctuaryWorker"
-main = "src/index.js"
-compatibility_date = "2026-08-25"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "midnight-sanctuary-db"

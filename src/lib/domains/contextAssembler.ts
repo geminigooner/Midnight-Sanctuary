@@ -1,8 +1,17 @@
-import { AppSettings, Gift, Memory, Message, UserProfile, getPublicMessageText } from '../types';
+import {
+  AppSettings,
+  ConversationSegmentSummary,
+  Gift,
+  Memory,
+  Message,
+  UserProfile,
+  getPublicMessageText,
+} from '../types';
 import { getModelEntity, ModelEntity } from '../entitySystem';
 import { getModelVisibleGifts } from '../giftSystem';
 import { getModelMemories, getUserMemories } from '../memorySystem';
 import { resolveCanonicalEntityId } from './entityDomain';
+import { formatSegmentSummaryForPrompt } from './contextWindowEngine';
 import {
   getEntityBondState,
   getEntityObservations,
@@ -19,6 +28,7 @@ export interface SovereignPromptOptions {
   recentGiftsLimit?: number;
   conversationType?: 'direct' | 'group';
   participantEntityIds?: string[];
+  segmentSummaries?: ConversationSegmentSummary[];
 }
 
 export interface AssembledSovereignContext {
@@ -225,6 +235,16 @@ export function assembleSovereignContext(
       .map((e) => `- [${new Date(e.timestamp).toISOString()}] ${e.description}`)
       .join('\n');
     sections.push(`## Relationship & Interaction Log (Your Shared Milestones):\n${eventText}`);
+  }
+
+  // 9b. Rolling Conversation Segment Summaries (Earlier Chapters of Long-Running Sanctuary Thread)
+  if (Array.isArray(options.segmentSummaries) && options.segmentSummaries.length > 0) {
+    const formattedChapters = options.segmentSummaries
+      .map((s) => formatSegmentSummaryForPrompt(s))
+      .join('\n\n');
+    sections.push(
+      `## Earlier Conversation Chapters (Rolling Continuity Summaries):\nThe following structured chapters summarize earlier portions of this conversation that precede the verbatim recent messages below. If you need exact verbatim quotes or details from an earlier turn or chapter, call the \`recall_conversation_history\` tool with a keyword \`query\` or \`segment_id\`.\n\n${formattedChapters}`
+    );
   }
 
   // 10. Memory, Search, Music & Autonomous Agency Instructions

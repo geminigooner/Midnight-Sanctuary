@@ -7,9 +7,11 @@ import {
   AlertTriangle,
   ShieldCheck,
   CloudOff,
+  Trash2,
 } from 'lucide-react';
 import { useStore } from '../context/AppContext';
 import { ValidatedBackupPreview } from '../lib/persistence/types';
+import { getSharedPersistenceCoordinator } from '../lib/store';
 
 export function VaultBackupPanel() {
   const store = useStore();
@@ -28,11 +30,19 @@ export function VaultBackupPanel() {
   } | null>(null);
 
   const { syncStatus } = store;
+  const coordinator = getSharedPersistenceCoordinator();
+  const quarantinedMutations = coordinator.getQuarantinedMutations();
+  const domainState = coordinator.getDomainState();
 
   const totalMessages = (store.conversations || []).reduce(
     (sum, c) => sum + (Array.isArray(c.messages) ? c.messages.length : 0),
     0
   );
+  const totalSummaries = (store.conversations || []).reduce(
+    (sum, c) => sum + (Array.isArray(c.segmentSummaries) ? c.segmentSummaries.length : 0),
+    0
+  );
+  const mediaAssetsCount = (domainState.mediaAssets || []).length;
   const privateMemoriesCount = Object.values(store.companionMemories || {}).reduce(
     (sum, list) => sum + (Array.isArray(list) ? list.length : 0),
     0
@@ -46,6 +56,10 @@ export function VaultBackupPanel() {
     } finally {
       setIsRetrying(false);
     }
+  };
+
+  const handleDiscardQuarantined = async (mutationId: string) => {
+    await coordinator.discardQuarantinedMutation(mutationId);
   };
 
   const handleExport = () => {
@@ -181,6 +195,8 @@ export function VaultBackupPanel() {
           {store.conversations.length} conversations · {totalMessages} messages ·{' '}
           {privateMemoriesCount} private companion memories · {sharedMemoriesCount} shared memories ·{' '}
           {store.gifts.length} gifts
+          {totalSummaries > 0 ? ` · ${totalSummaries} rolling chapters` : ''}
+          {mediaAssetsCount > 0 ? ` · ${mediaAssetsCount} deduplicated media assets` : ''}
           {syncStatus.pendingCount > 0 ? ` · ${syncStatus.pendingCount} queued in journal` : ''}
         </p>
 
@@ -188,6 +204,39 @@ export function VaultBackupPanel() {
           <p className="text-xs font-bold text-[#F198B7] break-words">
             Last sync notice: {syncStatus.lastError}
           </p>
+        )}
+
+        {quarantinedMutations.length > 0 && (
+          <div className="pt-2 border-t border-[#2C194D] space-y-2">
+            <p className="text-xs font-extrabold text-[#F198B7]">
+              Quarantined Mutations ({quarantinedMutations.length} isolated so other lanes continue syncing):
+            </p>
+            {quarantinedMutations.map((m) => (
+              <div
+                key={m.mutationId}
+                className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#151234] border border-[#2C194D] text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-extrabold text-[#F5E1C8] truncate">
+                    {m.entityType} · {m.operation} ({m.entityId})
+                  </p>
+                  {m.lastError && (
+                    <p className="text-[11px] font-semibold text-[#F198B7] truncate">
+                      {m.lastError}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDiscardQuarantined(m.mutationId)}
+                  className="px-2.5 py-1 rounded-lg bg-[#2a1538] hover:bg-[#F198B7] hover:text-[#2C194D] text-[#F198B7] border border-[#F198B7]/40 font-extrabold text-[11px] flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={12} />
+                  <span>Discard</span>
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -197,8 +246,8 @@ export function VaultBackupPanel() {
           <h3 className="text-sm font-extrabold text-[#F5E1C8]">Export Sanctuary Archive</h3>
           <p className="text-xs font-semibold text-[#B39DE5] mt-0.5">
             Downloads a versioned JSON archive with integrity checksum containing all conversations,
-            full message history, companion quarters, private memories, shared memories, gifts, and
-            settings.
+            full message history, rolling continuity chapters, companion quarters, private memories,
+            shared memories, deduplicated media references, gifts, and settings.
           </p>
         </div>
 

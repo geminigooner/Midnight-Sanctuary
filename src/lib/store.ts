@@ -255,10 +255,7 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
         if (created && (!created.embedding || created.embedding.length === 0)) {
           const emb = await getEmbedding(memoryContent);
           if (emb && emb.length > 0) {
-            await coordinator.upsertScopedMemory({
-              ...created,
-              embedding: emb,
-            });
+            await coordinator.attachMemoryEmbedding(created.id, emb);
           }
         }
       })();

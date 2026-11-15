@@ -6,15 +6,22 @@ import { ensureValidDocId, normalizeMessageSchema } from '../persistenceSystem';
 import {
   AppSettings,
   Conversation,
+  ConversationSegmentSummary,
   DEFAULT_JEWEL_METRICS,
   DEFAULT_SETTINGS,
   Gift,
   JewelMetrics,
+  MediaAssetRecord,
   Memory,
   Message,
   UserProfile,
 } from '../types';
 import { IndexedDBVault } from './indexedDbVault';
+import {
+  classifyMutationError,
+  resolveCausalLaneKey,
+  shouldBackfillLocalRecordToCloud,
+} from './tombstoneSyncProtocol';
 import {
   CloudPersistenceAdapter,
   CloudRemoteSnapshot,
@@ -48,6 +55,8 @@ export interface CoordinatorDomainState {
   companions: Record<string, ModelEntity>;
   companionMemories: Record<string, ScopedMemory[]>;
   sharedMemories: ScopedMemory[];
+  conversationSummaries?: Record<string, ConversationSegmentSummary[]>;
+  mediaAssets?: MediaAssetRecord[];
 }
 
 export interface PersistenceCoordinatorOptions {
@@ -66,9 +75,9 @@ export interface PersistenceCoordinatorOptions {
  * Responsibilities:
  * 1. User-partitioned state ownership (cleanly isolating accounts on auth switch).
  * 2. Durable write-ahead mutation journal in IndexedDB BEFORE network transmission.
- * 3. Monotonic revisioning & idempotent coalescing so delayed writes never overwrite newer mutations.
- * 4. Bounded exponential backoff + jitter retry runner & online/offline lifecycle recovery.
- * 5. Tombstone enforcement (`deletedConversationIds` & `deletedMessageIds`) preventing resurrection.
+ * 3. Per-entity causal lane flushing & error classification (`transient` vs `permanent_policy`) so one failing mutation never blocks unrelated collections.
+ * 4. Monotonic revisioning & `lastSyncedRevision` watermarks preventing resurrection of remotely deleted records.
+ * 5. Tombstone enforcement (`isDeleted`, `deletedConversationIds`, `deletedMessageIds`) across all signed-in devices.
  * 6. Sovereign separation of private companion memories (`companions/{id}/memories`) vs shared memories.
  */
 export class PersistenceCoordinator {
@@ -100,10 +109,12 @@ export class PersistenceCoordinator {
   private userState: UserScopedStateRecord = this.createEmptyUserState(UNAUTH_LOCAL_UID);
   private conversationsMap = new Map<string, DurableConversationMeta>();
   private messagesMap = new Map<string, Map<string, DurableMessage>>();
+  private summariesMap = new Map<string, Map<string, ConversationSegmentSummary>>();
   private companionsMap = new Map<string, DurableCompanion>();
   private companionMemoriesMap = new Map<string, Map<string, ScopedMemory>>();
   private sharedMemoriesMap = new Map<string, ScopedMemory>();
   private giftsMap = new Map<string, DurableGift>();
+  private mediaAssetsMap = new Map<string, MediaAssetRecord>();
   private journalMap = new Map<string, MutationRecord>();
 
   private isHydrated = false;
@@ -157,6 +168,10 @@ export class PersistenceCoordinator {
     }
   }
 
+  public getVault(): IndexedDBVault {
+    return this.vault;
+  }
+
   public destroy(): void {
     this.isDestroyed = true;
     this.activeUid = null;
@@ -182,6 +197,7 @@ export class PersistenceCoordinator {
   private createEmptyUserState(uid: string): UserScopedStateRecord {
     return {
       uid,
+      clientId: this.instanceId,
       settings: { ...DEFAULT_SETTINGS, memories: [], eventLog: [], customEntities: {} },
       jewelMetrics: { ...DEFAULT_JEWEL_METRICS },
       userProfile: null,
@@ -192,6 +208,7 @@ export class PersistenceCoordinator {
       profileRevision: 0,
       legacyLocalImported: false,
       memoriesMigratedV2: false,
+      syncClients: {},
       updatedAt: 0,
     };
   }
@@ -234,6 +251,7 @@ export class PersistenceCoordinator {
   public getDomainState(): CoordinatorDomainState {
     const deletedConvSet = new Set(this.userState.deletedConversationIds || []);
     const conversations: Conversation[] = [];
+    const conversationSummaries: Record<string, ConversationSegmentSummary[]> = {};
 
     for (const meta of this.conversationsMap.values()) {
       if (meta.isDeleted || deletedConvSet.has(meta.id)) continue;
@@ -243,11 +261,29 @@ export class PersistenceCoordinator {
       if (convMsgsMap) {
         for (const dm of convMsgsMap.values()) {
           if (dm.isDeleted || deletedMsgSet.has(dm.id)) continue;
-          const { isDeleted: _d, revision: _r, ...cleanMsg } = dm;
+          const {
+            isDeleted: _d,
+            revision: _r,
+            lastSyncedRevision: _lsr,
+            deletedAt: _da,
+            deletedByClientId: _dbc,
+            ...cleanMsg
+          } = dm;
           msgs.push(cleanMsg);
         }
       }
       msgs.sort(sortMessagesDeterministic);
+
+      const sumMap = this.summariesMap.get(meta.id);
+      const segSummaries = sumMap
+        ? Array.from(sumMap.values())
+            .filter((s) => !s.isDeleted)
+            .sort((a, b) => a.startTurnIndex - b.startTurnIndex)
+        : [];
+      if (segSummaries.length > 0) {
+        conversationSummaries[meta.id] = segSummaries;
+      }
+
       conversations.push({
         id: meta.id,
         title: meta.title,
@@ -257,6 +293,7 @@ export class PersistenceCoordinator {
         type: meta.type,
         participantEntityIds: meta.participantEntityIds,
         messages: msgs,
+        ...(segSummaries.length > 0 ? { segmentSummaries: segSummaries } : {}),
       });
     }
 
@@ -268,6 +305,7 @@ export class PersistenceCoordinator {
 
     const companions: Record<string, ModelEntity> = {};
     for (const [id, comp] of this.companionsMap.entries()) {
+      if (comp.isDeleted) continue;
       companions[id] = comp;
     }
 
@@ -290,6 +328,10 @@ export class PersistenceCoordinator {
     const gifts: Gift[] = Array.from(this.giftsMap.values())
       .filter((g) => !g.isDeleted)
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    const mediaAssets: MediaAssetRecord[] = Array.from(this.mediaAssetsMap.values())
+      .filter((a) => !a.isDeleted)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
     const mergedCustomEntities: Record<string, any> = {
       ...(this.userState.settings.customEntities || {}),
@@ -315,6 +357,8 @@ export class PersistenceCoordinator {
       companions,
       companionMemories,
       sharedMemories,
+      conversationSummaries,
+      mediaAssets,
     };
   }
 
@@ -323,8 +367,11 @@ export class PersistenceCoordinator {
     let failedCount = 0;
     for (const m of this.journalMap.values()) {
       if (m.status === 'committed') continue;
-      pendingCount++;
-      if (m.status === 'failed') failedCount++;
+      if (m.status === 'failed') {
+        failedCount++;
+      } else {
+        pendingCount++;
+      }
     }
 
     let phase: SyncPhase = 'idle';
@@ -353,6 +400,22 @@ export class PersistenceCoordinator {
       lastSyncedAt: this.lastSyncedAt,
       lastError: this.lastError,
     };
+  }
+
+  public getQuarantinedMutations(): MutationRecord[] {
+    return Array.from(this.journalMap.values())
+      .filter((m) => m.status === 'failed')
+      .sort((a, b) => a.sequence - b.sequence);
+  }
+
+  public async discardQuarantinedMutation(mutationId: string): Promise<void> {
+    const uid = this.effectiveUid();
+    this.journalMap.delete(mutationId);
+    await this.vault.deleteJournalMutation(uid, mutationId);
+    if (this.getQuarantinedMutations().length === 0) {
+      this.lastError = null;
+    }
+    this.emitSyncStatus();
   }
 
   private emitAll(): void {
@@ -387,10 +450,12 @@ export class PersistenceCoordinator {
     this.userState = this.createEmptyUserState(uid);
     this.conversationsMap.clear();
     this.messagesMap.clear();
+    this.summariesMap.clear();
     this.companionsMap.clear();
     this.companionMemoriesMap.clear();
     this.sharedMemoriesMap.clear();
     this.giftsMap.clear();
+    this.mediaAssetsMap.clear();
     this.journalMap.clear();
     this.isHydrated = false;
     this.isCloudHydrated = false;
@@ -431,6 +496,7 @@ export class PersistenceCoordinator {
       this.userState = {
         ...this.createEmptyUserState(targetUid),
         ...loaded.userState,
+        clientId: loaded.userState.clientId || this.instanceId,
         uid: targetUid,
       };
       this.monotonicClock = Math.max(this.monotonicClock, loaded.userState.updatedAt || 0);
@@ -470,7 +536,19 @@ export class PersistenceCoordinator {
       this.messagesMap.set(convId, map);
     }
 
+    if (loaded.summariesByConversation) {
+      for (const [convId, sums] of Object.entries(loaded.summariesByConversation)) {
+        if (deletedConvSet.has(convId)) continue;
+        const sumMap = new Map<string, ConversationSegmentSummary>();
+        for (const s of sums) {
+          if (!s.isDeleted) sumMap.set(s.id, s);
+        }
+        this.summariesMap.set(convId, sumMap);
+      }
+    }
+
     for (const [compId, comp] of Object.entries(loaded.companions)) {
+      if (comp.isDeleted) continue;
       this.companionsMap.set(compId, comp);
       this.monotonicClock = Math.max(this.monotonicClock, comp.revision || comp.updatedAt || 0);
     }
@@ -489,6 +567,12 @@ export class PersistenceCoordinator {
 
     for (const g of loaded.gifts) {
       if (!g.isDeleted) this.giftsMap.set(g.id, g);
+    }
+
+    if (loaded.mediaAssets) {
+      for (const ma of loaded.mediaAssets) {
+        if (!ma.isDeleted) this.mediaAssetsMap.set(ma.id, ma);
+      }
     }
 
     // Recover any interrupted `in_flight` journal items back to `pending` on cold start
@@ -576,7 +660,12 @@ export class PersistenceCoordinator {
       if (rawProfile && !this.userState.userProfile) {
         try {
           const parsedProfile = JSON.parse(rawProfile);
-          if (parsedProfile && (!parsedProfile.id || parsedProfile.id === uid || parsedProfile.id === 'default-profile')) {
+          if (
+            parsedProfile &&
+            (!parsedProfile.id ||
+              parsedProfile.id === uid ||
+              parsedProfile.id === 'default-profile')
+          ) {
             this.userState.userProfile = { ...parsedProfile, id: uid };
           }
         } catch {}
@@ -649,6 +738,7 @@ export class PersistenceCoordinator {
       if (deletedConvSet.has(conv.id) || conv.isDeleted) {
         this.conversationsMap.delete(conv.id);
         this.messagesMap.delete(conv.id);
+        this.summariesMap.delete(conv.id);
         continue;
       }
       const cur = this.conversationsMap.get(conv.id);
@@ -659,6 +749,7 @@ export class PersistenceCoordinator {
     for (const delId of deletedConvSet) {
       this.conversationsMap.delete(delId);
       this.messagesMap.delete(delId);
+      this.summariesMap.delete(delId);
     }
 
     for (const [convId, msgs] of Object.entries(loaded.messagesByConversation)) {
@@ -682,7 +773,23 @@ export class PersistenceCoordinator {
       this.messagesMap.set(convId, curMap);
     }
 
+    if (loaded.summariesByConversation) {
+      for (const [convId, sums] of Object.entries(loaded.summariesByConversation)) {
+        if (deletedConvSet.has(convId)) continue;
+        const curMap = this.summariesMap.get(convId) || new Map<string, ConversationSegmentSummary>();
+        for (const s of sums) {
+          if (s.isDeleted) curMap.delete(s.id);
+          else curMap.set(s.id, s);
+        }
+        this.summariesMap.set(convId, curMap);
+      }
+    }
+
     for (const [compId, comp] of Object.entries(loaded.companions)) {
+      if (comp.isDeleted) {
+        this.companionsMap.delete(compId);
+        continue;
+      }
       const cur = this.companionsMap.get(compId);
       if (!cur || comp.revision >= cur.revision) {
         this.companionsMap.set(compId, comp);
@@ -708,20 +815,30 @@ export class PersistenceCoordinator {
       else this.giftsMap.set(g.id, g);
     }
 
+    if (loaded.mediaAssets) {
+      for (const ma of loaded.mediaAssets) {
+        if (ma.isDeleted) this.mediaAssetsMap.delete(ma.id);
+        else this.mediaAssetsMap.set(ma.id, ma);
+      }
+    }
+
     this.emitAll();
   }
 
   // ---------------------------------------------------------------------------
-  // Connectivity & Bounded Exponential Backoff Journal Runner
+  // Connectivity & Per-Lane Non-Blocking Exponential Backoff Journal Runner
   // ---------------------------------------------------------------------------
 
   public setOnlineStatus(online: boolean): void {
     const changed = this.isOnline !== online;
     this.isOnline = online;
     if (online && changed) {
-      // Reset retry timers on reconnect so queued mutations flush immediately
+      // Reset transient retry timers on reconnect so queued mutations flush immediately
       for (const m of this.journalMap.values()) {
-        if (m.status === 'failed' || m.status === 'pending') {
+        if (
+          m.status === 'pending' ||
+          (m.status === 'failed' && m.errorClassification !== 'permanent_policy')
+        ) {
           m.status = 'pending';
           m.nextRetryAt = 0;
         }
@@ -738,6 +855,7 @@ export class PersistenceCoordinator {
         m.status = 'pending';
         m.attempts = 0;
         m.nextRetryAt = 0;
+        m.errorClassification = undefined;
         await this.vault.putJournalMutation(m);
       }
     }
@@ -824,6 +942,64 @@ export class PersistenceCoordinator {
     return mutation;
   }
 
+  private markRecordSyncedRevision(uid: string, m: MutationRecord): void {
+    const rev = m.revision;
+    switch (m.entityType) {
+      case 'conversation': {
+        const cur = this.conversationsMap.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveConversationsAndMessages(uid, [cur], []);
+        }
+        break;
+      }
+      case 'message': {
+        if (!m.parentId) break;
+        const convMsgs = this.messagesMap.get(m.parentId);
+        const cur = convMsgs?.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveConversationsAndMessages(uid, [], [cur]);
+        }
+        break;
+      }
+      case 'companion': {
+        const cur = this.companionsMap.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveCompanions(uid, [cur]);
+        }
+        break;
+      }
+      case 'companion_memory': {
+        if (!m.parentId) break;
+        const map = this.companionMemoriesMap.get(m.parentId);
+        const cur = map?.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveCompanionMemories(uid, m.parentId, [cur]);
+        }
+        break;
+      }
+      case 'shared_memory': {
+        const cur = this.sharedMemoriesMap.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveSharedMemories(uid, [cur]);
+        }
+        break;
+      }
+      case 'gift': {
+        const cur = this.giftsMap.get(m.entityId);
+        if (cur) {
+          cur.lastSyncedRevision = Math.max(cur.lastSyncedRevision || 0, rev);
+          void this.vault.saveGifts(uid, [cur]);
+        }
+        break;
+      }
+    }
+  }
+
   public async flushJournal(): Promise<void> {
     if (this.isDestroyed || !this.activeUid || !this.cloudAdapter || !this.isOnline) {
       this.emitSyncStatus();
@@ -852,11 +1028,20 @@ export class PersistenceCoordinator {
 
         if (ordered.length === 0) break;
 
+        // Per-entity independent causal lanes: if one lane fails (e.g., an oversized message in conv A),
+        // only pause lane A so unrelated memories, gifts, settings, and conv B continue syncing!
+        const blockedLanes = new Set<string>();
+        let madeProgressInPass = false;
+
         for (const m of ordered) {
           if (this.isDestroyed || this.activeUid !== uidAtStart || !this.isOnline) break;
-          // Re-fetch latest record in case it was coalesced or cancelled by a deletion tombstone
           const current = this.journalMap.get(m.mutationId);
           if (!current || current.status !== 'pending') continue;
+
+          const laneKey = resolveCausalLaneKey(current);
+          if (blockedLanes.has(laneKey)) {
+            continue;
+          }
 
           current.status = 'in_flight';
           await this.vault.putJournalMutation(current);
@@ -865,7 +1050,7 @@ export class PersistenceCoordinator {
             const convId =
               current.entityType === 'conversation'
                 ? current.entityId
-                : current.entityType === 'message'
+                : current.entityType === 'message' || current.entityType === 'conversation_summary'
                 ? current.parentId
                 : undefined;
 
@@ -881,6 +1066,9 @@ export class PersistenceCoordinator {
 
             if (this.isDestroyed || this.activeUid !== uidAtStart) break;
 
+            madeProgressInPass = true;
+            this.markRecordSyncedRevision(uidAtStart, current);
+
             // Check if a newer mutation replaced/updated this entry while it was in flight
             const latestAfterWrite = this.journalMap.get(current.mutationId);
             if (latestAfterWrite && latestAfterWrite.revision > current.revision) {
@@ -891,18 +1079,26 @@ export class PersistenceCoordinator {
               this.journalMap.delete(current.mutationId);
               await this.vault.deleteJournalMutation(uidAtStart, current.mutationId);
               this.lastSyncedAt = Date.now();
-              this.lastError = null;
+              if (this.getQuarantinedMutations().length === 0) {
+                this.lastError = null;
+              }
             }
           } catch (err: any) {
             if (this.isDestroyed || this.activeUid !== uidAtStart) break;
             const attempts = current.attempts + 1;
             const errMsg = err instanceof Error ? err.message : String(err);
+            const errClass = classifyMutationError(err);
             this.lastError = errMsg;
 
-            if (attempts >= this.maxAttempts) {
+            // Permanent policy / schema errors quarantine fast instead of blocking retries for 8 rounds
+            const effectiveMaxAttempts =
+              errClass === 'permanent_policy' ? Math.min(2, this.maxAttempts) : this.maxAttempts;
+
+            if (attempts >= effectiveMaxAttempts) {
               current.status = 'failed';
               current.attempts = attempts;
               current.lastError = errMsg;
+              current.errorClassification = errClass;
             } else {
               const expDelay = Math.min(
                 this.maxDelayMs,
@@ -912,15 +1108,16 @@ export class PersistenceCoordinator {
               current.status = 'pending';
               current.attempts = attempts;
               current.lastError = errMsg;
+              current.errorClassification = errClass;
               current.nextRetryAt = Date.now() + expDelay + jitter;
             }
             await this.vault.putJournalMutation(current);
-            // Stop ordered execution on error so dependent causal writes don't race ahead
-            break;
+            // Block ONLY this causal lane so dependent writes in the same lane wait, while independent lanes proceed
+            blockedLanes.add(laneKey);
           }
         }
 
-        if (!this.flushRequestedWhileBusy) break;
+        if (!this.flushRequestedWhileBusy && !madeProgressInPass) break;
         this.flushRequestedWhileBusy = false;
       }
     } finally {
@@ -954,7 +1151,7 @@ export class PersistenceCoordinator {
   }
 
   // ---------------------------------------------------------------------------
-  // Safe Cloud Snapshot Reconciliation
+  // Safe Cloud Snapshot Reconciliation (With Cross-Device Tombstone Propagation)
   // ---------------------------------------------------------------------------
 
   private async reconcileCloudSnapshot(uid: string, remote: CloudRemoteSnapshot): Promise<void> {
@@ -981,7 +1178,10 @@ export class PersistenceCoordinator {
             memories: [],
           },
           settingsRevision: Math.max(this.userState.settingsRevision, remoteRev),
-          memoriesMigratedV2: Boolean(this.userState.memoriesMigratedV2 || remote.memoriesMigratedV2),
+          memoriesMigratedV2: Boolean(
+            this.userState.memoriesMigratedV2 || remote.memoriesMigratedV2
+          ),
+          syncClients: remote.syncClients || this.userState.syncClients,
           updatedAt: Math.max(this.userState.updatedAt, remoteRev),
         };
         await this.vault.saveUserState(this.userState);
@@ -1022,16 +1222,66 @@ export class PersistenceCoordinator {
       }
     }
 
-    // 2. Conversations Metadata + Preview Messages (Never wipe populated local state with an empty initial snapshot)
+    // 2. Conversations Metadata + Preview Messages + Cross-Device Tombstone Sync
     if (remote.conversations !== undefined) {
       this.isCloudHydrated = true;
       const remoteConvIds = new Set<string>();
       const convsToSave: DurableConversationMeta[] = [];
       const msgsToSave: DurableMessage[] = [];
+      let userStateUpdated = false;
 
       for (const { meta: rMeta, previewMessages } of remote.conversations) {
-        if (deletedConvSet.has(rMeta.id)) continue;
         remoteConvIds.add(rMeta.id);
+
+        // Handle remote soft-delete tombstone: purge local conversation + messages so it never resurrects!
+        if (rMeta.isDeleted) {
+          const hadLocal = this.conversationsMap.has(rMeta.id);
+          const localMsgs = Array.from(this.messagesMap.get(rMeta.id)?.values() || []);
+          this.conversationsMap.delete(rMeta.id);
+          this.messagesMap.delete(rMeta.id);
+          this.summariesMap.delete(rMeta.id);
+
+          await this.cancelPendingMutations(
+            (m) =>
+              (m.entityType === 'conversation' && m.entityId === rMeta.id) ||
+              ((m.entityType === 'message' || m.entityType === 'conversation_summary') &&
+                m.parentId === rMeta.id)
+          );
+
+          if (!deletedConvSet.has(rMeta.id)) {
+            deletedConvSet.add(rMeta.id);
+            this.userState = {
+              ...this.userState,
+              deletedConversationIds: Array.from(deletedConvSet).slice(-MAX_TOMBSTONES),
+              activeConversationId:
+                this.userState.activeConversationId === rMeta.id
+                  ? null
+                  : this.userState.activeConversationId,
+              updatedAt: Date.now(),
+            };
+            userStateUpdated = true;
+          }
+
+          if (hadLocal || localMsgs.length > 0) {
+            convsToSave.push({
+              ...rMeta,
+              isDeleted: true,
+              lastSyncedRevision: rMeta.revision,
+            });
+            for (const lm of localMsgs) {
+              msgsToSave.push({
+                ...lm,
+                isDeleted: true,
+                revision: rMeta.revision,
+                lastSyncedRevision: rMeta.revision,
+              });
+            }
+            stateChanged = true;
+          }
+          continue;
+        }
+
+        if (deletedConvSet.has(rMeta.id)) continue;
 
         const localMeta = this.conversationsMap.get(rMeta.id);
         const hasPendingConvWrite = this.hasPendingMutationFor('conversation', rMeta.id);
@@ -1046,22 +1296,32 @@ export class PersistenceCoordinator {
 
         let nextMeta: DurableConversationMeta;
         if (!localMeta) {
-          nextMeta = { ...rMeta, deletedMessageIds: mergedDeletedMsgIds };
+          nextMeta = {
+            ...rMeta,
+            deletedMessageIds: mergedDeletedMsgIds,
+            lastSyncedRevision: rMeta.revision,
+          };
           this.conversationsMap.set(rMeta.id, nextMeta);
           convsToSave.push(nextMeta);
           stateChanged = true;
         } else if (!hasPendingConvWrite && rMeta.revision >= localMeta.revision) {
+          const nextRev = Math.max(localMeta.revision, rMeta.revision);
           nextMeta = {
             ...localMeta,
             ...rMeta,
             deletedMessageIds: mergedDeletedMsgIds,
-            revision: Math.max(localMeta.revision, rMeta.revision),
+            revision: nextRev,
+            lastSyncedRevision: Math.max(localMeta.lastSyncedRevision || 0, rMeta.revision),
           };
           this.conversationsMap.set(rMeta.id, nextMeta);
           convsToSave.push(nextMeta);
           stateChanged = true;
         } else {
-          nextMeta = { ...localMeta, deletedMessageIds: mergedDeletedMsgIds };
+          nextMeta = {
+            ...localMeta,
+            deletedMessageIds: mergedDeletedMsgIds,
+            lastSyncedRevision: Math.max(localMeta.lastSyncedRevision || 0, rMeta.revision),
+          };
           this.conversationsMap.set(rMeta.id, nextMeta);
         }
 
@@ -1073,10 +1333,12 @@ export class PersistenceCoordinator {
             continue;
           }
           if (!convMsgs.has(pm.id) && !this.hasPendingMutationFor('message', pm.id, rMeta.id)) {
+            const msgRev = pm.timestamp || nextMeta.revision;
             const dm: DurableMessage = {
               ...pm,
               conversationId: rMeta.id,
-              revision: pm.timestamp || nextMeta.revision,
+              revision: msgRev,
+              lastSyncedRevision: msgRev,
             };
             convMsgs.set(pm.id, dm);
             msgsToSave.push(dm);
@@ -1094,6 +1356,7 @@ export class PersistenceCoordinator {
               parts: [{ text: '' }],
               timestamp: 0,
               revision: nextMeta.revision,
+              lastSyncedRevision: nextMeta.revision,
               isDeleted: true,
             });
             stateChanged = true;
@@ -1102,11 +1365,19 @@ export class PersistenceCoordinator {
         this.messagesMap.set(rMeta.id, convMsgs);
       }
 
-      // If local vault has conversations that are NOT in remote AND not deleted, backfill them to cloud
-      // (instead of wiping local conversations when initial cloud snapshot is empty!)
-      for (const [localId, localConv] of this.conversationsMap.entries()) {
+      // Check local conversations that are NOT in remote snapshot:
+      // - If `lastSyncedRevision > 0` and no pending local mutation: it was previously synced and then deleted/compacted remotely -> purge locally!
+      // - Otherwise (brand-new local offline conversation with `lastSyncedRevision === undefined`), backfill it to cloud.
+      for (const [localId, localConv] of Array.from(this.conversationsMap.entries())) {
         if (!remoteConvIds.has(localId) && !deletedConvSet.has(localId) && !localConv.isDeleted) {
-          if (!this.hasPendingMutationFor('conversation', localId)) {
+          const hasPendingLocalMutation = this.hasPendingMutationFor('conversation', localId);
+          if (
+            shouldBackfillLocalRecordToCloud({
+              isDeleted: localConv.isDeleted,
+              lastSyncedRevision: localConv.lastSyncedRevision,
+              hasPendingLocalMutation,
+            })
+          ) {
             await this.enqueueMutation(
               {
                 entityType: 'conversation',
@@ -1135,16 +1406,41 @@ export class PersistenceCoordinator {
                 }
               }
             }
+          } else if (!hasPendingLocalMutation && (localConv.lastSyncedRevision || 0) > 0) {
+            // Remotely deleted & compacted while this device was offline -> purge locally without re-uploading!
+            const localMsgs = Array.from(this.messagesMap.get(localId)?.values() || []);
+            this.conversationsMap.delete(localId);
+            this.messagesMap.delete(localId);
+            this.summariesMap.delete(localId);
+            deletedConvSet.add(localId);
+            this.userState = {
+              ...this.userState,
+              deletedConversationIds: Array.from(deletedConvSet).slice(-MAX_TOMBSTONES),
+              activeConversationId:
+                this.userState.activeConversationId === localId
+                  ? null
+                  : this.userState.activeConversationId,
+              updatedAt: Date.now(),
+            };
+            userStateUpdated = true;
+            convsToSave.push({ ...localConv, isDeleted: true });
+            for (const lm of localMsgs) {
+              msgsToSave.push({ ...lm, isDeleted: true });
+            }
+            stateChanged = true;
           }
         }
       }
 
+      if (userStateUpdated) {
+        await this.vault.saveUserState(this.userState);
+      }
       if (convsToSave.length > 0 || msgsToSave.length > 0) {
         await this.vault.saveConversationsAndMessages(uid, convsToSave, msgsToSave);
       }
     }
 
-    // 3. Authoritative Message Subcollection Updates
+    // 3. Authoritative Message Subcollection Updates (With Soft-Delete Tombstone Handling)
     if (remote.conversationMessages) {
       const { conversationId, messages } = remote.conversationMessages;
       if (!deletedConvSet.has(conversationId)) {
@@ -1152,15 +1448,40 @@ export class PersistenceCoordinator {
         const deletedMsgSet = new Set(convMeta?.deletedMessageIds || []);
         const convMsgs = this.messagesMap.get(conversationId) || new Map<string, DurableMessage>();
         const msgsToPersist: DurableMessage[] = [];
+        const remoteMsgIds = new Set<string>();
 
         for (const rm of messages) {
-          if (rm.isDeleted || deletedMsgSet.has(rm.id)) continue;
+          remoteMsgIds.add(rm.id);
+          if (rm.isDeleted || deletedMsgSet.has(rm.id)) {
+            if (convMsgs.has(rm.id)) {
+              convMsgs.delete(rm.id);
+              await this.cancelPendingMutations(
+                (m) =>
+                  m.entityType === 'message' &&
+                  m.parentId === conversationId &&
+                  m.entityId === rm.id &&
+                  m.operation === 'upsert'
+              );
+              msgsToPersist.push({
+                ...rm,
+                conversationId,
+                isDeleted: true,
+                lastSyncedRevision: rm.revision,
+              });
+              stateChanged = true;
+            }
+            continue;
+          }
           if (this.hasPendingMutationFor('message', rm.id, conversationId)) continue;
 
           const existing = convMsgs.get(rm.id);
           if (!existing) {
-            convMsgs.set(rm.id, rm);
-            msgsToPersist.push(rm);
+            const syncedMsg: DurableMessage = {
+              ...rm,
+              lastSyncedRevision: rm.revision,
+            };
+            convMsgs.set(rm.id, syncedMsg);
+            msgsToPersist.push(syncedMsg);
             stateChanged = true;
           } else {
             // Subcollection carries full untruncated attachments/generatedImages; merge safely
@@ -1178,12 +1499,14 @@ export class PersistenceCoordinator {
               if (existing.thoughtStatus === 'thinking' && rm.thoughtStatus !== 'complete') {
                 continue;
               }
+              const nextRev = Math.max(existing.revision, rm.revision);
               const merged: DurableMessage = {
                 ...existing,
                 ...rm,
                 parts: remoteHasInline || !existingHasInline ? rm.parts : existing.parts,
                 generatedImages: rm.generatedImages || existing.generatedImages,
-                revision: Math.max(existing.revision, rm.revision),
+                revision: nextRev,
+                lastSyncedRevision: Math.max(existing.lastSyncedRevision || 0, rm.revision),
               };
               if (!shallowMessageEqual(existing, merged)) {
                 convMsgs.set(rm.id, merged);
@@ -1194,9 +1517,51 @@ export class PersistenceCoordinator {
           }
         }
 
+        // Purge any previously synced local message that was physically deleted remotely
+        for (const [localMsgId, localMsg] of Array.from(convMsgs.entries())) {
+          if (
+            !remoteMsgIds.has(localMsgId) &&
+            (localMsg.lastSyncedRevision || 0) > 0 &&
+            !this.hasPendingMutationFor('message', localMsgId, conversationId)
+          ) {
+            convMsgs.delete(localMsgId);
+            msgsToPersist.push({ ...localMsg, isDeleted: true });
+            stateChanged = true;
+          }
+        }
+
         this.messagesMap.set(conversationId, convMsgs);
         if (msgsToPersist.length > 0) {
           await this.vault.saveConversationsAndMessages(uid, [], msgsToPersist);
+        }
+      }
+    }
+
+    // 3b. Conversation Segment Summaries (`conversations/{convId}/summaries`)
+    if (remote.conversationSummaries) {
+      const { conversationId, summaries } = remote.conversationSummaries;
+      if (!deletedConvSet.has(conversationId)) {
+        const curMap =
+          this.summariesMap.get(conversationId) || new Map<string, ConversationSegmentSummary>();
+        const toSave: ConversationSegmentSummary[] = [];
+        for (const rs of summaries) {
+          if (rs.isDeleted) {
+            if (curMap.delete(rs.id)) {
+              toSave.push({ ...rs, isDeleted: true });
+              stateChanged = true;
+            }
+            continue;
+          }
+          const cur = curMap.get(rs.id);
+          if (!cur || (rs.revision || 0) >= (cur.revision || 0)) {
+            curMap.set(rs.id, rs);
+            toSave.push(rs);
+            stateChanged = true;
+          }
+        }
+        this.summariesMap.set(conversationId, curMap);
+        if (toSave.length > 0) {
+          await this.vault.saveConversationSummaries(uid, conversationId, toSave);
         }
       }
     }
@@ -1205,11 +1570,25 @@ export class PersistenceCoordinator {
     if (remote.companions) {
       const toSave: DurableCompanion[] = [];
       for (const [compId, rComp] of Object.entries(remote.companions)) {
+        if (rComp.isDeleted) {
+          if (this.companionsMap.delete(compId)) {
+            await this.cancelPendingMutations(
+              (m) => m.entityType === 'companion' && m.entityId === compId
+            );
+            toSave.push({ ...rComp, isDeleted: true, lastSyncedRevision: rComp.revision });
+            stateChanged = true;
+          }
+          continue;
+        }
         if (this.hasPendingMutationFor('companion', compId)) continue;
         const cur = this.companionsMap.get(compId);
         if (!cur || rComp.revision >= cur.revision) {
-          this.companionsMap.set(compId, rComp);
-          toSave.push(rComp);
+          const syncedComp: DurableCompanion = {
+            ...rComp,
+            lastSyncedRevision: rComp.revision,
+          };
+          this.companionsMap.set(compId, syncedComp);
+          toSave.push(syncedComp);
           stateChanged = true;
         }
       }
@@ -1223,14 +1602,47 @@ export class PersistenceCoordinator {
       const { companionId, memories } = remote.companionMemories;
       const curMap = this.companionMemoriesMap.get(companionId) || new Map<string, ScopedMemory>();
       const toSave: ScopedMemory[] = [];
+      const remoteMemIds = new Set<string>();
 
       for (const rm of memories) {
-        if (rm.isDeleted) continue;
+        remoteMemIds.add(rm.id);
+        if (rm.isDeleted) {
+          if (curMap.has(rm.id)) {
+            curMap.delete(rm.id);
+            await this.cancelPendingMutations(
+              (m) =>
+                m.entityType === 'companion_memory' &&
+                m.parentId === companionId &&
+                m.entityId === rm.id &&
+                m.operation === 'upsert'
+            );
+            toSave.push({ ...rm, isDeleted: true, lastSyncedRevision: rm.revision });
+            stateChanged = true;
+          }
+          continue;
+        }
         if (this.hasPendingMutationFor('companion_memory', rm.id, companionId)) continue;
         const cur = curMap.get(rm.id);
         if (!cur || (rm.revision || 0) >= (cur.revision || 0)) {
-          curMap.set(rm.id, rm);
-          toSave.push(rm);
+          const syncedMem: ScopedMemory = {
+            ...rm,
+            lastSyncedRevision: rm.revision || rm.updatedAt || rm.createdAt || 1,
+          };
+          curMap.set(rm.id, syncedMem);
+          toSave.push(syncedMem);
+          stateChanged = true;
+        }
+      }
+
+      // Purge any previously synced local companion memory absent from remote snapshot
+      for (const [localMemId, localMem] of Array.from(curMap.entries())) {
+        if (
+          !remoteMemIds.has(localMemId) &&
+          (localMem.lastSyncedRevision || 0) > 0 &&
+          !this.hasPendingMutationFor('companion_memory', localMemId, companionId)
+        ) {
+          curMap.delete(localMemId);
+          toSave.push({ ...localMem, isDeleted: true });
           stateChanged = true;
         }
       }
@@ -1244,16 +1656,50 @@ export class PersistenceCoordinator {
     // 6. Shared Sanctuary Memories (`memories`)
     if (remote.sharedMemories) {
       const toSave: ScopedMemory[] = [];
+      const remoteSharedIds = new Set<string>();
+
       for (const sm of remote.sharedMemories) {
-        if (sm.isDeleted) continue;
+        remoteSharedIds.add(sm.id);
+        if (sm.isDeleted) {
+          if (this.sharedMemoriesMap.has(sm.id)) {
+            this.sharedMemoriesMap.delete(sm.id);
+            await this.cancelPendingMutations(
+              (m) =>
+                m.entityType === 'shared_memory' &&
+                m.entityId === sm.id &&
+                m.operation === 'upsert'
+            );
+            toSave.push({ ...sm, isDeleted: true, lastSyncedRevision: sm.revision });
+            stateChanged = true;
+          }
+          continue;
+        }
         if (this.hasPendingMutationFor('shared_memory', sm.id)) continue;
         const cur = this.sharedMemoriesMap.get(sm.id);
         if (!cur || (sm.revision || 0) >= (cur.revision || 0)) {
-          this.sharedMemoriesMap.set(sm.id, sm);
-          toSave.push(sm);
+          const syncedShared: ScopedMemory = {
+            ...sm,
+            lastSyncedRevision: sm.revision || sm.updatedAt || sm.createdAt || 1,
+          };
+          this.sharedMemoriesMap.set(sm.id, syncedShared);
+          toSave.push(syncedShared);
           stateChanged = true;
         }
       }
+
+      // Purge any previously synced local shared memory absent from remote snapshot
+      for (const [localMemId, localMem] of Array.from(this.sharedMemoriesMap.entries())) {
+        if (
+          !remoteSharedIds.has(localMemId) &&
+          (localMem.lastSyncedRevision || 0) > 0 &&
+          !this.hasPendingMutationFor('shared_memory', localMemId)
+        ) {
+          this.sharedMemoriesMap.delete(localMemId);
+          toSave.push({ ...localMem, isDeleted: true });
+          stateChanged = true;
+        }
+      }
+
       if (toSave.length > 0) {
         await this.vault.saveSharedMemories(uid, toSave);
       }
@@ -1262,18 +1708,72 @@ export class PersistenceCoordinator {
     // 7. Gifts
     if (remote.gifts) {
       const toSave: DurableGift[] = [];
+      const remoteGiftIds = new Set<string>();
+
       for (const rg of remote.gifts) {
-        if (rg.isDeleted) continue;
+        remoteGiftIds.add(rg.id);
+        if (rg.isDeleted) {
+          if (this.giftsMap.has(rg.id)) {
+            this.giftsMap.delete(rg.id);
+            await this.cancelPendingMutations(
+              (m) => m.entityType === 'gift' && m.entityId === rg.id && m.operation === 'upsert'
+            );
+            toSave.push({ ...rg, isDeleted: true, lastSyncedRevision: rg.revision });
+            stateChanged = true;
+          }
+          continue;
+        }
         if (this.hasPendingMutationFor('gift', rg.id)) continue;
         const cur = this.giftsMap.get(rg.id);
         if (!cur || rg.revision >= cur.revision) {
-          this.giftsMap.set(rg.id, rg);
-          toSave.push(rg);
+          const syncedGift: DurableGift = {
+            ...rg,
+            lastSyncedRevision: rg.revision,
+          };
+          this.giftsMap.set(rg.id, syncedGift);
+          toSave.push(syncedGift);
+          stateChanged = true;
+        }
+      }
+
+      for (const [localGiftId, localGift] of Array.from(this.giftsMap.entries())) {
+        if (
+          !remoteGiftIds.has(localGiftId) &&
+          (localGift.lastSyncedRevision || 0) > 0 &&
+          !this.hasPendingMutationFor('gift', localGiftId)
+        ) {
+          this.giftsMap.delete(localGiftId);
+          toSave.push({ ...localGift, isDeleted: true });
+          stateChanged = true;
+        }
+      }
+
+      if (toSave.length > 0) {
+        await this.vault.saveGifts(uid, toSave);
+      }
+    }
+
+    // 7b. Media Assets
+    if (remote.mediaAssets) {
+      const toSave: MediaAssetRecord[] = [];
+      for (const ma of remote.mediaAssets) {
+        if (ma.isDeleted) {
+          if (this.mediaAssetsMap.delete(ma.id)) {
+            toSave.push({ ...ma, isDeleted: true });
+            stateChanged = true;
+          }
+          continue;
+        }
+        if (this.hasPendingMutationFor('media_asset', ma.id)) continue;
+        const cur = this.mediaAssetsMap.get(ma.id);
+        if (!cur || (ma.revision || ma.updatedAt || 0) >= (cur.revision || cur.updatedAt || 0)) {
+          this.mediaAssetsMap.set(ma.id, ma);
+          toSave.push(ma);
           stateChanged = true;
         }
       }
       if (toSave.length > 0) {
-        await this.vault.saveGifts(uid, toSave);
+        await this.vault.saveMediaAssets(uid, toSave);
       }
     }
 
@@ -1399,7 +1899,8 @@ export class PersistenceCoordinator {
     const convId = ensureValidDocId(explicitId || uuidv4(), 'conv');
     const rev = this.nextRevision();
     const now = Date.now();
-    const modelId = customModelId || this.userState.settings.model || 'models/gemini-3.1-pro-preview';
+    const modelId =
+      customModelId || this.userState.settings.model || 'models/gemini-3.1-pro-preview';
 
     const meta: DurableConversationMeta = {
       id: convId,
@@ -1552,6 +2053,15 @@ export class PersistenceCoordinator {
         {}
       );
     }
+
+    if (Array.isArray(conv.segmentSummaries)) {
+      for (const seg of conv.segmentSummaries) {
+        await this.upsertConversationSummary({
+          ...seg,
+          conversationId: safeConvId,
+        });
+      }
+    }
   }
 
   public async updateConversation(convId: string, updates: Partial<Conversation>): Promise<void> {
@@ -1587,7 +2097,7 @@ export class PersistenceCoordinator {
       new Set([...(existing.deletedMessageIds || []), ...removedMsgIds])
     ).slice(-MAX_TOMBSTONES);
 
-    const { messages: _ignoreMsgs, ...metaUpdates } = updates;
+    const { messages: _ignoreMsgs, segmentSummaries: _ignoreSums, ...metaUpdates } = updates;
     const nextMeta: DurableConversationMeta = {
       ...existing,
       ...metaUpdates,
@@ -1602,7 +2112,13 @@ export class PersistenceCoordinator {
     // Cancel any queued pending message upserts for truncated/removed messages
     const deletedTombstoneRecords: DurableMessage[] = [];
     for (const msgId of removedMsgIds) {
-      await this.cancelPendingMutations((m) => m.entityType === 'message' && m.parentId === safeConvId && m.entityId === msgId && m.operation === 'upsert');
+      await this.cancelPendingMutations(
+        (m) =>
+          m.entityType === 'message' &&
+          m.parentId === safeConvId &&
+          m.entityId === msgId &&
+          m.operation === 'upsert'
+      );
       deletedTombstoneRecords.push({
         id: msgId,
         conversationId: safeConvId,
@@ -1611,6 +2127,7 @@ export class PersistenceCoordinator {
         timestamp: 0,
         revision: rev,
         isDeleted: true,
+        deletedAt: now,
       });
     }
 
@@ -1648,11 +2165,13 @@ export class PersistenceCoordinator {
   public async deleteConversation(convId: string): Promise<void> {
     const safeConvId = ensureValidDocId(convId, 'conv');
     const rev = this.nextRevision();
+    const now = Date.now();
     const existingMeta = this.conversationsMap.get(safeConvId);
     const existingMsgs = Array.from(this.messagesMap.get(safeConvId)?.values() || []);
 
     this.conversationsMap.delete(safeConvId);
     this.messagesMap.delete(safeConvId);
+    this.summariesMap.delete(safeConvId);
 
     const nextDeletedConvIds = Array.from(
       new Set([...(this.userState.deletedConversationIds || []), safeConvId])
@@ -1670,14 +2189,17 @@ export class PersistenceCoordinator {
       ...this.userState,
       activeConversationId: nextActiveId,
       deletedConversationIds: nextDeletedConvIds,
-      updatedAt: Date.now(),
+      updatedAt: now,
     };
 
     // Cancel any queued pending writes for this conversation or its messages so they cannot resurrect it!
     await this.cancelPendingMutations(
       (m) =>
-        (m.entityType === 'conversation' && m.entityId === safeConvId && m.operation === 'upsert') ||
-        (m.entityType === 'message' && m.parentId === safeConvId)
+        (m.entityType === 'conversation' &&
+          m.entityId === safeConvId &&
+          m.operation === 'upsert') ||
+        ((m.entityType === 'message' || m.entityType === 'conversation_summary') &&
+          m.parentId === safeConvId)
     );
 
     this.emitAll();
@@ -1686,17 +2208,21 @@ export class PersistenceCoordinator {
       ...(existingMeta || {
         id: safeConvId,
         title: 'Deleted',
-        updatedAt: Date.now(),
+        updatedAt: now,
       }),
       id: safeConvId,
       revision: rev,
       isDeleted: true,
+      deletedAt: now,
+      deletedByClientId: this.userState.clientId,
     };
 
     const deletedMessagesRecords: DurableMessage[] = existingMsgs.map((m) => ({
       ...m,
       revision: rev,
       isDeleted: true,
+      deletedAt: now,
+      deletedByClientId: this.userState.clientId,
     }));
 
     await this.enqueueMutation(
@@ -1704,7 +2230,7 @@ export class PersistenceCoordinator {
         entityType: 'conversation',
         entityId: safeConvId,
         operation: 'delete',
-        payload: { id: safeConvId },
+        payload: { id: safeConvId, title: existingMeta?.title || 'Deleted Sanctuary' },
         revision: rev,
       },
       {
@@ -1843,6 +2369,7 @@ export class PersistenceCoordinator {
     const safeConvId = ensureValidDocId(convId, 'conv');
     const safeMsgId = ensureValidDocId(messageId, 'msg');
     const rev = this.nextRevision();
+    const now = Date.now();
 
     const convMsgs = this.messagesMap.get(safeConvId);
     const existingMsg = convMsgs?.get(safeMsgId);
@@ -1853,7 +2380,7 @@ export class PersistenceCoordinator {
     if (convMeta) {
       updatedMeta = {
         ...convMeta,
-        updatedAt: Date.now(),
+        updatedAt: now,
         revision: rev,
         deletedMessageIds: Array.from(
           new Set([...(convMeta.deletedMessageIds || []), safeMsgId])
@@ -1884,6 +2411,8 @@ export class PersistenceCoordinator {
       conversationId: safeConvId,
       revision: rev,
       isDeleted: true,
+      deletedAt: now,
+      deletedByClientId: this.userState.clientId,
     };
 
     await this.enqueueMutation(
@@ -1892,12 +2421,146 @@ export class PersistenceCoordinator {
         entityId: safeMsgId,
         parentId: safeConvId,
         operation: 'delete',
-        payload: { id: safeMsgId, conversationId: safeConvId },
+        payload: {
+          id: safeMsgId,
+          conversationId: safeConvId,
+          role: existingMsg?.role || 'user',
+          timestamp: existingMsg?.timestamp || now,
+        },
         revision: rev,
       },
       {
         conversation: updatedMeta,
         messages: [tombstoneMsg],
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Conversation Segment Summaries & Media Assets
+  // ---------------------------------------------------------------------------
+
+  public getConversationSummaries(convId: string): ConversationSegmentSummary[] {
+    const safeConvId = ensureValidDocId(convId, 'conv');
+    const map = this.summariesMap.get(safeConvId);
+    if (!map) return [];
+    return Array.from(map.values())
+      .filter((s) => !s.isDeleted)
+      .sort((a, b) => a.startTurnIndex - b.startTurnIndex);
+  }
+
+  public async upsertConversationSummary(
+    summary: ConversationSegmentSummary
+  ): Promise<ConversationSegmentSummary> {
+    const safeConvId = ensureValidDocId(summary.conversationId, 'conv');
+    const safeSumId = ensureValidDocId(summary.id, 'sum');
+    const rev = summary.revision || this.nextRevision();
+    const clean: ConversationSegmentSummary = {
+      ...summary,
+      id: safeSumId,
+      conversationId: safeConvId,
+      revision: rev,
+      isDeleted: false,
+    };
+
+    const map =
+      this.summariesMap.get(safeConvId) || new Map<string, ConversationSegmentSummary>();
+    map.set(safeSumId, clean);
+    this.summariesMap.set(safeConvId, map);
+    this.emitAll();
+
+    await this.enqueueMutation(
+      {
+        entityType: 'conversation_summary',
+        entityId: safeSumId,
+        parentId: safeConvId,
+        operation: 'upsert',
+        payload: clean,
+        revision: rev,
+      },
+      {
+        conversationSummary: clean,
+      }
+    );
+
+    return clean;
+  }
+
+  public getMediaAssets(): MediaAssetRecord[] {
+    return Array.from(this.mediaAssetsMap.values())
+      .filter((a) => !a.isDeleted)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+
+  public getMediaAsset(assetId: string): MediaAssetRecord | undefined {
+    const found = this.mediaAssetsMap.get(ensureValidDocId(assetId, 'media'));
+    return found && !found.isDeleted ? found : undefined;
+  }
+
+  public async upsertMediaAsset(asset: MediaAssetRecord): Promise<MediaAssetRecord> {
+    const safeId = ensureValidDocId(asset.id, 'media');
+    const rev = asset.revision || this.nextRevision();
+    const now = Date.now();
+    const clean: MediaAssetRecord = {
+      ...asset,
+      id: safeId,
+      uid: this.effectiveUid(),
+      references: Array.from(new Set(asset.references || [])),
+      updatedAt: now,
+      revision: rev,
+      isDeleted: false,
+    };
+
+    this.mediaAssetsMap.set(safeId, clean);
+    this.emitAll();
+
+    await this.enqueueMutation(
+      {
+        entityType: 'media_asset',
+        entityId: safeId,
+        operation: 'upsert',
+        payload: clean,
+        revision: rev,
+      },
+      {
+        mediaAsset: clean,
+      }
+    );
+
+    return clean;
+  }
+
+  public async deleteMediaAssetRecord(assetId: string): Promise<void> {
+    const safeId = ensureValidDocId(assetId, 'media');
+    const existing = this.mediaAssetsMap.get(safeId);
+    if (!existing) return;
+
+    const rev = this.nextRevision();
+    const now = Date.now();
+    this.mediaAssetsMap.delete(safeId);
+    await this.cancelPendingMutations(
+      (m) => m.entityType === 'media_asset' && m.entityId === safeId && m.operation === 'upsert'
+    );
+    this.emitAll();
+
+    const tombstone: MediaAssetRecord = {
+      ...existing,
+      references: [],
+      updatedAt: now,
+      revision: rev,
+      isDeleted: true,
+    };
+
+    await this.enqueueMutation(
+      {
+        entityType: 'media_asset',
+        entityId: safeId,
+        operation: 'delete',
+        payload: tombstone,
+        revision: rev,
+      },
+      {
+        mediaAsset: tombstone,
       }
     );
   }
@@ -1914,6 +2577,7 @@ export class PersistenceCoordinator {
       id: canonicalId,
       revision: rev,
       updatedAt: Date.now(),
+      isDeleted: false,
     };
 
     this.companionsMap.set(canonicalId, durable);
@@ -1966,7 +2630,10 @@ export class PersistenceCoordinator {
       const compMap = this.companionMemoriesMap.get(entityId);
       if (compMap) {
         for (const existing of compMap.values()) {
-          if (!existing.isDeleted && existing.content.toLowerCase().trim() === trimmed.toLowerCase()) {
+          if (
+            !existing.isDeleted &&
+            existing.content.toLowerCase().trim() === trimmed.toLowerCase()
+          ) {
             if (params.isLocked && !existing.isLocked) {
               const upgraded: ScopedMemory = {
                 ...existing,
@@ -1984,7 +2651,10 @@ export class PersistenceCoordinator {
       }
     } else {
       for (const existing of this.sharedMemoriesMap.values()) {
-        if (!existing.isDeleted && existing.content.toLowerCase().trim() === trimmed.toLowerCase()) {
+        if (
+          !existing.isDeleted &&
+          existing.content.toLowerCase().trim() === trimmed.toLowerCase()
+        ) {
           if (params.isLocked && !existing.isLocked) {
             const upgraded: ScopedMemory = {
               ...existing,
@@ -2076,6 +2746,40 @@ export class PersistenceCoordinator {
     return cleanMem;
   }
 
+  /**
+   * Atomically attaches a computed vector embedding to an existing memory ONLY if that memory
+   * still exists and has not been deleted, preserving any concurrent lock/unlock changes (W-07 fix).
+   */
+  public async attachMemoryEmbedding(
+    memoryId: string,
+    embedding: number[]
+  ): Promise<ScopedMemory | null> {
+    if (!Array.isArray(embedding) || embedding.length === 0) return null;
+    const safeId = ensureValidDocId(memoryId, 'mem');
+
+    const shared = this.sharedMemoriesMap.get(safeId);
+    if (shared && !shared.isDeleted) {
+      return this.upsertScopedMemory({
+        ...shared,
+        embedding,
+        revision: this.nextRevision(),
+      });
+    }
+
+    for (const map of this.companionMemoriesMap.values()) {
+      const found = map.get(safeId);
+      if (found && !found.isDeleted) {
+        return this.upsertScopedMemory({
+          ...found,
+          embedding,
+          revision: this.nextRevision(),
+        });
+      }
+    }
+
+    return null;
+  }
+
   public async setMemoryLockState(
     memoryId: string,
     isLocked: boolean,
@@ -2110,6 +2814,7 @@ export class PersistenceCoordinator {
   public async deleteMemory(memoryId: string): Promise<void> {
     const safeId = ensureValidDocId(memoryId, 'mem');
     const rev = this.nextRevision();
+    const now = Date.now();
 
     const shared = this.sharedMemoriesMap.get(safeId);
     if (shared) {
@@ -2123,10 +2828,18 @@ export class PersistenceCoordinator {
           entityType: 'shared_memory',
           entityId: safeId,
           operation: 'delete',
-          payload: { id: safeId },
+          payload: { id: safeId, content: shared.content, createdAt: shared.createdAt },
           revision: rev,
         },
-        { sharedMemory: { ...shared, revision: rev, isDeleted: true } }
+        {
+          sharedMemory: {
+            ...shared,
+            revision: rev,
+            isDeleted: true,
+            deletedAt: now,
+            deletedByClientId: this.userState.clientId,
+          },
+        }
       );
       return;
     }
@@ -2149,10 +2862,24 @@ export class PersistenceCoordinator {
             entityId: safeId,
             parentId: cid,
             operation: 'delete',
-            payload: { id: safeId, entityId: cid },
+            payload: {
+              id: safeId,
+              entityId: cid,
+              content: compMem.content,
+              createdAt: compMem.createdAt,
+            },
             revision: rev,
           },
-          { companionMemory: { ...compMem, entityId: cid, revision: rev, isDeleted: true } }
+          {
+            companionMemory: {
+              ...compMem,
+              entityId: cid,
+              revision: rev,
+              isDeleted: true,
+              deletedAt: now,
+              deletedByClientId: this.userState.clientId,
+            },
+          }
         );
         return;
       }
@@ -2200,6 +2927,46 @@ export class PersistenceCoordinator {
     );
   }
 
+  public async deleteGift(giftId: string): Promise<void> {
+    const safeId = ensureValidDocId(giftId, 'gift');
+    const existing = this.giftsMap.get(safeId);
+    if (!existing) return;
+
+    const rev = this.nextRevision();
+    const now = Date.now();
+    this.giftsMap.delete(safeId);
+    await this.cancelPendingMutations(
+      (m) => m.entityType === 'gift' && m.entityId === safeId && m.operation === 'upsert'
+    );
+    this.emitAll();
+
+    await this.enqueueMutation(
+      {
+        entityType: 'gift',
+        entityId: safeId,
+        operation: 'delete',
+        payload: {
+          id: safeId,
+          from: existing.from,
+          content: existing.content,
+          gift_type: existing.gift_type,
+          reason: existing.reason,
+          timestamp: existing.timestamp,
+        },
+        revision: rev,
+      },
+      {
+        gift: {
+          ...existing,
+          revision: rev,
+          isDeleted: true,
+          deletedAt: now,
+          deletedByClientId: this.userState.clientId,
+        },
+      }
+    );
+  }
+
   public async updateSettings(
     updates: Partial<AppSettings> | ((prev: AppSettings) => AppSettings)
   ): Promise<void> {
@@ -2230,6 +2997,7 @@ export class PersistenceCoordinator {
         payload: {
           settings: this.stripTransientSettingsFields(this.userState.settings),
           memoriesMigratedV2: this.userState.memoriesMigratedV2,
+          syncClients: this.userState.syncClients,
         },
         revision: rev,
       },
@@ -2269,7 +3037,8 @@ export class PersistenceCoordinator {
     updates: UserProfile | ((prev: UserProfile | null) => UserProfile)
   ): Promise<void> {
     const rev = this.nextRevision();
-    const nextProfile = typeof updates === 'function' ? updates(this.userState.userProfile) : updates;
+    const nextProfile =
+      typeof updates === 'function' ? updates(this.userState.userProfile) : updates;
     const indexedProfile: UserProfile = {
       ...nextProfile,
       id: nextProfile.id || this.activeUid || 'default-profile',
@@ -2323,21 +3092,7 @@ export class PersistenceCoordinator {
     }
 
     for (const giftId of Array.from(this.giftsMap.keys())) {
-      const rev = this.nextRevision();
-      const existing = this.giftsMap.get(giftId);
-      this.giftsMap.delete(giftId);
-      await this.enqueueMutation(
-        {
-          entityType: 'gift',
-          entityId: giftId,
-          operation: 'delete',
-          payload: { id: giftId },
-          revision: rev,
-        },
-        {
-          gift: existing ? { ...existing, revision: rev, isDeleted: true } : undefined,
-        }
-      );
+      await this.deleteGift(giftId);
     }
 
     this.companionsMap.clear();

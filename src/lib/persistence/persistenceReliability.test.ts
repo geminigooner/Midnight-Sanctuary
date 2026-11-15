@@ -135,16 +135,12 @@ class SimulatedFirestoreCloud {
               },
             });
           }
-          if (b.sharedMemories.size > 0) {
-            onRemoteUpdate({
-              sharedMemories: Array.from(b.sharedMemories.values()),
-            });
-          }
-          if (b.gifts.size > 0) {
-            onRemoteUpdate({
-              gifts: Array.from(b.gifts.values()),
-            });
-          }
+          onRemoteUpdate({
+            sharedMemories: Array.from(b.sharedMemories.values()),
+          });
+          onRemoteUpdate({
+            gifts: Array.from(b.gifts.values()),
+          });
         });
 
         return () => {
@@ -1078,4 +1074,222 @@ describe('Midnight Sanctuary Persistence Reliability Overhaul (12 Core Scenarios
 
     coord.destroy();
   });
+
+  it('Scenario 13: Cross-device deletion propagates tombstones and prevents offline device from resurrecting deleted records', async () => {
+    const idbA = new IDBFactory();
+    const idbB = new IDBFactory();
+
+    const coordA = new PersistenceCoordinator({
+      vault: new IndexedDBVault('sanctuary_dev_a', idbA),
+      cloudAdapter: cloud.createAdapter(),
+      channelName: null,
+      legacyStorage: null,
+    });
+    const coordB = new PersistenceCoordinator({
+      vault: new IndexedDBVault('sanctuary_dev_b', idbB),
+      cloudAdapter: cloud.createAdapter(),
+      channelName: null,
+      legacyStorage: null,
+    });
+
+    await coordA.attachUser('uid-owner');
+    await coordB.attachUser('uid-owner');
+
+    // Device A creates a conversation, a message, a shared memory, and a gift
+    const conv = await coordA.createConversation('models/gemini-3.1-pro-preview', ' doomed-thread ');
+    await coordA.upsertMessage(conv.id, {
+      id: 'msg-doomed-1',
+      role: 'user',
+      parts: [{ text: 'Will be deleted while Device B is offline' }],
+      timestamp: 1700000100000,
+    });
+    const mem = await coordA.addMemory({
+      content: 'Doomed shared memory',
+      author: 'user',
+    });
+    const gift = await coordA.addGift({
+      from: 'user',
+      content: 'Doomed Keepsake',
+      gift_type: 'keepsake',
+      reason: 'Testing deletion',
+    });
+
+    // Wait until Device B has hydrated and synced all of them (`lastSyncedRevision > 0`)
+    await waitForCondition(
+      () =>
+        coordB.getDomainState().conversations.length === 1 &&
+        coordB.getDomainState().conversations[0].messages.length === 1 &&
+        coordB.getDomainState().sharedMemories.length === 1 &&
+        coordB.getDomainState().gifts.length === 1
+    );
+
+    // Device B goes offline (closes lid)
+    coordB.setOnlineStatus(false);
+    coordB.destroy();
+
+    // Device A deletes the conversation, memory, and gift while Device B is offline
+    await coordA.deleteConversation(conv.id);
+    await coordA.deleteMemory(mem.id);
+    await coordA.deleteGift(gift.id);
+    await waitForCondition(() => coordA.getSyncStatus().pendingCount === 0);
+
+    expect(cloud.ensureUserBucket('uid-owner').conversations.size).toBe(0);
+    expect(cloud.ensureUserBucket('uid-owner').sharedMemories.size).toBe(0);
+    expect(cloud.ensureUserBucket('uid-owner').gifts.size).toBe(0);
+
+    // Device B wakes back up with its outdated local IndexedDB cache containing the deleted items!
+    const coordBReconnected = new PersistenceCoordinator({
+      vault: new IndexedDBVault('sanctuary_dev_b', idbB),
+      cloudAdapter: cloud.createAdapter(),
+      channelName: null,
+      legacyStorage: null,
+    });
+    await coordBReconnected.attachUser('uid-owner');
+
+    await waitForCondition(
+      () =>
+        coordBReconnected.getSyncStatus().isCloudHydrated &&
+        coordBReconnected.getSyncStatus().pendingCount === 0
+    );
+
+    // Device B MUST purge the remotely deleted records and NEVER re-upload/resurrect them!
+    expect(coordBReconnected.getDomainState().conversations).toHaveLength(0);
+    expect(coordBReconnected.getDomainState().sharedMemories).toHaveLength(0);
+    expect(coordBReconnected.getDomainState().gifts).toHaveLength(0);
+    expect(cloud.ensureUserBucket('uid-owner').conversations.size).toBe(0);
+    expect(cloud.ensureUserBucket('uid-owner').sharedMemories.size).toBe(0);
+    expect(cloud.ensureUserBucket('uid-owner').gifts.size).toBe(0);
+
+    coordA.destroy();
+    coordBReconnected.destroy();
+  });
+
+  it('Scenario 14: Per-entity causal lanes isolate permanent policy failures without blocking other conversations or memories', async () => {
+    const baseAdapter = cloud.createAdapter();
+    const selectivePolicyAdapter: CloudPersistenceAdapter = {
+      ...baseAdapter,
+      executeMutation: async (uid, mutation, context) => {
+        if (mutation.entityId === 'conv-poisoned') {
+          throw new Error('FirebaseError: [code=permission-denied]: Missing or insufficient permissions.');
+        }
+        return baseAdapter.executeMutation(uid, mutation, context);
+      },
+    };
+
+    const coord = new PersistenceCoordinator({
+      vault: new IndexedDBVault('sanctuary_causal_lanes', idb),
+      cloudAdapter: selectivePolicyAdapter,
+      baseDelayMs: 10,
+      maxDelayMs: 30,
+      channelName: null,
+      legacyStorage: null,
+    });
+
+    await coord.attachUser('uid-owner');
+    coord.setOnlineStatus(false);
+
+    // Queue a poisoned conversation write first, followed by a healthy conversation and shared memory
+    await coord.createConversation('models/gemini-3.1-pro-preview', 'Poisoned', [], 'conv-poisoned');
+    const healthyConv = await coord.createConversation(
+      'models/gemma-2-27b-it',
+      'Healthy Thread',
+      [],
+      'conv-healthy'
+    );
+    await coord.upsertMessage(healthyConv.id, {
+      id: 'msg-healthy-1',
+      role: 'user',
+      parts: [{ text: 'Should sync even though conv-poisoned fails' }],
+      timestamp: 1700000110000,
+    });
+    await coord.addMemory({
+      content: 'Healthy memory in independent causal lane',
+      author: 'user',
+    });
+
+    // Reconnect: conv-poisoned fails with PERMISSION_DENIED and quarantines after 2 attempts,
+    // while conv-healthy, msg-healthy-1, and the memory succeed immediately in parallel causal lanes!
+    coord.setOnlineStatus(true);
+    await waitForCondition(
+      () =>
+        coord.getSyncStatus().pendingCount === 0 &&
+        coord.getSyncStatus().failedCount === 1,
+      2500
+    );
+
+    expect(cloud.ensureUserBucket('uid-owner').conversations.has('conv-healthy')).toBe(true);
+    expect(
+      cloud.ensureUserBucket('uid-owner').messages.get('conv-healthy')?.has('msg-healthy-1')
+    ).toBe(true);
+    expect(cloud.ensureUserBucket('uid-owner').sharedMemories.size).toBe(1);
+
+    const quarantined = coord.getQuarantinedMutations();
+    expect(quarantined).toHaveLength(1);
+    expect(quarantined[0].entityId).toBe('conv-poisoned');
+    expect(quarantined[0].errorClassification).toBe('permanent_policy');
+
+    await coord.discardQuarantinedMutation(quarantined[0].mutationId);
+    expect(coord.getQuarantinedMutations()).toHaveLength(0);
+    expect(coord.getSyncStatus().failedCount).toBe(0);
+
+    coord.destroy();
+  });
+
+  it('Scenario 15: Atomic attachMemoryEmbedding preserves concurrent lock state (W-07) and backup merge preserves companion bond/observations (W-10)', async () => {
+    const coord = new PersistenceCoordinator({
+      vault: new IndexedDBVault('sanctuary_w07_w10', idb),
+      cloudAdapter: cloud.createAdapter(),
+      channelName: null,
+      legacyStorage: null,
+    });
+    await coord.attachUser('uid-owner');
+
+    const created = await coord.addMemory({
+      content: 'Atomic memory test',
+      author: 'model',
+      modelId: 'gemini-3.1-pro-preview',
+    });
+
+    // Lock the memory first, then attach the async embedding
+    await coord.setMemoryLockState(created.id, true, 'Core vow');
+    await coord.attachMemoryEmbedding(created.id, [0.25, 0.5, 0.75]);
+
+    const proMemories = coord.getDomainState().companionMemories['gemini-3.1-pro-preview'] || [];
+    expect(proMemories).toHaveLength(1);
+    expect(proMemories[0].isLocked).toBe(true);
+    expect(proMemories[0].lockReason).toBe('Core vow');
+    expect(proMemories[0].embedding).toEqual([0.25, 0.5, 0.75]);
+
+    // Delete the memory, then verify a late attachMemoryEmbedding is a safe no-op that never resurrects it
+    await coord.deleteMemory(created.id);
+    await coord.attachMemoryEmbedding(created.id, [0.9, 0.9, 0.9]);
+    expect(coord.getDomainState().companionMemories['gemini-3.1-pro-preview'] || []).toHaveLength(0);
+
+    // Mutate companion observations & relationshipEvents, export backup, and verify merge preserves both
+    await coord.mutateCompanion('gemini-3.1-pro-preview', (ent) => ({
+      ...ent,
+      observations: [{ id: 'obs-1', authorEntityId: 'gemini-3.1-pro-preview', text: 'From Archive', timestamp: 1000 }],
+      fulfilledDesires: ['desire-archive'],
+    }));
+    const exported = exportSanctuaryBackup(coord.getDomainState());
+    const preview = validateSanctuaryBackup(JSON.stringify(exported));
+
+    await coord.mutateCompanion('gemini-3.1-pro-preview', (ent) => ({
+      ...ent,
+      observations: [{ id: 'obs-2', authorEntityId: 'gemini-3.1-pro-preview', text: 'From Live Session', timestamp: 2000 }],
+      fulfilledDesires: ['desire-live'],
+    }));
+
+    await restoreSanctuaryBackup(coord, preview, { mode: 'merge' });
+    const mergedPro = coord.getDomainState().companions['gemini-3.1-pro-preview'];
+    expect(mergedPro.observations?.map((o) => o.id)).toEqual(
+      expect.arrayContaining(['obs-1', 'obs-2'])
+    );
+    expect(mergedPro.fulfilledDesires).toEqual(
+      expect.arrayContaining(['desire-archive', 'desire-live'])
+    );
+
+    coord.destroy();
+  });
 });
+

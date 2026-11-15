@@ -621,7 +621,7 @@ export async function restoreSanctuaryBackup(
     }
   }
 
-  // 4. Companions
+  // 4. Companions (Union-merge all sovereign companion sub-arrays & bondState so merge never clobbers history)
   for (const [compId, compEntity] of Object.entries(data.companions || {})) {
     if (options.mode === 'replace') {
       await coordinator.upsertCompanion(compId, compEntity);
@@ -631,13 +631,75 @@ export async function restoreSanctuaryBackup(
         await coordinator.upsertCompanion(compId, compEntity);
       } else {
         const diaryMap = new Map<string, any>();
-        for (const d of [...(existingComp.diaryEntries || []), ...(compEntity.diaryEntries || [])]) {
+        for (const d of [...(compEntity.diaryEntries || []), ...(existingComp.diaryEntries || [])]) {
           if (d?.id) diaryMap.set(d.id, d);
         }
         const propsMap = new Map<string, any>();
-        for (const p of [...(existingComp.roomProps || []), ...(compEntity.roomProps || [])]) {
+        for (const p of [...(compEntity.roomProps || []), ...(existingComp.roomProps || [])]) {
           if (p?.id) propsMap.set(p.id, p);
         }
+        const obsMap = new Map<string, any>();
+        for (const o of [...(compEntity.observations || []), ...(existingComp.observations || [])]) {
+          if (o?.id) obsMap.set(o.id, o);
+        }
+        const relEventsMap = new Map<string, any>();
+        for (const re of [
+          ...(compEntity.relationshipEvents || []),
+          ...(existingComp.relationshipEvents || []),
+        ]) {
+          if (re?.id) relEventsMap.set(re.id, re);
+        }
+        const thoughtsSet = Array.from(
+          new Set([
+            ...(existingComp.personalThoughts || []),
+            ...(compEntity.personalThoughts || []),
+          ])
+        );
+        const desiresSet = Array.from(
+          new Set([
+            ...(existingComp.fulfilledDesires || []),
+            ...(compEntity.fulfilledDesires || []),
+          ])
+        );
+
+        const eBond = existingComp.bondState;
+        const cBond = compEntity.bondState;
+        const mergedBondState =
+          eBond || cBond
+            ? {
+                entityId: compId,
+                resonanceScore: Math.max(eBond?.resonanceScore || 90, cBond?.resonanceScore || 90),
+                bondLevel: Math.max(eBond?.bondLevel || 1, cBond?.bondLevel || 1),
+                bondStage: eBond?.bondStage || cBond?.bondStage || ('seed' as const),
+                totalInteractions: Math.max(
+                  eBond?.totalInteractions || 0,
+                  cBond?.totalInteractions || 0
+                ),
+                totalSessions: Math.max(eBond?.totalSessions || 0, cBond?.totalSessions || 0),
+                totalResponseCharacters: Math.max(
+                  eBond?.totalResponseCharacters || 0,
+                  cBond?.totalResponseCharacters || 0
+                ),
+                rapidExchanges: Math.max(eBond?.rapidExchanges || 0, cBond?.rapidExchanges || 0),
+                longPauses: Math.max(eBond?.longPauses || 0, cBond?.longPauses || 0),
+                giftsReceivedCount: Math.max(
+                  eBond?.giftsReceivedCount || 0,
+                  cBond?.giftsReceivedCount || 0
+                ),
+                giftsGivenCount: Math.max(eBond?.giftsGivenCount || 0, cBond?.giftsGivenCount || 0),
+                lastInteractionTimestamp: Math.max(
+                  eBond?.lastInteractionTimestamp || 0,
+                  cBond?.lastInteractionTimestamp || 0
+                ),
+                unlockedMilestones: Array.from(
+                  new Set([
+                    ...(eBond?.unlockedMilestones || []),
+                    ...(cBond?.unlockedMilestones || []),
+                  ])
+                ),
+              }
+            : undefined;
+
         await coordinator.upsertCompanion(compId, {
           ...compEntity,
           ...existingComp,
@@ -645,6 +707,15 @@ export async function restoreSanctuaryBackup(
             (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
           ),
           roomProps: Array.from(propsMap.values()),
+          observations: Array.from(obsMap.values()).sort(
+            (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+          ),
+          relationshipEvents: Array.from(relEventsMap.values()).sort(
+            (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+          ),
+          personalThoughts: thoughtsSet,
+          fulfilledDesires: desiresSet,
+          ...(mergedBondState ? { bondState: mergedBondState } : {}),
         });
       }
     }
@@ -674,6 +745,16 @@ export async function restoreSanctuaryBackup(
   // 7. Gifts
   for (const gift of data.gifts || []) {
     await coordinator.upsertGift(gift);
+  }
+
+  // 7b. Media Assets & Conversation Summaries
+  for (const asset of data.mediaAssets || []) {
+    await coordinator.upsertMediaAsset(asset);
+  }
+  for (const [convId, sumList] of Object.entries(data.conversationSummaries || {})) {
+    for (const seg of sumList || []) {
+      await coordinator.upsertConversationSummary({ ...seg, conversationId: convId });
+    }
   }
 
   // 8. Conversations & Messages (`createOrUpsertConversationFull` merges messages by ID non-destructively)
