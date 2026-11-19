@@ -1,5 +1,11 @@
 import React, { useRef, useEffect } from 'react';
-import { Conversation, Message, DEFAULT_SETTINGS } from '../lib/types';
+import {
+  Conversation,
+  Message,
+  DEFAULT_SETTINGS,
+  getPublicMessageText,
+  isInternalToolResponseTurn,
+} from '../lib/types';
 import { MessageBubble } from './MessageBubble';
 import { resolveModelIdentity } from '../lib/modelSystem';
 import { getModelEntity } from '../lib/entitySystem';
@@ -82,22 +88,41 @@ export function MessageList({
               : defaultEntity;
             const resolvedModelName = msg.authorDisplayName || msgEntity?.displayName || fallbackModelName;
 
-            // Find preceding user message if this is a model response
-            let precedingUserMsg = undefined;
-            if (msg.role === 'model' && origIndex > 0) {
-              precedingUserMsg = conversation.messages.slice(0, origIndex).reverse().find(m => m.role === 'user');
+            const isRealUserMessage = (m: Message) =>
+              m.role === 'user' &&
+              !isInternalToolResponseTurn(m) &&
+              (Boolean(getPublicMessageText(m).trim()) ||
+                m.parts?.some((p) => Boolean(p?.inlineData)));
+
+            // Find preceding real user message (skipping internal tool functionResponse turns) if this is a model response
+            let precedingUserMsg: Message | undefined = undefined;
+            if (msg.role === 'model') {
+              const sliceEnd = origIndex > 0 ? origIndex : conversation.messages.length;
+              precedingUserMsg = conversation.messages
+                .slice(0, sliceEnd)
+                .reverse()
+                .find(isRealUserMessage);
+              if (!precedingUserMsg) {
+                precedingUserMsg = [...conversation.messages].reverse().find(isRealUserMessage);
+              }
             }
 
-            const promptToRetry = precedingUserMsg 
-              ? (precedingUserMsg.publicText || precedingUserMsg.parts?.filter(p => !p.thought && p.text).map(p => p.text).join('') || '')
-              : (msg.role === 'user' ? (msg.publicText || msg.parts?.filter(p => !p.thought && p.text).map(p => p.text).join('') || '') : '');
+            const promptToRetry = precedingUserMsg
+              ? getPublicMessageText(precedingUserMsg)
+              : msg.role === 'user'
+              ? getPublicMessageText(msg)
+              : '';
 
-            const attachmentsToRetry = (precedingUserMsg || (msg.role === 'user' ? msg : undefined))?.parts
-              ?.filter(p => p.inlineData)
-              ?.map(p => ({ mimeType: p.inlineData!.mimeType, data: p.inlineData!.data })) || [];
+            const attachmentsToRetry =
+              (precedingUserMsg || (msg.role === 'user' ? msg : undefined))?.parts
+                ?.filter((p) => p.inlineData)
+                ?.map((p) => ({
+                  mimeType: p.inlineData!.mimeType,
+                  data: p.inlineData!.data,
+                })) || [];
 
-            const retryTargetIndex = precedingUserMsg 
-              ? conversation.messages.findIndex(m => m.id === precedingUserMsg.id) 
+            const retryTargetIndex = precedingUserMsg
+              ? conversation.messages.findIndex((m) => m.id === precedingUserMsg!.id)
               : origIndex;
 
             return (
@@ -114,8 +139,14 @@ export function MessageList({
                 onCopy={onCopy}
                 precedingUserPrompt={promptToRetry}
                 onRetry={() => {
-                  if (promptToRetry || attachmentsToRetry.length > 0) {
-                    onResend(promptToRetry, retryTargetIndex, attachmentsToRetry);
+                  if (promptToRetry.trim() || attachmentsToRetry.length > 0) {
+                    onResend(
+                      promptToRetry,
+                      retryTargetIndex >= 0 ? retryTargetIndex : origIndex,
+                      attachmentsToRetry
+                    );
+                  } else {
+                    store.removeMessage(conversation.id, msg.id);
                   }
                 }}
                 onResend={(content) => {

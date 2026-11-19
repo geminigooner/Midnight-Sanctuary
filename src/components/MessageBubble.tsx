@@ -95,7 +95,9 @@ export const MessageBubble = React.memo(function MessageBubble({
   const userClasses = "bg-[#B39DE5] border-[3px] border-[#2C194D] text-[#2C194D] font-bold shadow-[4px_4px_0_#2C194D]";
   const gemmaClasses = "bg-[#F5E1C8] border-[3px] border-[#2C194D] text-[#2C194D] font-bold shadow-[4px_4px_0_#2C194D]";
   
-  const publicText = getPublicMessageText(msg);
+  const rawPublicText = getPublicMessageText(msg);
+  const publicText = rawPublicText;
+
   const thoughtText = getThoughtMessageText(msg);
   const hasVisualContent = Boolean(
     (msg.scribbles && msg.scribbles.length > 0) ||
@@ -117,12 +119,17 @@ export const MessageBubble = React.memo(function MessageBubble({
      }
   };
 
-  const isError = !isUser && (
-    msg.thoughtStatus === 'error' ||
+  const isPureErrorPlaceholder =
     publicText.startsWith('[Error:') ||
     publicText.startsWith('[Request timed out') ||
-    publicText.startsWith('[The model returned an empty response')
-  );
+    publicText.startsWith('[The model returned an empty response');
+  const hasSpokenCompanionReply =
+    (Boolean(publicText.trim()) && !isPureErrorPlaceholder) || hasVisualContent;
+
+  const isError =
+    !isUser &&
+    !hasSpokenCompanionReply &&
+    (msg.thoughtStatus === 'error' || isPureErrorPlaceholder);
 
   if (isError) {
     return (
@@ -187,6 +194,8 @@ export const MessageBubble = React.memo(function MessageBubble({
                 status={
                   isWaitingForToken || (isGenerating && isLast && msg.thoughtStatus === 'thinking')
                     ? 'thinking'
+                    : hasSpokenCompanionReply
+                    ? 'complete'
                     : (msg.thoughtStatus ?? 'complete')
                 }
                 modelName={modelName}
@@ -249,7 +258,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               </div>
             ) : null}
 
-            {msg.finishReason && (
+            {msg.finishReason && msg.finishReason !== 'STOP' && (
               <div className="text-xs text-[#B39DE5]/50 mt-2 italic">
                 [cut off: {msg.finishReason}]
               </div>

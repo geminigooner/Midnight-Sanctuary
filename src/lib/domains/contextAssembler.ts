@@ -403,9 +403,50 @@ export function serializeSpeakerAttributedTranscript(
     });
   }
 
+  // Filter out orphaned functionCall or functionResponse turns that do not have an adjacent partner
+  const toolValidatedTurns: { role: 'user' | 'model'; parts: any[] }[] = [];
+  for (let i = 0; i < rawTurns.length; i++) {
+    const turn = rawTurns[i];
+    const nextTurn = rawTurns[i + 1];
+    const prevTurn = toolValidatedTurns[toolValidatedTurns.length - 1];
+
+    const hasFunctionCall = turn.parts.some((p) => Boolean(p?.functionCall));
+    const hasFunctionResponse = turn.parts.some((p) => Boolean(p?.functionResponse));
+
+    if (hasFunctionCall) {
+      const nextHasFunctionResponse =
+        nextTurn &&
+        nextTurn.role === 'user' &&
+        nextTurn.parts.some((p) => Boolean(p?.functionResponse));
+      if (!nextHasFunctionResponse) {
+        const nonToolParts = turn.parts.filter((p) => !p?.functionCall);
+        if (nonToolParts.length > 0) {
+          toolValidatedTurns.push({ role: turn.role, parts: nonToolParts });
+        }
+        continue;
+      }
+    }
+
+    if (hasFunctionResponse) {
+      const prevHasFunctionCall =
+        prevTurn &&
+        prevTurn.role === 'model' &&
+        prevTurn.parts.some((p) => Boolean(p?.functionCall));
+      if (!prevHasFunctionCall) {
+        const nonToolParts = turn.parts.filter((p) => !p?.functionResponse);
+        if (nonToolParts.length > 0 && nonToolParts.some((p) => Boolean(p?.text?.trim() || p?.inlineData))) {
+          toolValidatedTurns.push({ role: turn.role, parts: nonToolParts });
+        }
+        continue;
+      }
+    }
+
+    toolValidatedTurns.push(turn);
+  }
+
   // Coalesce consecutive turns of the same role so Gemini / Gemma API strict alternation never fails
   const coalesced: { role: 'user' | 'model'; parts: any[] }[] = [];
-  for (const turn of rawTurns) {
+  for (const turn of toolValidatedTurns) {
     const prev = coalesced[coalesced.length - 1];
     if (
       prev &&

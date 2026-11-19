@@ -62,19 +62,57 @@ export interface Message {
   authorAvatar?: string;
 }
 
+const FALSE_EOF_CUTOFF_REGEX =
+  /\n*\s*\[Reply cut off: (?:Connection to the server dropped before the reply finished\. Please try again\.|the connection stalled before it finished\.)\]\s*$/i;
+
+export function stripFalseCutoffTrailer(rawText: string | undefined | null): {
+  text: string;
+  wasHealed: boolean;
+} {
+  if (typeof rawText !== 'string' || !rawText) {
+    return { text: '', wasHealed: false };
+  }
+  if (FALSE_EOF_CUTOFF_REGEX.test(rawText)) {
+    const cleaned = rawText.replace(FALSE_EOF_CUTOFF_REGEX, '').trimEnd();
+    if (cleaned.length > 0) {
+      return { text: cleaned, wasHealed: true };
+    }
+  }
+  return { text: rawText, wasHealed: false };
+}
+
+export function isInternalToolResponseTurn(msg: Message | undefined | null): boolean {
+  if (!msg) return false;
+  const parts = Array.isArray(msg.parts) ? msg.parts : [];
+  return parts.some((p: any) => Boolean(p?.functionResponse));
+}
+
 export function getPublicMessageText(msg: Message): string {
-  if (typeof msg.publicText === 'string' && msg.publicText.length > 0) return msg.publicText;
+  if (typeof msg.publicText === 'string' && msg.publicText.length > 0) {
+    return stripFalseCutoffTrailer(msg.publicText).text;
+  }
   // Fallback to parts if publicText is undefined or empty
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const fromParts = parts.filter(p => !p.thought && p.text).map(p => p.text).join('');
-  return fromParts || msg.publicText || '';
+  const fromParts = parts
+    .filter((p) => !p.thought && p.text)
+    .map((p) => p.text)
+    .join('');
+  return stripFalseCutoffTrailer(fromParts || msg.publicText || '').text;
 }
 
 export function getThoughtMessageText(msg: Message): string {
-  if (typeof msg.thoughtText === 'string' && msg.thoughtText.length > 0) return msg.thoughtText;
+  if (typeof msg.thoughtText === 'string') {
+    if (msg.thoughtText.length > 0) return msg.thoughtText;
+    // If thoughtText was explicitly cleared to '' on an intermediate functionCall turn, do not resurrect from parts
+    const hasFunctionCall = Array.isArray(msg.parts) && msg.parts.some((p) => Boolean(p?.functionCall));
+    if (hasFunctionCall && !msg.publicText) return '';
+  }
   // Fallback to parts if thoughtText is undefined or empty
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const fromParts = parts.filter(p => p.thought && p.text).map(p => p.text).join('');
+  const fromParts = parts
+    .filter((p) => p.thought && p.text)
+    .map((p) => p.text)
+    .join('');
   return fromParts || msg.thoughtText || '';
 }
 

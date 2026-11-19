@@ -86,10 +86,15 @@ export function buildDeterministicSegmentSummary(params: {
     id: plan.segmentId,
     conversationId,
     ScopeEntityId,
+    entityId: ScopeEntityId,
+    scope: ScopeEntityId === 'shared_group' ? 'group' : 'direct',
+    segmentIndex: Math.max(0, Math.floor(plan.startTurnIndex / 30)),
     startTurnIndex: plan.startTurnIndex,
     endTurnIndex: plan.endTurnIndex,
     startMessageId: firstMsg?.id || `turn_${plan.startTurnIndex}`,
     endMessageId: lastMsg?.id || `turn_${plan.endTurnIndex}`,
+    startTimestamp: firstMsg?.timestamp || Date.now(),
+    endTimestamp: lastMsg?.timestamp || Date.now(),
     messageCount: msgs.length,
     tokenCountOriginal,
     narrativeSummary,
@@ -100,7 +105,7 @@ export function buildDeterministicSegmentSummary(params: {
     sourceHash: plan.sourceHash,
     createdAt: Date.now(),
     revision: Date.now(),
-  };
+  } as ConversationSegmentSummary;
 }
 
 export async function summarizeConversationSegment(params: {

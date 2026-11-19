@@ -1,5 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Message, getPublicMessageText } from '../lib/types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Message,
+  getPublicMessageText,
+  getThoughtMessageText,
+  isInternalToolResponseTurn,
+} from '../lib/types';
 import { useChatStream } from '../hooks/useChatStream';
 import { X, Menu, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -156,23 +161,86 @@ export function ChatArea() {
     }
   }, [ui.pendingPrompt, store, sendMessage, ui]);
 
-  const visibleMessages = (conversation?.messages || []).filter((m: Message, idx: number, all: Message[]) => {
-    if (m.role !== 'user' && m.role !== 'model') return false;
-    if (m.role === 'model') {
+  const visibleMessages = useMemo(() => {
+    const all = conversation?.messages || [];
+    const candidateMessages: Message[] = [];
+
+    for (let idx = 0; idx < all.length; idx++) {
+      const m = all[idx];
+      if (!m || (m.role !== 'user' && m.role !== 'model')) continue;
+
+      if (m.role === 'user') {
+        if (isInternalToolResponseTurn(m)) continue;
+        const hasUserText = getPublicMessageText(m).trim().length > 0;
+        const hasAttachment = (m.parts || []).some((p: any) => Boolean(p?.inlineData));
+        if (hasUserText || hasAttachment) {
+          candidateMessages.push(m);
+        }
+        continue;
+      }
+
       const isError = m.thoughtStatus === 'error';
-      // Keep real content, error banners with retry capability, and active streaming bubbles
-      const hasContent = getPublicMessageText(m).trim().length > 0
-        || (m.thoughtText ?? '').trim().length > 0
-        || (m.generatedImages?.length ?? 0) > 0
-        || (m.scribbles?.length ?? 0) > 0
-        || (m.musicTracks?.length ?? 0) > 0
-        || (m.searchResults?.length ?? 0) > 0
-        || (m.parts || []).some((p: any) => p.functionCall || p.inlineData);
       const isLast = idx === all.length - 1;
-      if (!hasContent && !isError && !(isGenerating && isLast)) return false;
+      const publicTxt = getPublicMessageText(m).trim();
+      const thoughtTxt = getThoughtMessageText(m).trim();
+      const hasMediaArtifacts =
+        (m.generatedImages?.length ?? 0) > 0 ||
+        (m.scribbles?.length ?? 0) > 0 ||
+        (m.musicTracks?.length ?? 0) > 0 ||
+        (m.searchResults?.length ?? 0) > 0 ||
+        (m.parts || []).some((p: any) => Boolean(p?.inlineData));
+      const isFunctionCallTurn = (m.parts || []).some((p: any) => Boolean(p?.functionCall));
+
+      if (isFunctionCallTurn && !publicTxt && !hasMediaArtifacts && !isLast) {
+        continue;
+      }
+
+      const hasVisibleContent =
+        publicTxt.length > 0 || thoughtTxt.length > 0 || hasMediaArtifacts;
+
+      if (!hasVisibleContent && !isError && !(isGenerating && isLast)) {
+        continue;
+      }
+
+      candidateMessages.push(m);
     }
-    return true;
-  });
+
+    // Coalesce any legacy standalone thought-only model bubble into the immediately following model reply bubble
+    const merged: Message[] = [];
+    for (let i = 0; i < candidateMessages.length; i++) {
+      const current = candidateMessages[i];
+      const next = candidateMessages[i + 1];
+
+      if (current.role === 'model' && next && next.role === 'model') {
+        const currentPublic = getPublicMessageText(current).trim();
+        const currentThought = getThoughtMessageText(current).trim();
+        const currentHasMedia =
+          (current.generatedImages?.length ?? 0) > 0 ||
+          (current.scribbles?.length ?? 0) > 0 ||
+          (current.musicTracks?.length ?? 0) > 0 ||
+          (current.searchResults?.length ?? 0) > 0 ||
+          (current.parts || []).some((p: any) => Boolean(p?.inlineData));
+
+        if (!currentPublic && !currentHasMedia && currentThought) {
+          const nextThought = getThoughtMessageText(next).trim();
+          const combinedThought = !nextThought
+            ? currentThought
+            : nextThought.includes(currentThought)
+            ? nextThought
+            : `${currentThought}\n\n${nextThought}`;
+          candidateMessages[i + 1] = {
+            ...next,
+            thoughtText: combinedThought,
+          };
+          continue;
+        }
+      }
+
+      merged.push(current);
+    }
+
+    return merged;
+  }, [conversation?.messages, isGenerating]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#1a153b] relative overflow-hidden min-w-0 max-w-full">

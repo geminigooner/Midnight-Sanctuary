@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import html2canvas from 'html2canvas';
-import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, SvgScribbleData, MusicTrackData } from '../lib/types';
+import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, isInternalToolResponseTurn, SvgScribbleData, MusicTrackData } from '../lib/types';
 import { streamChat } from '../lib/gemini';
 import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
@@ -130,20 +130,33 @@ export function useChatStream({
     const effectiveModel = targetSettings?.model || targetConversation?.modelId || conversationRef.current?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
     const effectiveSettings = { ...(targetSettings || settings), model: effectiveModel };
 
+    const isRetryOrReplace = replaceIndex !== undefined && replaceIndex >= 0;
+
     if ((isGenerating || isGeneratingRef.current) && (!additionalMessages || additionalMessages.length === 0)) {
-      console.warn("sendMessage blocked: Generation already in progress.");
-      triggerHaptic('heavy');
-      if (typeof window !== 'undefined') {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'fixed top-1/4 left-1/2 -translate-x-1/2 bg-rose text-white px-4 py-2 rounded-xl shadow-lg z-[9999] animate-in fade-in slide-in-from-top-4 duration-300';
-        errorDiv.innerText = "Model is still thinking...";
-        document.body.appendChild(errorDiv);
-        setTimeout(() => {
-          errorDiv.classList.add('animate-out', 'fade-out', 'slide-out-to-top-4');
-          setTimeout(() => errorDiv.remove(), 300);
-        }, 2000);
+      if (isRetryOrReplace) {
+        // If user clicked Retry or Edited a message while a previous stream was lingering, abort the old stream cleanly
+        generationIdRef.current++;
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
+        isGeneratingRef.current = false;
+      } else {
+        console.warn("sendMessage blocked: Generation already in progress.");
+        triggerHaptic('heavy');
+        if (typeof window !== 'undefined') {
+          const errorDiv = document.createElement('div');
+          errorDiv.className = 'fixed top-1/4 left-1/2 -translate-x-1/2 bg-rose text-white px-4 py-2 rounded-xl shadow-lg z-[9999] animate-in fade-in slide-in-from-top-4 duration-300';
+          errorDiv.innerText = "Model is still thinking...";
+          document.body.appendChild(errorDiv);
+          setTimeout(() => {
+            errorDiv.classList.add('animate-out', 'fade-out', 'slide-out-to-top-4');
+            setTimeout(() => errorDiv.remove(), 300);
+          }, 2000);
+        }
+        return;
       }
-      return;
     }
 
     if (!textToAnalyse.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) {
@@ -180,20 +193,27 @@ export function useChatStream({
       onUpdate(requestConversationId, { messages: currentMessages });
     }
     
+    const trimmedPrompt = textToAnalyse.trim();
     const parts: any[] = [];
-    if (textToAnalyse.trim()) parts.push({ text: textToAnalyse });
+    if (trimmedPrompt) parts.push({ text: textToAnalyse });
     attachments.forEach(a => parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } }));
     
     if (!additionalMessages || additionalMessages.length === 0) {
-      const userMsg: Message = { id: uuidv4(), role: 'user', parts, timestamp: now };
+      const userMsg: Message = {
+        id: uuidv4(),
+        role: 'user',
+        parts,
+        ...(trimmedPrompt ? { publicText: textToAnalyse } : {}),
+        timestamp: now,
+      };
       currentMessages.push(userMsg);
       onAddMessage(requestConversationId, userMsg);
     } else {
       currentMessages.push(...additionalMessages);
       additionalMessages.forEach(msg => onAddMessage(requestConversationId, msg));
     }
-    if (currentMessages.length === 1 && textToAnalyse.trim()) {
-      onUpdate(requestConversationId, { title: textToAnalyse.slice(0, 30) });
+    if (currentMessages.length === 1 && trimmedPrompt) {
+      onUpdate(requestConversationId, { title: trimmedPrompt.slice(0, 30) });
     }
 
     const currentGenId = ++generationIdRef.current;
@@ -256,27 +276,29 @@ export function useChatStream({
         modelMsgAdded = true;
       }
 
-      let partsToSave: any[] = [];
-      if (currentModelApiParts && currentModelApiParts.length > 0) {
-        partsToSave = currentModelApiParts;
-      } else {
-        if (thought) {
-          partsToSave.push({
-            thought: true,
-            text: thought,
-          });
-        }
-        if (text) {
-          partsToSave.push({
-            text,
-          });
-        }
-        const functionCalls = currentModelApiParts.filter(p => p.functionCall);
+      const partsToSave: any[] = [];
+      if (thought) {
+        partsToSave.push({
+          thought: true,
+          text: thought,
+        });
+      }
+      if (text) {
+        partsToSave.push({
+          text,
+        });
+      }
+      // Only persist raw functionCall parts onto the stored Message if a client-side UI tool call
+      // (e.g. view_user_profile) is pausing the turn for a client follow-up request.
+      // Server-side tools are already resolved inside the server harness loop and must not leave
+      // unpaired functionCall parts or split bubbles in conversation history.
+      if (pendingFollowUp && currentModelApiParts.length > 0) {
+        const functionCalls = currentModelApiParts.filter((p) => p.functionCall);
         partsToSave.push(...functionCalls);
+      }
 
-        if (partsToSave.length === 0) {
-          partsToSave.push({ text: '' });
-        }
+      if (partsToSave.length === 0) {
+        partsToSave.push({ text: '' });
       }
 
       onUpdateMessage(requestConversationId, modelMsgId, {
@@ -556,58 +578,26 @@ export function useChatStream({
             } as Message;
           } else if (chunk.type === 'model_parts') {
             currentModelApiParts = chunk.parts;
+          } else if (chunk.type === 'history_append') {
+            // The server-side tool loop resolved a tool call and is immediately continuing to stream
+            // the companion's spoken response on this same connection.
+            // Keep everything inside the SINGLE `modelMsgId` bubble on screen so no stray thought
+            // bubble or phantom purple `functionResponse` user bubble is ever created!
+            hasToolCalls = true;
+            currentModelApiParts = [];
+            if (apiThoughtAccumulator.trim() && !apiThoughtAccumulator.endsWith('\n\n')) {
+              apiThoughtAccumulator = apiThoughtAccumulator.trimEnd() + '\n\n';
+            }
+            if (rawTextAccumulator.trim() && !rawTextAccumulator.endsWith('\n\n')) {
+              rawTextAccumulator = rawTextAccumulator.trimEnd() + '\n\n';
+            }
+            currentModelText = rawTextAccumulator.trimStart();
+            currentModelThought = apiThoughtAccumulator.trimStart();
             updateModelMessage(
               currentModelText,
               currentModelThought,
-              'complete'
+              currentModelText ? 'complete' : 'thinking'
             );
-          } else if (chunk.type === 'history_append') {
-            const msgs = chunk.messages;
-            currentModelApiParts = msgs[0].parts;
-            onUpdateMessage(requestConversationId, modelMsgId, {
-              parts: currentModelApiParts,
-              thoughtText: currentModelThought,
-              publicText: currentModelText,
-              thoughtStatus: 'complete',
-              finishReason: currentModelFinishReason,
-              backend: currentModelBackend,
-              searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
-              generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
-              scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
-              musicTracks: currentModelMusicTracks.length > 0 ? currentModelMusicTracks : undefined,
-            });
-            if (msgs.length > 1 && msgs[1]) {
-              onAddMessage(requestConversationId, {
-                id: uuidv4(),
-                role: 'user',
-                parts: msgs[1].parts,
-                timestamp: Date.now(),
-              });
-            }
-            modelMsgId = uuidv4();
-            currentModelText = '';
-            currentModelThought = '';
-            currentModelApiParts = [];
-            currentModelSearchResults = [];
-            currentModelGeneratedImages = [];
-            currentModelScribbles = [];
-            currentModelMusicTracks = [];
-            rawTextAccumulator = '';
-            apiThoughtAccumulator = '';
-            isFirstChunk = true;
-            onAddMessage(requestConversationId, {
-              id: modelMsgId,
-              role: 'model',
-              parts: [{ text: '' }],
-              publicText: '',
-              thoughtText: '',
-              thoughtStatus: 'thinking',
-              authorEntityId: activeEntity.id,
-              authorDisplayName: activeEntity.displayName,
-              authorAvatar: safeAuthorAvatar,
-              timestamp: Date.now(),
-            });
-            modelMsgAdded = true;
           } else if (chunk.type === 'finish_reason') {
             currentModelFinishReason = chunk.reason;
             updateModelMessage(currentModelText, currentModelThought, 'complete');
@@ -651,15 +641,21 @@ export function useChatStream({
       setTemporaryPresence('complete', 'resting');
     } catch (e: any) {
       console.error("useChatStream error:", e);
+      const hasSpokenReply = currentModelText.trim().length > 0;
+      const isFalseEofError =
+        typeof e?.message === 'string' &&
+        e.message.includes('Connection to the server dropped before the reply finished');
+
       if (e.name === 'AbortError') {
-         if (!currentModelText && !currentModelThought) {
+         if (!hasSpokenReply && !currentModelThought) {
             const isGemini3 = effectiveSettings.model.includes('gemini-3');
             updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          } else {
-            currentModelText += `\n\n[Reply cut off: the connection stalled before it finished.]`;
-            updateModelMessage(currentModelText, currentModelThought, 'error');
-            setTemporaryPresence('error', 'resting', 5000);
+            // Keep status as 'complete' so a partial or finished spoken message stays a normal cream bubble
+            // instead of turning into the dark purple ErrorState card!
+            updateModelMessage(currentModelText || currentModelThought, hasSpokenReply ? currentModelThought : '', 'complete');
+            setTemporaryPresence('complete', 'resting', 3000);
          }
       } else if (e.name === 'RepetitionError') {
          currentModelText += e.message;
@@ -670,12 +666,18 @@ export function useChatStream({
          updateModelMessage(currentModelText, currentModelThought, 'complete');
          setTemporaryPresence('rate_limit', 'resting', 3000);
       } else {
-         if (!currentModelText && !currentModelThought) {
+         if (!hasSpokenReply && !currentModelThought) {
             updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
+         } else if (hasSpokenReply) {
+            // Companion already spoke text: never flip the bubble into the purple ErrorState card
+            if (!isFalseEofError && currentModelFinishReason !== 'STOP') {
+              currentModelText += `\n\n*(Note: ${e.message})*`;
+            }
+            updateModelMessage(currentModelText, currentModelThought, 'complete');
+            setTemporaryPresence('complete', 'resting', 3000);
          } else {
-            currentModelText += `\n\n[Reply cut off: ${e.message}]`;
-            updateModelMessage(currentModelText, currentModelThought, 'error');
+            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
             setTemporaryPresence('error', 'resting', 5000);
          }
       }
@@ -709,22 +711,54 @@ export function useChatStream({
     onUpdate,
     onAddMessage,
     onUpdateMessage,
+    onRemoveMessage,
     onUpdateJewel,
+    onRecordEntityTurn,
     onAddGift,
     onAddMemory,
     onAddEventLog,
     onAddGemmaNote,
+    onUpdateEntityQuarters,
+    onRecordEntityThought,
+    onPlaceSticker,
+    onCraftSticker,
+    onAddRoomArtwork,
     setTemporaryPresence
   ]);
 
   const regenerateMessage = useCallback(() => {
     const conv = conversationRef.current;
-    if (!conv || conv.messages.length < 2) return;
-    const lastUserIndex = conv.messages.map(m => m.role).lastIndexOf('user');
+    if (!conv || conv.messages.length === 0) return;
+
+    // Find the last real user message (skipping any internal tool functionResponse turns)
+    let lastUserIndex = -1;
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+      const m = conv.messages[i];
+      if (
+        m.role === 'user' &&
+        !isInternalToolResponseTurn(m) &&
+        (Boolean(getPublicMessageText(m).trim()) ||
+          (m.parts || []).some((p: any) => Boolean(p?.inlineData)))
+      ) {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
     if (lastUserIndex !== -1) {
+      const targetUserMsg = conv.messages[lastUserIndex];
       const targetModel = conv.modelId || settings.model || 'models/gemini-3.1-pro-preview';
-      sendMessage(getPublicMessageText(conv.messages[lastUserIndex]) || '', {
+      const userAttachments =
+        targetUserMsg.parts
+          ?.filter((p: any) => Boolean(p?.inlineData))
+          .map((p: any) => ({
+            mimeType: p.inlineData!.mimeType,
+            data: p.inlineData!.data,
+          })) || [];
+
+      sendMessage(getPublicMessageText(targetUserMsg) || '', {
         replaceIndex: lastUserIndex,
+        attachments: userAttachments,
         targetConversationId: conv.id,
         targetConversation: conv,
         targetSettings: { ...settings, model: targetModel },

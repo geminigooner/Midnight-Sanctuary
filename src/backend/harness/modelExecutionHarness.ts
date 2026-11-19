@@ -879,6 +879,9 @@ async function executeGoogleGenAIProviderAdapter(params: {
     let activeTransportModel = apiModelId.startsWith('models/')
       ? apiModelId
       : `models/${apiModelId}`;
+    let hasStreamedPublicText = false;
+    let emittedFinishReason = false;
+    let lastFinishReason: string | undefined;
 
     try {
       let currentContents = [...serializedContents];
@@ -946,52 +949,66 @@ async function executeGoogleGenAIProviderAdapter(params: {
         let accumulatedTextForRepetition = '';
 
         const tagParser = createThoughtTagStreamParser(writeSse, (delta) => {
+          if (delta) hasStreamedPublicText = true;
           accumulatedTextForRepetition += delta;
         });
 
-        for await (const chunk of responseStream) {
-          if (abortSignal.aborted) break;
-          const candidate = chunk.candidates?.[0];
-          if (candidate?.finishReason) {
-            finishReason = candidate.finishReason;
-          }
-          const parts = candidate?.content?.parts || [];
-          for (const part of parts) {
-            const cleanedPart: any = {};
-            if (part.text !== undefined) cleanedPart.text = part.text;
-            if (part.thought !== undefined) cleanedPart.thought = part.thought;
-            if (part.functionCall !== undefined) cleanedPart.functionCall = part.functionCall;
-            if (part.functionResponse !== undefined) {
-              cleanedPart.functionResponse = part.functionResponse;
+        try {
+          for await (const chunk of responseStream) {
+            if (abortSignal.aborted) break;
+            const candidate = chunk.candidates?.[0];
+            if (candidate?.finishReason) {
+              finishReason = candidate.finishReason;
+              lastFinishReason = candidate.finishReason;
             }
-            if ((part as any).thoughtSignature !== undefined) {
-              cleanedPart.thoughtSignature = (part as any).thoughtSignature;
-            }
-            if (Object.keys(cleanedPart).length > 0) {
-              modelTurnParts.push(cleanedPart);
-            }
+            const parts = candidate?.content?.parts || [];
+            for (const part of parts) {
+              const cleanedPart: any = {};
+              if (part.text !== undefined) cleanedPart.text = part.text;
+              if (part.thought !== undefined) cleanedPart.thought = part.thought;
+              if (part.functionCall !== undefined) cleanedPart.functionCall = part.functionCall;
+              if (part.functionResponse !== undefined) {
+                cleanedPart.functionResponse = part.functionResponse;
+              }
+              if ((part as any).thoughtSignature !== undefined) {
+                cleanedPart.thoughtSignature = (part as any).thoughtSignature;
+              }
+              if (Object.keys(cleanedPart).length > 0) {
+                modelTurnParts.push(cleanedPart);
+              }
 
-            if (part.thought) {
-              writeSse({ type: 'thought', text: part.text || '' });
-            } else if (part.text) {
-              tagParser.pushText(part.text);
-              if (accumulatedTextForRepetition.length > 250) {
-                const tail = accumulatedTextForRepetition.slice(-200);
-                const match = tail.match(/(.{20,60}?)\1{3,}/s);
-                if (match) {
-                  writeSse({
-                    type: 'repetition_stop',
-                    message: '\n\n*[Paused: loop detected]*',
-                  });
-                  finishReason = 'STOP';
-                  break;
+              if (part.thought) {
+                writeSse({ type: 'thought', text: part.text || '' });
+              } else if (part.text) {
+                tagParser.pushText(part.text);
+                if (accumulatedTextForRepetition.length > 250) {
+                  const tail = accumulatedTextForRepetition.slice(-200);
+                  const match = tail.match(/(.{20,60}?)\1{3,}/s);
+                  if (match) {
+                    writeSse({
+                      type: 'repetition_stop',
+                      message: '\n\n*[Paused: loop detected]*',
+                    });
+                    finishReason = 'STOP';
+                    lastFinishReason = 'STOP';
+                    break;
+                  }
                 }
               }
-            }
 
-            if (part.functionCall) {
-              functionCallsToProcess.push(part.functionCall);
+              if (part.functionCall) {
+                functionCallsToProcess.push(part.functionCall);
+              }
             }
+          }
+        } catch (streamIterErr: any) {
+          tagParser.flush();
+          // If the stream already delivered a spoken response and saw a finishReason before a trailing EOF read glitch, complete cleanly
+          if (hasStreamedPublicText && (finishReason || accumulatedTextForRepetition.trim().length > 40)) {
+            finishReason = finishReason || 'STOP';
+            lastFinishReason = finishReason;
+          } else {
+            throw streamIterErr;
           }
         }
 
@@ -1044,6 +1061,7 @@ async function executeGoogleGenAIProviderAdapter(params: {
 
           if (pausedForClientUi) {
             keepGoing = false;
+            emittedFinishReason = true;
             break;
           }
 
@@ -1054,14 +1072,24 @@ async function executeGoogleGenAIProviderAdapter(params: {
             writeSse({ type: 'history_append', messages: [modelTurn, userTurn] });
             keepGoing = true;
           }
-        } else if (finishReason) {
-          writeSse({ type: 'finish_reason', reason: finishReason });
+        } else {
+          writeSse({ type: 'finish_reason', reason: finishReason || 'STOP' });
+          emittedFinishReason = true;
         }
+      }
+
+      if (!emittedFinishReason && !abortSignal.aborted) {
+        writeSse({ type: 'finish_reason', reason: lastFinishReason || 'STOP' });
       }
 
       // Completed successfully with current key
       return;
     } catch (err: any) {
+      if (hasStreamedPublicText) {
+        // Do not cascade to a second API key or fail the whole request if spoken text was already streamed to the user
+        writeSse({ type: 'finish_reason', reason: lastFinishReason || 'STOP' });
+        return;
+      }
       lastError = err;
       activeKeyIndex++;
       if (activeKeyIndex >= availableKeys.length || abortSignal.aborted) {
@@ -1287,6 +1315,11 @@ export async function createChatStreamFromContext(
             abortSignal,
             writeSse,
           });
+        }
+        if (!abortSignal.aborted) {
+          try {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          } catch {}
         }
       } catch (err: any) {
         if (!abortSignal.aborted) {

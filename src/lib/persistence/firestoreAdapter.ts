@@ -738,14 +738,16 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const allMsgs = context.conversationMessages || [];
           const previewMessages = deriveConsistentPreviewMessages(allMsgs, safeConvId, deletedSet);
 
-          const { isDeleted: _ignored, previewMessages: _pIgnored, ...cleanMeta } = convMeta;
           await setDoc(
             convRef,
             removeUndefined({
-              ...cleanMeta,
               id: safeConvId,
-              title: convMeta.title || 'Untitled Sanctuary',
+              title: (convMeta.title || 'Untitled Sanctuary').slice(0, 500),
               modelId: convMeta.modelId || 'models/gemini-3.1-pro-preview',
+              type: convMeta.type === 'group' ? 'group' : 'direct',
+              participantEntityIds: Array.isArray(convMeta.participantEntityIds)
+                ? convMeta.participantEntityIds.slice(0, 20)
+                : undefined,
               createdAt: convMeta.createdAt || convMeta.updatedAt || mutation.clientTimestamp,
               updatedAt: convMeta.updatedAt || mutation.clientTimestamp,
               revision,
@@ -781,7 +783,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               removeUndefined({
                 id: safeMsgId,
                 conversationId: safeConvId,
-                role: payload?.role || 'user',
+                role: payload?.role === 'model' ? 'model' : 'user',
                 parts: [{ text: '' }],
                 timestamp: payload?.timestamp || mutation.clientTimestamp,
                 revision,
@@ -795,10 +797,36 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
             batch.set(
               msgRef,
               removeUndefined({
-                ...normalized,
                 id: safeMsgId,
                 conversationId: safeConvId,
+                role: normalized.role === 'model' ? 'model' : 'user',
+                parts:
+                  Array.isArray(normalized.parts) && normalized.parts.length > 0
+                    ? normalized.parts.slice(0, 50)
+                    : [{ text: normalized.publicText || '' }],
+                timestamp: normalized.timestamp || mutation.clientTimestamp,
                 revision,
+                publicText: normalized.publicText,
+                thoughtText: normalized.thoughtText,
+                thoughtStatus: normalized.thoughtStatus,
+                finishReason: normalized.finishReason,
+                backend: normalized.backend,
+                reaction: normalized.reaction,
+                searchResults: Array.isArray(normalized.searchResults)
+                  ? normalized.searchResults.slice(0, 20)
+                  : undefined,
+                generatedImages: Array.isArray(normalized.generatedImages)
+                  ? normalized.generatedImages.slice(0, 10)
+                  : undefined,
+                scribbles: Array.isArray(normalized.scribbles)
+                  ? normalized.scribbles.slice(0, 10)
+                  : undefined,
+                musicTracks: Array.isArray(normalized.musicTracks)
+                  ? normalized.musicTracks.slice(0, 10)
+                  : undefined,
+                authorEntityId: normalized.authorEntityId,
+                authorDisplayName: normalized.authorDisplayName,
+                authorAvatar: normalized.authorAvatar,
                 isDeleted: false,
               }),
               { merge: true }
@@ -809,7 +837,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
             convRef,
             removeUndefined({
               id: safeConvId,
-              ...(convMeta?.title ? { title: convMeta.title } : {}),
+              ...(convMeta?.title ? { title: convMeta.title.slice(0, 500) } : {}),
               ...(convMeta?.modelId ? { modelId: convMeta.modelId } : {}),
               ...(convMeta?.createdAt ? { createdAt: convMeta.createdAt } : {}),
               updatedAt: convMeta?.updatedAt || mutation.clientTimestamp,
@@ -828,30 +856,76 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           const safeConvId = ensureValidDocId(mutation.parentId || payload?.conversationId, 'conv');
           const safeSumId = ensureValidDocId(mutation.entityId, 'sum');
           const sumRef = doc(db, 'users', uid, 'conversations', safeConvId, 'summaries', safeSumId);
+          const rawEntityId = payload?.entityId || payload?.ScopeEntityId;
+          const resolvedScope =
+            payload?.scope === 'group' || rawEntityId === 'shared_group' ? 'group' : 'direct';
+          const resolvedSegmentIndex =
+            typeof payload?.segmentIndex === 'number'
+              ? payload.segmentIndex
+              : typeof payload?.startTurnIndex === 'number'
+              ? Math.max(0, Math.floor(payload.startTurnIndex / 30))
+              : 0;
+
           if (operation === 'delete') {
             await setDoc(
               sumRef,
               removeUndefined({
                 id: safeSumId,
                 conversationId: safeConvId,
-                narrativeSummary: '',
-                createdAt: mutation.clientTimestamp,
+                scope: resolvedScope,
+                segmentIndex: resolvedSegmentIndex,
+                narrativeSummary: '[deleted]',
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
                 revision,
-                isDeleted: true,
-                deletedAt: mutation.clientTimestamp,
               }),
               { merge: true }
             );
             return;
           }
+
           await setDoc(
             sumRef,
             removeUndefined({
-              ...payload,
               id: safeSumId,
               conversationId: safeConvId,
+              entityId: typeof rawEntityId === 'string' ? rawEntityId.slice(0, 128) : undefined,
+              scope: resolvedScope,
+              participantEntityIds: Array.isArray(payload?.participantEntityIds)
+                ? payload.participantEntityIds.slice(0, 20)
+                : undefined,
+              segmentIndex: resolvedSegmentIndex,
+              startMessageId: payload?.startMessageId,
+              endMessageId: payload?.endMessageId,
+              startTimestamp: payload?.startTimestamp,
+              endTimestamp: payload?.endTimestamp,
+              messageCount:
+                typeof payload?.messageCount === 'number' ? payload.messageCount : undefined,
+              narrativeSummary: (payload?.narrativeSummary || 'Conversation segment summary.').slice(
+                0,
+                8000
+              ),
+              keyEventsAndDecisions: Array.isArray(payload?.keyEventsAndDecisions)
+                ? payload.keyEventsAndDecisions.slice(0, 30)
+                : [],
+              userPreferencesAndFacts: Array.isArray(payload?.userPreferencesAndFacts)
+                ? payload.userPreferencesAndFacts.slice(0, 30)
+                : [],
+              unresolvedThreads: Array.isArray(payload?.unresolvedThreads)
+                ? payload.unresolvedThreads.slice(0, 30)
+                : [],
+              emotionalArc:
+                typeof payload?.emotionalArc === 'string'
+                  ? payload.emotionalArc.slice(0, 1000)
+                  : undefined,
+              embedding: Array.isArray(payload?.embedding)
+                ? payload.embedding.slice(0, 3072)
+                : undefined,
+              sourceHash:
+                typeof payload?.sourceHash === 'string'
+                  ? payload.sourceHash.slice(0, 128)
+                  : undefined,
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
               revision,
-              isDeleted: false,
             }),
             { merge: true }
           );
@@ -879,8 +953,45 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           await setDoc(
             compRef,
             removeUndefined({
-              ...payload,
               id: canonicalId,
+              apiModelId: payload?.apiModelId,
+              displayName: payload?.displayName,
+              roleTitle: payload?.roleTitle,
+              avatarEmoji: payload?.avatarEmoji,
+              avatarUrl: payload?.avatarUrl,
+              avatarAssetId: payload?.avatarAssetId,
+              themeColor: payload?.themeColor,
+              accentColor: payload?.accentColor,
+              typingIndicator: payload?.typingIndicator,
+              isPrimaryRoster: payload?.isPrimaryRoster,
+              bio: typeof payload?.bio === 'string' ? payload.bio.slice(0, 8000) : undefined,
+              moodStatus: payload?.moodStatus,
+              currentActivity: payload?.currentActivity,
+              roomDecor: payload?.roomDecor,
+              runtimeConfig: payload?.runtimeConfig,
+              resonanceScore: payload?.resonanceScore,
+              favoriteGiftIds: Array.isArray(payload?.favoriteGiftIds)
+                ? payload.favoriteGiftIds.slice(0, 200)
+                : undefined,
+              personalThoughts: Array.isArray(payload?.personalThoughts)
+                ? payload.personalThoughts.slice(0, 50)
+                : undefined,
+              bondState: payload?.bondState,
+              observations: Array.isArray(payload?.observations)
+                ? payload.observations.slice(0, 100)
+                : undefined,
+              relationshipEvents: Array.isArray(payload?.relationshipEvents)
+                ? payload.relationshipEvents.slice(0, 100)
+                : undefined,
+              fulfilledDesires: Array.isArray(payload?.fulfilledDesires)
+                ? payload.fulfilledDesires.slice(0, 200)
+                : undefined,
+              roomProps: Array.isArray(payload?.roomProps)
+                ? payload.roomProps.slice(0, 100)
+                : undefined,
+              diaryEntries: Array.isArray(payload?.diaryEntries)
+                ? payload.diaryEntries.slice(0, 100)
+                : undefined,
               revision,
               updatedAt: mutation.clientTimestamp,
               isDeleted: false,
@@ -913,7 +1024,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               memRef,
               removeUndefined({
                 id: safeMemId,
-                content: payload?.content || '[deleted]',
+                content: (payload?.content || '[deleted]').slice(0, 4000),
                 createdAt: payload?.createdAt || mutation.clientTimestamp,
                 scope: 'companion',
                 entityId: canonicalCompId,
@@ -931,12 +1042,21 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           await setDoc(
             memRef,
             removeUndefined({
-              ...payload,
               id: safeMemId,
+              content: (payload?.content || '[memory]').slice(0, 4000),
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
               scope: 'companion',
               entityId: canonicalCompId,
               modelId: canonicalCompId,
               author: 'model',
+              origin: payload?.origin,
+              caption: payload?.caption,
+              isLocked: payload?.isLocked,
+              lockReason: payload?.lockReason,
+              memoryType: payload?.memoryType,
+              embedding: Array.isArray(payload?.embedding)
+                ? payload.embedding.slice(0, 3072)
+                : undefined,
               revision,
               updatedAt: mutation.clientTimestamp,
               isDeleted: false,
@@ -954,7 +1074,7 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               memRef,
               removeUndefined({
                 id: safeMemId,
-                content: payload?.content || '[deleted]',
+                content: (payload?.content || '[deleted]').slice(0, 4000),
                 createdAt: payload?.createdAt || mutation.clientTimestamp,
                 scope: payload?.scope === 'legacy' ? 'legacy' : 'shared',
                 revision,
@@ -969,9 +1089,21 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           await setDoc(
             memRef,
             removeUndefined({
-              ...payload,
               id: safeMemId,
+              content: (payload?.content || '[memory]').slice(0, 4000),
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
               scope: payload?.scope === 'legacy' ? 'legacy' : 'shared',
+              entityId: payload?.entityId,
+              origin: payload?.origin,
+              author: payload?.author === 'model' ? 'model' : 'user',
+              modelId: payload?.modelId,
+              caption: payload?.caption,
+              isLocked: payload?.isLocked,
+              lockReason: payload?.lockReason,
+              memoryType: payload?.memoryType,
+              embedding: Array.isArray(payload?.embedding)
+                ? payload.embedding.slice(0, 3072)
+                : undefined,
               revision,
               updatedAt: mutation.clientTimestamp,
               isDeleted: false,
@@ -990,9 +1122,9 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
               removeUndefined({
                 id: safeGiftId,
                 from: payload?.from || 'Companion',
-                content: payload?.content || '[deleted]',
+                content: (payload?.content || '[deleted]').slice(0, 10000),
                 gift_type: payload?.gift_type || 'keepsake',
-                reason: payload?.reason || '',
+                reason: payload?.reason ? String(payload.reason).slice(0, 4000) : '',
                 revision,
                 timestamp: payload?.timestamp || mutation.clientTimestamp,
                 deletedAt: mutation.clientTimestamp,
@@ -1005,10 +1137,18 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           await setDoc(
             giftRef,
             removeUndefined({
-              ...payload,
               id: safeGiftId,
-              revision,
+              from: payload?.from || 'Companion',
+              content: (payload?.content || '').slice(0, 10000),
+              gift_type: payload?.gift_type || 'keepsake',
+              reason: payload?.reason ? String(payload.reason).slice(0, 4000) : '',
               timestamp: payload?.timestamp || mutation.clientTimestamp,
+              inlineData: payload?.inlineData,
+              scribble: payload?.scribble,
+              musicTrack: payload?.musicTrack,
+              modelId: payload?.modelId,
+              targetModelId: payload?.targetModelId,
+              revision,
               isDeleted: false,
             }),
             { merge: true }
@@ -1019,17 +1159,52 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
         case 'media_asset': {
           const safeAssetId = ensureValidDocId(mutation.entityId, 'media');
           const assetRef = doc(db, 'users', uid, 'mediaAssets', safeAssetId);
+          const mapMediaCategory = (cat?: string, hasEntity?: boolean): string => {
+            switch (cat) {
+              case 'user_avatar':
+              case 'companion_avatar':
+              case 'message_attachment':
+              case 'generated_image':
+              case 'room_decor':
+              case 'gift_media':
+              case 'audio_track':
+                return cat;
+              case 'avatar':
+                return hasEntity ? 'companion_avatar' : 'user_avatar';
+              case 'attachment':
+                return 'message_attachment';
+              case 'audio':
+                return 'audio_track';
+              default:
+                return 'message_attachment';
+            }
+          };
+          const rawEntityId = payload?.entityId || payload?.ownerEntityId;
+          const firestoreCategory = mapMediaCategory(payload?.category, Boolean(rawEntityId));
+          const stringRefs = Array.isArray(payload?.references)
+            ? payload.references
+                .map((r: any) =>
+                  typeof r === 'string'
+                    ? r
+                    : r && typeof r === 'object'
+                    ? `${r.ownerType || 'ref'}:${r.ownerId || ''}`
+                    : ''
+                )
+                .filter(Boolean)
+                .slice(0, 500)
+            : [];
+
           if (operation === 'delete') {
             await setDoc(
               assetRef,
               removeUndefined({
                 id: safeAssetId,
-                uid,
+                ownerUid: uid,
                 sha256: payload?.sha256 || safeAssetId,
                 mimeType: payload?.mimeType || 'application/octet-stream',
-                sizeBytes: payload?.sizeBytes || 0,
-                category: payload?.category || 'attachment',
-                storageBackend: payload?.storageBackend || 'vault_chunked',
+                byteSize: payload?.byteSize ?? payload?.sizeBytes ?? 0,
+                category: firestoreCategory,
+                storagePath: payload?.storagePath || `users/${uid}/blobs/${safeAssetId}`,
                 references: [],
                 createdAt: payload?.createdAt || mutation.clientTimestamp,
                 updatedAt: mutation.clientTimestamp,
@@ -1044,11 +1219,22 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           await setDoc(
             assetRef,
             removeUndefined({
-              ...payload,
               id: safeAssetId,
-              uid,
-              revision,
+              ownerUid: uid,
+              entityId: typeof rawEntityId === 'string' ? rawEntityId.slice(0, 128) : undefined,
+              category: firestoreCategory,
+              mimeType: payload?.mimeType || 'image/png',
+              byteSize: payload?.byteSize ?? payload?.sizeBytes ?? 0,
+              sha256: payload?.sha256 || safeAssetId,
+              storagePath: payload?.storagePath || `users/${uid}/blobs/${safeAssetId}`,
+              downloadUrl:
+                typeof payload?.downloadUrl === 'string'
+                  ? payload.downloadUrl.slice(0, 900000)
+                  : undefined,
+              references: stringRefs,
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
               updatedAt: mutation.clientTimestamp,
+              revision,
               isDeleted: false,
             }),
             { merge: true }

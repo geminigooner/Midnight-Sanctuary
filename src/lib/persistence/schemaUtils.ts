@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from '../firebase';
-import { Message } from '../types';
+import { Message, stripFalseCutoffTrailer } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -112,10 +112,50 @@ export function normalizeMessageSchema(
   const deterministicFallbackId = `msg-${safeConvId}-${indexFallback}-${resolvedTimestamp}`;
   const safeId = ensureValidDocId(rawMsg?.id || deterministicFallbackId, 'msg');
 
-  const safeParts =
+  let wasHealed = false;
+  let cleanedPublicText = rawMsg?.publicText;
+  if (typeof cleanedPublicText === 'string' && cleanedPublicText.length > 0) {
+    const healed = stripFalseCutoffTrailer(cleanedPublicText);
+    cleanedPublicText = healed.text;
+    if (healed.wasHealed) wasHealed = true;
+  }
+
+  const rawParts =
     Array.isArray(rawMsg?.parts) && rawMsg.parts.length > 0
       ? rawMsg.parts
-      : [{ text: typeof rawMsg?.publicText === 'string' ? rawMsg.publicText : '' }];
+      : [{ text: typeof cleanedPublicText === 'string' ? cleanedPublicText : '' }];
+
+  const safeParts = rawParts.map((p: any) => {
+    if (p && typeof p.text === 'string' && !p.thought) {
+      const healedPart = stripFalseCutoffTrailer(p.text);
+      if (healedPart.wasHealed) {
+        wasHealed = true;
+        return { ...p, text: healedPart.text };
+      }
+    }
+    return p;
+  });
+
+  const nonThoughtText =
+    typeof cleanedPublicText === 'string' && cleanedPublicText.trim().length > 0
+      ? cleanedPublicText.trim()
+      : safeParts
+          .filter((p: any) => p && !p.thought && typeof p.text === 'string')
+          .map((p: any) => p.text)
+          .join('')
+          .trim();
+
+  const isActualErrorOnly =
+    nonThoughtText.startsWith('[Error:') ||
+    nonThoughtText.startsWith('[Request timed out') ||
+    nonThoughtText.startsWith('[The model returned an empty response');
+
+  const healedThoughtStatus =
+    rawMsg?.role === 'model' &&
+    rawMsg?.thoughtStatus === 'error' &&
+    (wasHealed || (nonThoughtText.length > 0 && !isActualErrorOnly))
+      ? 'complete'
+      : rawMsg?.thoughtStatus;
 
   return {
     ...(rawMsg || {}),
@@ -123,6 +163,8 @@ export function normalizeMessageSchema(
     conversationId: safeConvId,
     role: rawMsg?.role === 'model' ? 'model' : 'user',
     parts: safeParts,
+    ...(cleanedPublicText !== undefined ? { publicText: cleanedPublicText } : {}),
+    ...(healedThoughtStatus !== undefined ? { thoughtStatus: healedThoughtStatus } : {}),
     timestamp: resolvedTimestamp,
   };
 }

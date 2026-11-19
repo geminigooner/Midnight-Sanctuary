@@ -132,6 +132,7 @@ export async function* streamChat(
 
   const payloadBody = {
     conversationId,
+    clientTranscriptAuthoritative: true,
     model: settings.model,
     temperature: settings.temperature,
     topP: settings.topP,
@@ -203,60 +204,100 @@ export async function* streamChat(
   const decoder = new TextDecoder();
   let buffer = '';
   let sawDone = false;
+  let receivedAnyContent = false;
+
+  const processLine = (rawLine: string): ChatStreamEvent | 'DONE' | null => {
+    const line = rawLine.trim();
+    if (!line.startsWith('data: ')) return null;
+    const dataStr = line.slice(6).trim();
+    if (dataStr === '[DONE]') {
+      sawDone = true;
+      return 'DONE';
+    }
+    try {
+      const data = JSON.parse(dataStr);
+      if (data.error === 'repetition_loop') {
+        throw new RepetitionError(
+          data.text || '\n\n[Generation stopped: repetition loop detected.]'
+        );
+      }
+      if (data.type === 'rate_limit') {
+        throw new RateLimitError(data.message || 'Rate limit exceeded');
+      }
+      if (data.error) {
+        throw new APIError(
+          typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+        );
+      }
+      if (data.type === 'finish_reason' || data.type === 'client_tool_call') {
+        sawDone = true;
+        receivedAnyContent = true;
+      }
+      if (data.type === 'text') {
+        receivedAnyContent = true;
+        return { type: 'text', text: data.text };
+      } else if (data.type) {
+        if (data.type !== 'backend') {
+          receivedAnyContent = true;
+        }
+        return data as ChatStreamEvent;
+      } else if (data.text) {
+        receivedAnyContent = true;
+        return { type: 'text', text: data.text };
+      }
+    } catch (e) {
+      if (
+        e instanceof RepetitionError ||
+        e instanceof APIError ||
+        e instanceof RateLimitError
+      ) {
+        throw e;
+      }
+    }
+    return null;
+  };
 
   while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await reader.read();
+    } catch (readErr: any) {
+      if (buffer.trim()) {
+        for (const leftover of buffer.split('\n')) {
+          const evt = processLine(leftover);
+          if (evt === 'DONE') return;
+          if (evt) yield evt;
+        }
+      }
+      // If the proxy or mobile HTTP/2 stream closed right after delivering the response,
+      // do not corrupt the already-delivered reply with a false drop error.
+      if ((sawDone || receivedAnyContent) && !abortSignal.aborted) {
+        return;
+      }
+      throw readErr;
+    }
+
+    const { value, done } = readResult;
+    if (done) {
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        for (const leftover of buffer.split('\n')) {
+          const evt = processLine(leftover);
+          if (evt === 'DONE') return;
+          if (evt) yield evt;
+        }
+      }
+      break;
+    }
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
 
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const dataStr = line.slice(6);
-        if (dataStr === '[DONE]') {
-          sawDone = true;
-          return;
-        }
-        try {
-          const data = JSON.parse(dataStr);
-          if (data.error === 'repetition_loop') {
-            throw new RepetitionError(
-              data.text || '\n\n[Generation stopped: repetition loop detected.]'
-            );
-          }
-          if (data.type === 'rate_limit') {
-            throw new RateLimitError(data.message || 'Rate limit exceeded');
-          }
-          if (data.error) {
-            throw new APIError(
-              typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
-            );
-          }
-          if (data.type === 'text') {
-            yield { type: 'text', text: data.text };
-          } else if (data.type) {
-            yield data as ChatStreamEvent;
-          } else if (data.text) {
-            yield { type: 'text', text: data.text };
-          }
-        } catch (e) {
-          if (
-            e instanceof RepetitionError ||
-            e instanceof APIError ||
-            e instanceof RateLimitError
-          ) {
-            throw e;
-          }
-        }
-      }
+      const evt = processLine(line);
+      if (evt === 'DONE') return;
+      if (evt) yield evt;
     }
-  }
-
-  if (!sawDone) {
-    throw new APIError(
-      'Connection to the server dropped before the reply finished. Please try again.'
-    );
   }
 }

@@ -527,9 +527,19 @@ export async function resolveExternalChatContext(
       ? firestoreGifts
       : clientFallback.gifts || [];
 
+  const isClientTranscriptAuthoritative =
+    Boolean(reqBody?.clientTranscriptAuthoritative) && clientMessages.length > 0;
+  const authoritativeClientIds = isClientTranscriptAuthoritative
+    ? new Set(clientMessages.map((m) => m?.id).filter(Boolean))
+    : null;
+
+  const filteredFirestoreMessages = authoritativeClientIds
+    ? firestoreMessages.filter((m) => m && authoritativeClientIds.has(m.id))
+    : firestoreMessages;
+
   const resolvedMessages: Message[] =
-    firestoreMessages.length > 0
-      ? mergeMessages(firestoreMessages, clientMessages, deletedMessageIds)
+    filteredFirestoreMessages.length > 0
+      ? mergeMessages(filteredFirestoreMessages, clientMessages, deletedMessageIds)
       : clientMessages.filter((m) => m && !deletedMessageIds.has(m.id));
 
   const clientSummaries: ConversationSegmentSummary[] = Array.isArray(
