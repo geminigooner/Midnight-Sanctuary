@@ -857,6 +857,198 @@ describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () 
     );
     expect(firstTurnParts[0].text).toContain('inspect_shared_media');
   });
+
+  it('enforces AppStore vault slice CRUD operations and strictly restricts Private collection paths to the authorized entity and user', async () => {
+    const {
+      assertAuthorizedVaultAccess,
+      canAccessVaultPath,
+      resolveVaultCollectionPath,
+      VaultAccessDeniedError,
+      buildNormalizedVaultAsset,
+      buildPrivateFoldersByEntityMap,
+    } = await import('./vaultDomain');
+    const { IDBFactory } = await import('fake-indexeddb');
+    const { IndexedDBVault } = await import('../persistence/indexedDbVault');
+    const { PersistenceCoordinator } = await import('../persistence/persistenceCoordinator');
+
+    // 1. Verify Private vs Shared Firestore collection path resolution
+    const gemmaPath = resolveVaultCollectionPath(
+      'uid-amanda',
+      'private',
+      'gemma-4-26b-a4b-it',
+      { role: 'companion', entityId: 'gemma-2-27b-it' }
+    );
+    expect(gemmaPath.canonicalOwnerEntityId).toBe('gemma-2-27b-it');
+    expect(gemmaPath.collectionPath).toBe(
+      'users/uid-amanda/companions/gemma-2-27b-it/vault'
+    );
+
+    const sharedPath = resolveVaultCollectionPath('uid-amanda', 'shared');
+    expect(sharedPath.collectionPath).toBe('users/uid-amanda/sharedVault');
+
+    // 2. Verify authorization guards allow user and designated entity, but block all other entities
+    expect(
+      canAccessVaultPath({
+        scope: 'private',
+        targetOwnerEntityId: 'gemma-2-27b-it',
+        caller: { role: 'user' },
+        operation: 'create',
+      })
+    ).toBe(true);
+
+    expect(
+      canAccessVaultPath({
+        scope: 'private',
+        targetOwnerEntityId: 'gemma-2-27b-it',
+        caller: { role: 'companion', entityId: 'gemma-4-26b-a4b-it' },
+        operation: 'read',
+      })
+    ).toBe(true);
+
+    // Gemini 3.1 Pro, Gemini 4 Argon, and Gemini 3 Flash MUST be denied access to Gemma's private path
+    for (const peerEntityId of [
+      'gemini-3.1-pro-preview',
+      'gemini-4-argon',
+      'gemini-3-flash-preview',
+    ]) {
+      expect(
+        canAccessVaultPath({
+          scope: 'private',
+          targetOwnerEntityId: 'gemma-2-27b-it',
+          caller: { role: 'companion', entityId: peerEntityId },
+          operation: 'read',
+        })
+      ).toBe(false);
+
+      expect(() =>
+        assertAuthorizedVaultAccess({
+          scope: 'private',
+          targetOwnerEntityId: 'gemma-2-27b-it',
+          caller: { role: 'companion', entityId: peerEntityId },
+          operation: 'update',
+        })
+      ).toThrowError(VaultAccessDeniedError);
+    }
+
+    // All 4 entities and the user have full access to the Shared Sanctuary path
+    for (const entityId of PRIMARY_SOVEREIGN_ENTITY_IDS) {
+      expect(
+        canAccessVaultPath({
+          scope: 'shared',
+          caller: { role: 'companion', entityId },
+          operation: 'read',
+        })
+      ).toBe(true);
+    }
+
+    // 3. Verify full CRUD lifecycle (Create, Read, Update, Promote, Delete) through PersistenceCoordinator & cloud mutations
+    const recordedMutations: any[] = [];
+    const mockCloudAdapter = {
+      subscribeUser: () => () => {},
+      executeMutation: async (_uid: string, mutation: any) => {
+        recordedMutations.push(mutation);
+      },
+    };
+
+    const vault = new IndexedDBVault('sanctuary_vault_crud_test', new IDBFactory());
+    const coord = new PersistenceCoordinator({
+      vault,
+      cloudAdapter: mockCloudAdapter,
+      channelName: null,
+      legacyStorage: null,
+    });
+    await coord.attachUser('uid-amanda');
+
+    // CREATE in Gemma's Private Vault
+    const createdPrivate = buildNormalizedVaultAsset(
+      {
+        id: 'vault-gemma-note-1',
+        scope: 'private',
+        ownerEntityId: 'gemma-2-27b-it',
+        contributedByType: 'user',
+        contributedByName: 'Amanda',
+        mediaCategory: 'note',
+        title: 'Secret K-Pop Choreo Note',
+        caption: 'Only for Gemma and me!',
+      },
+      'gemma-2-27b-it'
+    );
+    await coord.upsertVaultAsset(createdPrivate);
+    await coord.flushJournal();
+
+    // Verify it is stored strictly under Gemma's private folder and not visible in Pro's folder
+    let foldersMap = buildPrivateFoldersByEntityMap(
+      coord.getDomainState().settings.customEntities
+    );
+    expect(foldersMap['gemma-2-27b-it']).toHaveLength(1);
+    expect(foldersMap['gemma-2-27b-it'][0].title).toBe('Secret K-Pop Choreo Note');
+    expect(foldersMap['gemini-3.1-pro-preview']).toHaveLength(0);
+    expect(
+      recordedMutations.some(
+        (m) =>
+          m.entityType === 'companion_vault_asset' &&
+          m.parentId === 'gemma-2-27b-it' &&
+          m.entityId === 'vault-gemma-note-1' &&
+          m.operation === 'upsert'
+      )
+    ).toBe(true);
+
+    // UPDATE in Gemma's Private Vault
+    await coord.upsertVaultAsset({
+      ...createdPrivate,
+      title: 'Updated K-Pop Choreo & Lyrics',
+      caption: 'Added chorus timestamp!',
+      updatedAt: Date.now(),
+    });
+    await coord.flushJournal();
+
+    foldersMap = buildPrivateFoldersByEntityMap(
+      coord.getDomainState().settings.customEntities
+    );
+    expect(foldersMap['gemma-2-27b-it'][0].title).toBe('Updated K-Pop Choreo & Lyrics');
+
+    // PROMOTE / CREATE in Shared Sanctuary Vault
+    await coord.upsertVaultAsset({
+      ...foldersMap['gemma-2-27b-it'][0],
+      scope: 'shared',
+    });
+    await coord.flushJournal();
+
+    expect(coord.getDomainState().settings.sharedVaultItems).toHaveLength(1);
+    expect(
+      recordedMutations.some(
+        (m) =>
+          m.entityType === 'shared_vault_asset' &&
+          m.entityId === 'vault-gemma-note-1' &&
+          m.operation === 'upsert'
+      )
+    ).toBe(true);
+
+    // DELETE from Gemma's Private Vault
+    const deleted = await coord.deleteVaultAsset({
+      scope: 'private',
+      itemId: 'vault-gemma-note-1',
+      ownerEntityId: 'gemma-2-27b-it',
+    });
+    await coord.flushJournal();
+
+    expect(deleted).toBe(true);
+    foldersMap = buildPrivateFoldersByEntityMap(
+      coord.getDomainState().settings.customEntities
+    );
+    expect(foldersMap['gemma-2-27b-it']).toHaveLength(0);
+    expect(
+      recordedMutations.some(
+        (m) =>
+          m.entityType === 'companion_vault_asset' &&
+          m.parentId === 'gemma-2-27b-it' &&
+          m.entityId === 'vault-gemma-note-1' &&
+          m.operation === 'delete'
+      )
+    ).toBe(true);
+
+    coord.destroy();
+  });
 });
 
 

@@ -65,8 +65,12 @@ export function resolveCausalLaneKey(
       return `comp_lane::${m.entityId}`;
     case 'companion_memory':
       return `comp_mem_lane::${m.parentId || 'unknown'}::${m.entityId}`;
+    case 'companion_vault_asset':
+      return `comp_vault_lane::${m.parentId || 'unknown'}::${m.entityId}`;
     case 'shared_memory':
       return `shared_mem_lane::${m.entityId}`;
+    case 'shared_vault_asset':
+      return `shared_vault_lane::${m.entityId}`;
     case 'gift':
       return `gift_lane::${m.entityId}`;
     case 'media_asset':

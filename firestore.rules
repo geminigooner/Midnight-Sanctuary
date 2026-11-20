@@ -268,6 +268,66 @@ service cloud.firestore {
         && (!('deletedByClientId' in data) || isBoundedString(data.deletedByClientId, 128));
     }
 
+    function isValidPrivateVaultAssetDoc(data, companionId, assetId) {
+      return ('id' in data && data.id is string && data.id == assetId && data.id.size() <= 128)
+        && ('scope' in data && data.scope is string && data.scope == 'private')
+        && ('ownerEntityId' in data && data.ownerEntityId is string && data.ownerEntityId == companionId && data.ownerEntityId.size() <= 128)
+        && (!('contributedByType' in data) || (data.contributedByType is string && data.contributedByType in ['user', 'companion']))
+        && (!('contributedByEntityId' in data) || isBoundedString(data.contributedByEntityId, 128))
+        && (!('contributedByName' in data) || isBoundedString(data.contributedByName, 200))
+        && ('mediaCategory' in data && data.mediaCategory is string && data.mediaCategory in ['video', 'image', 'audio', 'note', 'artwork'])
+        && ('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 500)
+        && (!('caption' in data) || isBoundedString(data.caption, 8000))
+        && (!('mimeType' in data) || isBoundedString(data.mimeType, 128))
+        && (!('mediaAssetId' in data) || isBoundedString(data.mediaAssetId, 128))
+        && (!('downloadUrl' in data) || isBoundedString(data.downloadUrl, 900000))
+        && (!('posterDataUrl' in data) || isBoundedString(data.posterDataUrl, 500000))
+        && (!('durationSec' in data) || data.durationSec is number)
+        && (!('byteSize' in data) || data.byteSize is number)
+        && (!('keyframes' in data) || (data.keyframes is list && data.keyframes.size() <= 16))
+        && (!('geminiFileUri' in data) || isBoundedString(data.geminiFileUri, 2000))
+        && (!('geminiFileExpiresAt' in data) || data.geminiFileExpiresAt is number)
+        && (!('acousticTranscript' in data) || isBoundedString(data.acousticTranscript, 50000))
+        && (!('mediaDigest' in data) || isBoundedString(data.mediaDigest, 16000))
+        && (!('textContent' in data) || isBoundedString(data.textContent, 50000))
+        && (!('companionReactions' in data) || (data.companionReactions is list && data.companionReactions.size() <= 30))
+        && ('createdAt' in data && data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number);
+    }
+
+    function isValidSharedVaultAssetDoc(data, assetId) {
+      return ('id' in data && data.id is string && data.id == assetId && data.id.size() <= 128)
+        && ('scope' in data && data.scope is string && data.scope == 'shared')
+        && (!('ownerEntityId' in data) || isBoundedString(data.ownerEntityId, 128))
+        && (!('contributedByType' in data) || (data.contributedByType is string && data.contributedByType in ['user', 'companion']))
+        && (!('contributedByEntityId' in data) || isBoundedString(data.contributedByEntityId, 128))
+        && (!('contributedByName' in data) || isBoundedString(data.contributedByName, 200))
+        && ('mediaCategory' in data && data.mediaCategory is string && data.mediaCategory in ['video', 'image', 'audio', 'note', 'artwork'])
+        && ('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 500)
+        && (!('caption' in data) || isBoundedString(data.caption, 8000))
+        && (!('mimeType' in data) || isBoundedString(data.mimeType, 128))
+        && (!('mediaAssetId' in data) || isBoundedString(data.mediaAssetId, 128))
+        && (!('downloadUrl' in data) || isBoundedString(data.downloadUrl, 900000))
+        && (!('posterDataUrl' in data) || isBoundedString(data.posterDataUrl, 500000))
+        && (!('durationSec' in data) || data.durationSec is number)
+        && (!('byteSize' in data) || data.byteSize is number)
+        && (!('keyframes' in data) || (data.keyframes is list && data.keyframes.size() <= 16))
+        && (!('geminiFileUri' in data) || isBoundedString(data.geminiFileUri, 2000))
+        && (!('geminiFileExpiresAt' in data) || data.geminiFileExpiresAt is number)
+        && (!('acousticTranscript' in data) || isBoundedString(data.acousticTranscript, 50000))
+        && (!('mediaDigest' in data) || isBoundedString(data.mediaDigest, 16000))
+        && (!('textContent' in data) || isBoundedString(data.textContent, 50000))
+        && (!('companionReactions' in data) || (data.companionReactions is list && data.companionReactions.size() <= 30))
+        && ('createdAt' in data && data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('revision' in data) || data.revision is number)
+        && (!('isDeleted' in data) || data.isDeleted is bool)
+        && (!('deletedAt' in data) || data.deletedAt is number);
+    }
+
     // -------------------------------------------------------------------------
     // Collection Match Blocks (Strict UID Ownership — Zero Cross-User Access)
     // -------------------------------------------------------------------------
@@ -436,6 +496,74 @@ service cloud.firestore {
 
           allow delete: if isVerifiedOwner(userId) && isValidId(companionId) && isValidId(memoryId);
         }
+
+        // 5b. Private Model-User Vault Assets (`users/{userId}/companions/{companionId}/vault/{assetId}`)
+        match /vault/{assetId} {
+          allow get: if isOwner(userId) && isValidId(companionId) && isValidId(assetId);
+          allow list: if isOwner(userId) && isValidId(companionId);
+
+          allow create: if isVerifiedOwner(userId)
+            && isValidId(companionId)
+            && isValidId(assetId)
+            && incoming().keys().hasAll(['id', 'scope', 'ownerEntityId', 'mediaCategory', 'title', 'createdAt'])
+            && incoming().keys().hasOnly([
+              'id', 'scope', 'ownerEntityId', 'contributedByType', 'contributedByEntityId',
+              'contributedByName', 'mediaCategory', 'title', 'caption', 'mimeType',
+              'mediaAssetId', 'downloadUrl', 'posterDataUrl', 'durationSec', 'byteSize',
+              'keyframes', 'geminiFileUri', 'geminiFileExpiresAt', 'acousticTranscript',
+              'mediaDigest', 'textContent', 'companionReactions', 'createdAt', 'updatedAt',
+              'revision', 'isDeleted', 'deletedAt'
+            ])
+            && isValidPrivateVaultAssetDoc(incoming(), companionId, assetId);
+
+          allow update: if isVerifiedOwner(userId)
+            && isValidPrivateVaultAssetDoc(incoming(), companionId, assetId)
+            && isValidId(companionId)
+            && isValidId(assetId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'id', 'scope', 'ownerEntityId', 'contributedByType', 'contributedByEntityId',
+              'contributedByName', 'mediaCategory', 'title', 'caption', 'mimeType',
+              'mediaAssetId', 'downloadUrl', 'posterDataUrl', 'durationSec', 'byteSize',
+              'keyframes', 'geminiFileUri', 'geminiFileExpiresAt', 'acousticTranscript',
+              'mediaDigest', 'textContent', 'companionReactions', 'createdAt', 'updatedAt',
+              'revision', 'isDeleted', 'deletedAt'
+            ]);
+
+          allow delete: if isVerifiedOwner(userId) && isValidId(companionId) && isValidId(assetId);
+        }
+      }
+
+      // 5c. Shared Sanctuary Vault Assets (`users/{userId}/sharedVault/{assetId}`)
+      match /sharedVault/{assetId} {
+        allow get: if isOwner(userId) && isValidId(assetId);
+        allow list: if isOwner(userId);
+
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(assetId)
+          && incoming().keys().hasAll(['id', 'scope', 'mediaCategory', 'title', 'createdAt'])
+          && incoming().keys().hasOnly([
+            'id', 'scope', 'ownerEntityId', 'contributedByType', 'contributedByEntityId',
+            'contributedByName', 'mediaCategory', 'title', 'caption', 'mimeType',
+            'mediaAssetId', 'downloadUrl', 'posterDataUrl', 'durationSec', 'byteSize',
+            'keyframes', 'geminiFileUri', 'geminiFileExpiresAt', 'acousticTranscript',
+            'mediaDigest', 'textContent', 'companionReactions', 'createdAt', 'updatedAt',
+            'revision', 'isDeleted', 'deletedAt'
+          ])
+          && isValidSharedVaultAssetDoc(incoming(), assetId);
+
+        allow update: if isVerifiedOwner(userId)
+          && isValidSharedVaultAssetDoc(incoming(), assetId)
+          && isValidId(assetId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'scope', 'ownerEntityId', 'contributedByType', 'contributedByEntityId',
+            'contributedByName', 'mediaCategory', 'title', 'caption', 'mimeType',
+            'mediaAssetId', 'downloadUrl', 'posterDataUrl', 'durationSec', 'byteSize',
+            'keyframes', 'geminiFileUri', 'geminiFileExpiresAt', 'acousticTranscript',
+            'mediaDigest', 'textContent', 'companionReactions', 'createdAt', 'updatedAt',
+            'revision', 'isDeleted', 'deletedAt'
+          ]);
+
+        allow delete: if isVerifiedOwner(userId) && isValidId(assetId);
       }
 
       // 6. Conversations (`users/{userId}/conversations/{conversationId}`)

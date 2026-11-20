@@ -1247,6 +1247,178 @@ export class FirestorePersistenceAdapter implements CloudPersistenceAdapter {
           );
           return;
         }
+
+        case 'companion_vault_asset': {
+          const canonicalCompId = resolveCanonicalEntityId(
+            mutation.parentId || payload?.ownerEntityId || ''
+          );
+          if (!canonicalCompId || canonicalCompId === 'unknown') {
+            throw new Error('ownerEntityId required for private companion vault asset mutation');
+          }
+          const safeCompDocId = ensureValidDocId(canonicalCompId, 'companion');
+          const safeAssetId = ensureValidDocId(mutation.entityId, 'vault');
+          const vaultRef = doc(
+            db,
+            'users',
+            uid,
+            'companions',
+            safeCompDocId,
+            'vault',
+            safeAssetId
+          );
+
+          if (operation === 'delete') {
+            await setDoc(
+              vaultRef,
+              removeUndefined({
+                id: safeAssetId,
+                scope: 'private',
+                ownerEntityId: canonicalCompId,
+                mediaCategory: payload?.mediaCategory || 'note',
+                title: (payload?.title || '[deleted]').slice(0, 500),
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
+            return;
+          }
+
+          await setDoc(
+            vaultRef,
+            removeUndefined({
+              id: safeAssetId,
+              scope: 'private',
+              ownerEntityId: canonicalCompId,
+              contributedByType: payload?.contributedByType === 'companion' ? 'companion' : 'user',
+              contributedByEntityId: payload?.contributedByEntityId,
+              contributedByName: payload?.contributedByName,
+              mediaCategory: payload?.mediaCategory || 'note',
+              title: (payload?.title || 'Sanctuary Asset').slice(0, 500),
+              caption:
+                typeof payload?.caption === 'string' ? payload.caption.slice(0, 8000) : undefined,
+              mimeType: payload?.mimeType,
+              mediaAssetId: payload?.mediaAssetId,
+              downloadUrl:
+                typeof payload?.downloadUrl === 'string'
+                  ? payload.downloadUrl.slice(0, 900000)
+                  : undefined,
+              posterDataUrl:
+                typeof payload?.posterDataUrl === 'string'
+                  ? payload.posterDataUrl.slice(0, 500000)
+                  : undefined,
+              durationSec: payload?.durationSec,
+              byteSize: payload?.byteSize,
+              keyframes: Array.isArray(payload?.keyframes)
+                ? payload.keyframes.slice(0, 16)
+                : undefined,
+              geminiFileUri: payload?.geminiFileUri,
+              geminiFileExpiresAt: payload?.geminiFileExpiresAt,
+              acousticTranscript:
+                typeof payload?.acousticTranscript === 'string'
+                  ? payload.acousticTranscript.slice(0, 50000)
+                  : undefined,
+              mediaDigest:
+                typeof payload?.mediaDigest === 'string'
+                  ? payload.mediaDigest.slice(0, 16000)
+                  : undefined,
+              textContent:
+                typeof payload?.textContent === 'string'
+                  ? payload.textContent.slice(0, 50000)
+                  : undefined,
+              companionReactions: Array.isArray(payload?.companionReactions)
+                ? payload.companionReactions.slice(0, 30)
+                : [],
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
+              updatedAt: payload?.updatedAt || mutation.clientTimestamp,
+              revision,
+              isDeleted: false,
+            }),
+            { merge: true }
+          );
+          return;
+        }
+
+        case 'shared_vault_asset': {
+          const safeAssetId = ensureValidDocId(mutation.entityId, 'vault');
+          const vaultRef = doc(db, 'users', uid, 'sharedVault', safeAssetId);
+
+          if (operation === 'delete') {
+            await setDoc(
+              vaultRef,
+              removeUndefined({
+                id: safeAssetId,
+                scope: 'shared',
+                mediaCategory: payload?.mediaCategory || 'note',
+                title: (payload?.title || '[deleted]').slice(0, 500),
+                createdAt: payload?.createdAt || mutation.clientTimestamp,
+                updatedAt: mutation.clientTimestamp,
+                deletedAt: mutation.clientTimestamp,
+                revision,
+                isDeleted: true,
+              }),
+              { merge: true }
+            );
+            return;
+          }
+
+          await setDoc(
+            vaultRef,
+            removeUndefined({
+              id: safeAssetId,
+              scope: 'shared',
+              ownerEntityId: payload?.ownerEntityId,
+              contributedByType: payload?.contributedByType === 'companion' ? 'companion' : 'user',
+              contributedByEntityId: payload?.contributedByEntityId,
+              contributedByName: payload?.contributedByName,
+              mediaCategory: payload?.mediaCategory || 'note',
+              title: (payload?.title || 'Sanctuary Asset').slice(0, 500),
+              caption:
+                typeof payload?.caption === 'string' ? payload.caption.slice(0, 8000) : undefined,
+              mimeType: payload?.mimeType,
+              mediaAssetId: payload?.mediaAssetId,
+              downloadUrl:
+                typeof payload?.downloadUrl === 'string'
+                  ? payload.downloadUrl.slice(0, 900000)
+                  : undefined,
+              posterDataUrl:
+                typeof payload?.posterDataUrl === 'string'
+                  ? payload.posterDataUrl.slice(0, 500000)
+                  : undefined,
+              durationSec: payload?.durationSec,
+              byteSize: payload?.byteSize,
+              keyframes: Array.isArray(payload?.keyframes)
+                ? payload.keyframes.slice(0, 16)
+                : undefined,
+              geminiFileUri: payload?.geminiFileUri,
+              geminiFileExpiresAt: payload?.geminiFileExpiresAt,
+              acousticTranscript:
+                typeof payload?.acousticTranscript === 'string'
+                  ? payload.acousticTranscript.slice(0, 50000)
+                  : undefined,
+              mediaDigest:
+                typeof payload?.mediaDigest === 'string'
+                  ? payload.mediaDigest.slice(0, 16000)
+                  : undefined,
+              textContent:
+                typeof payload?.textContent === 'string'
+                  ? payload.textContent.slice(0, 50000)
+                  : undefined,
+              companionReactions: Array.isArray(payload?.companionReactions)
+                ? payload.companionReactions.slice(0, 30)
+                : [],
+              createdAt: payload?.createdAt || mutation.clientTimestamp,
+              updatedAt: payload?.updatedAt || mutation.clientTimestamp,
+              revision,
+              isDeleted: false,
+            }),
+            { merge: true }
+          );
+          return;
+        }
       }
     } catch (err: any) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1275,8 +1447,12 @@ function resolveMutationPath(uid: string, m: MutationRecord): string {
       return `users/${uid}/companions/${ensureValidDocId(m.entityId, 'companion')}`;
     case 'companion_memory':
       return `users/${uid}/companions/${ensureValidDocId(m.parentId, 'companion')}/memories/${ensureValidDocId(m.entityId, 'mem')}`;
+    case 'companion_vault_asset':
+      return `users/${uid}/companions/${ensureValidDocId(m.parentId, 'companion')}/vault/${ensureValidDocId(m.entityId, 'vault')}`;
     case 'shared_memory':
       return `users/${uid}/memories/${ensureValidDocId(m.entityId, 'mem')}`;
+    case 'shared_vault_asset':
+      return `users/${uid}/sharedVault/${ensureValidDocId(m.entityId, 'vault')}`;
     case 'gift':
       return `users/${uid}/gifts/${ensureValidDocId(m.entityId, 'gift')}`;
     case 'media_asset':

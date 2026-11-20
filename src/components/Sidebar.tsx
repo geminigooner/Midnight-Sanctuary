@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Conversation } from '../lib/types';
-import { Plus, ShieldCheck, LogIn, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
+import { Plus, ShieldCheck, LogIn, CheckCircle2, Lock, RefreshCw, FolderHeart } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { NebulaArchive } from './NebulaArchive';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
@@ -95,11 +95,21 @@ export function Sidebar() {
           </motion.button>
           <button 
             onClick={() => {
+              if (window.innerWidth < 1024) setSidebarOpen(false);
+              openModalWithOrigin('sanctuaryVault', 'sidebar-vault');
+            }}
+            title="Open Vault Dashboard (Private vs. Shared Folders)"
+            className="px-3.5 py-3 border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all font-bold text-sm flex items-center justify-center bg-[#9D7FE3] text-[#2C194D] cursor-pointer"
+          >
+            <FolderHeart size={18} strokeWidth={2.5} />
+          </button>
+          <button 
+            onClick={() => {
               store.setCurrentId(null);
               if (window.innerWidth < 1024) setSidebarOpen(false);
             }}
             title="Return to Sanctuary Home Hub"
-            className={`px-3.5 py-3 border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all font-bold text-sm flex items-center justify-center ${store.currentId === null ? 'bg-[#9D7FE3] text-[#2C194D]' : 'bg-[#F5E1C8] text-[#2C194D]'}`}
+            className={`px-3.5 py-3 border-[3px] border-[#2C194D] rounded-[20px] shadow-[inset_0_-3px_0_rgba(0,0,0,0.1)] active:shadow-none active:translate-y-1 transition-all font-bold text-sm flex items-center justify-center cursor-pointer ${store.currentId === null ? 'bg-[#B39DE5] text-[#2C194D]' : 'bg-[#F5E1C8] text-[#2C194D]'}`}
           >
             🏠
           </button>

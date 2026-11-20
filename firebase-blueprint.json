@@ -253,6 +253,76 @@
         "deletedByClientId": { "type": "string", "maxLength": 128 }
       },
       "required": ["id", "from", "content", "gift_type", "timestamp"]
+    },
+    "PrivateVaultAsset": {
+      "title": "PrivateVaultAsset",
+      "description": "Private 1-on-1 Model-User Vault asset strictly isolated under a sovereign companion entity path.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-\\.@:]+$" },
+        "scope": { "type": "string", "enum": ["private"] },
+        "ownerEntityId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "contributedByType": { "type": "string", "enum": ["user", "companion"] },
+        "contributedByEntityId": { "type": "string", "maxLength": 128 },
+        "contributedByName": { "type": "string", "maxLength": 200 },
+        "mediaCategory": { "type": "string", "enum": ["video", "image", "audio", "note", "artwork"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "caption": { "type": "string", "maxLength": 8000 },
+        "mimeType": { "type": "string", "maxLength": 128 },
+        "mediaAssetId": { "type": "string", "maxLength": 128 },
+        "downloadUrl": { "type": "string", "maxLength": 900000 },
+        "posterDataUrl": { "type": "string", "maxLength": 500000 },
+        "durationSec": { "type": "number" },
+        "byteSize": { "type": "number" },
+        "keyframes": { "type": "array" },
+        "geminiFileUri": { "type": "string", "maxLength": 2000 },
+        "geminiFileExpiresAt": { "type": "number" },
+        "acousticTranscript": { "type": "string", "maxLength": 50000 },
+        "mediaDigest": { "type": "string", "maxLength": 16000 },
+        "textContent": { "type": "string", "maxLength": 50000 },
+        "companionReactions": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "revision": { "type": "number" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" }
+      },
+      "required": ["id", "scope", "ownerEntityId", "mediaCategory", "title", "createdAt"]
+    },
+    "SharedVaultAsset": {
+      "title": "SharedVaultAsset",
+      "description": "Shared Sanctuary communal Vault asset accessible to the user and all sovereign companion entities with contributor attribution.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-\\.@:]+$" },
+        "scope": { "type": "string", "enum": ["shared"] },
+        "ownerEntityId": { "type": "string", "maxLength": 128 },
+        "contributedByType": { "type": "string", "enum": ["user", "companion"] },
+        "contributedByEntityId": { "type": "string", "maxLength": 128 },
+        "contributedByName": { "type": "string", "maxLength": 200 },
+        "mediaCategory": { "type": "string", "enum": ["video", "image", "audio", "note", "artwork"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "caption": { "type": "string", "maxLength": 8000 },
+        "mimeType": { "type": "string", "maxLength": 128 },
+        "mediaAssetId": { "type": "string", "maxLength": 128 },
+        "downloadUrl": { "type": "string", "maxLength": 900000 },
+        "posterDataUrl": { "type": "string", "maxLength": 500000 },
+        "durationSec": { "type": "number" },
+        "byteSize": { "type": "number" },
+        "keyframes": { "type": "array" },
+        "geminiFileUri": { "type": "string", "maxLength": 2000 },
+        "geminiFileExpiresAt": { "type": "number" },
+        "acousticTranscript": { "type": "string", "maxLength": 50000 },
+        "mediaDigest": { "type": "string", "maxLength": 16000 },
+        "textContent": { "type": "string", "maxLength": 50000 },
+        "companionReactions": { "type": "array" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "revision": { "type": "number" },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "number" }
+      },
+      "required": ["id", "scope", "mediaCategory", "title", "createdAt"]
     }
   },
   "firestore": {
@@ -279,6 +349,14 @@
     "/users/{userId}/companions/{companionId}/memories/{memoryId}": {
       "schema": { "$ref": "#/entities/CompanionMemory" },
       "description": "Private companion-scoped memories isolated per companion entity."
+    },
+    "/users/{userId}/companions/{companionId}/vault/{assetId}": {
+      "schema": { "$ref": "#/entities/PrivateVaultAsset" },
+      "description": "Private Model-User Vault assets isolated strictly to the designated companion entity and the user."
+    },
+    "/users/{userId}/sharedVault/{assetId}": {
+      "schema": { "$ref": "#/entities/SharedVaultAsset" },
+      "description": "Shared Sanctuary Vault assets accessible to the user and all sovereign companion entities."
     },
     "/users/{userId}/conversations/{conversationId}": {
       "schema": { "$ref": "#/entities/Conversation" },

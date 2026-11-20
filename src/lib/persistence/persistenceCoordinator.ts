@@ -14,6 +14,7 @@ import {
   MediaAssetRecord,
   Memory,
   Message,
+  SanctuaryVaultItem,
   UserProfile,
 } from '../types';
 import { IndexedDBVault } from './indexedDbVault';
@@ -96,6 +97,7 @@ export class PersistenceCoordinator {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private isFlushing = false;
   private flushRequestedWhileBusy = false;
+  private activeFlushPromise: Promise<void> | null = null;
   private isDestroyed = false;
   private isOnline =
     typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
@@ -1007,10 +1009,19 @@ export class PersistenceCoordinator {
     }
     if (this.isFlushing) {
       this.flushRequestedWhileBusy = true;
+      if (this.activeFlushPromise) {
+        await this.activeFlushPromise;
+      }
       return;
     }
 
     this.isFlushing = true;
+    const runPromise = this.runFlushLoop();
+    this.activeFlushPromise = runPromise;
+    await runPromise;
+  }
+
+  private async runFlushLoop(): Promise<void> {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -1122,6 +1133,7 @@ export class PersistenceCoordinator {
       }
     } finally {
       this.isFlushing = false;
+      this.activeFlushPromise = null;
       this.scheduleNextRetryIfNeeded();
       this.emitSyncStatus();
     }
@@ -2603,6 +2615,230 @@ export class PersistenceCoordinator {
     const current = getModelEntity(canonicalId, this.getDomainState().settings.customEntities);
     const updated = mutator(current);
     await this.upsertCompanion(canonicalId, updated);
+  }
+
+  public async upsertVaultAsset(item: SanctuaryVaultItem): Promise<SanctuaryVaultItem> {
+    const safeId = ensureValidDocId(item.id, 'vault');
+    const rev = this.nextRevision();
+    const now = item.updatedAt || Date.now();
+
+    if (item.scope === 'private') {
+      const canonicalOwner = canonicalCompanionId(item.ownerEntityId || 'gemini-3.1-pro-preview');
+      const cleanItem: SanctuaryVaultItem = {
+        ...item,
+        id: safeId,
+        scope: 'private',
+        ownerEntityId: canonicalOwner,
+        createdAt: item.createdAt || now,
+        updatedAt: now,
+        isDeleted: false,
+      };
+
+      const currentEntity = getModelEntity(
+        canonicalOwner,
+        this.userState.settings.customEntities
+      );
+      const currentDecor = currentEntity.roomDecor;
+      const existingItems = (currentDecor?.privateVaultItems || []).filter(
+        (x) => x && x.id !== safeId
+      );
+      const nextPrivateItems = [cleanItem, ...existingItems].slice(0, 100);
+      const updatedEntity: ModelEntity = {
+        ...currentEntity,
+        roomDecor: {
+          ...currentDecor,
+          privateVaultItems: nextPrivateItems,
+        },
+      };
+
+      await this.enqueueMutation(
+        {
+          entityType: 'companion_vault_asset',
+          entityId: safeId,
+          parentId: canonicalOwner,
+          operation: 'upsert',
+          payload: cleanItem,
+          revision: rev,
+        },
+        {}
+      );
+
+      await this.updateSettings((prev) => ({
+        ...prev,
+        customEntities: {
+          ...(prev.customEntities || {}),
+          [canonicalOwner]: updatedEntity,
+        },
+      }));
+      await this.upsertCompanion(canonicalOwner, updatedEntity);
+      return cleanItem;
+    }
+
+    const cleanSharedItem: SanctuaryVaultItem = {
+      ...item,
+      id: safeId,
+      scope: 'shared',
+      ownerEntityId: item.ownerEntityId ? canonicalCompanionId(item.ownerEntityId) : undefined,
+      createdAt: item.createdAt || now,
+      updatedAt: now,
+      isDeleted: false,
+    };
+
+    await this.enqueueMutation(
+      {
+        entityType: 'shared_vault_asset',
+        entityId: safeId,
+        operation: 'upsert',
+        payload: cleanSharedItem,
+        revision: rev,
+      },
+      {}
+    );
+
+    await this.updateSettings((prev) => {
+      const existing = (prev.sharedVaultItems || []).filter((x) => x && x.id !== safeId);
+      return {
+        ...prev,
+        sharedVaultItems: [cleanSharedItem, ...existing].slice(0, 150),
+      };
+    });
+
+    return cleanSharedItem;
+  }
+
+  public async deleteVaultAsset(params: {
+    scope: 'private' | 'shared';
+    itemId: string;
+    ownerEntityId?: string;
+  }): Promise<boolean> {
+    const safeId = ensureValidDocId(params.itemId, 'vault');
+    const rev = this.nextRevision();
+    const now = Date.now();
+
+    if (params.scope === 'private') {
+      const canonicalOwner = canonicalCompanionId(
+        params.ownerEntityId || 'gemini-3.1-pro-preview'
+      );
+      const currentEntity = getModelEntity(
+        canonicalOwner,
+        this.userState.settings.customEntities
+      );
+      const currentDecor = currentEntity.roomDecor;
+      const existingItem = (currentDecor?.privateVaultItems || []).find(
+        (x) => x && x.id === safeId
+      );
+
+      await this.cancelPendingMutations(
+        (m) =>
+          m.entityType === 'companion_vault_asset' &&
+          m.parentId === canonicalOwner &&
+          m.entityId === safeId &&
+          m.operation === 'upsert'
+      );
+
+      const fallbackPrivate: SanctuaryVaultItem = {
+        id: safeId,
+        scope: 'private',
+        ownerEntityId: canonicalOwner,
+        contributedByType: 'user',
+        contributedByName: 'Amanda',
+        mediaCategory: 'note',
+        title: 'Deleted Asset',
+        companionReactions: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const tombstonePayload: SanctuaryVaultItem = {
+        ...(existingItem || fallbackPrivate),
+        id: safeId,
+        scope: 'private',
+        ownerEntityId: canonicalOwner,
+        updatedAt: now,
+        isDeleted: true,
+      };
+
+      await this.enqueueMutation(
+        {
+          entityType: 'companion_vault_asset',
+          entityId: safeId,
+          parentId: canonicalOwner,
+          operation: 'delete',
+          payload: tombstonePayload,
+          revision: rev,
+        },
+        {}
+      );
+
+      const nextPrivateItems = (currentDecor?.privateVaultItems || []).filter(
+        (x) => x && x.id !== safeId
+      );
+      const updatedEntity: ModelEntity = {
+        ...currentEntity,
+        roomDecor: {
+          ...currentDecor,
+          privateVaultItems: nextPrivateItems,
+        },
+      };
+
+      await this.updateSettings((prev) => ({
+        ...prev,
+        customEntities: {
+          ...(prev.customEntities || {}),
+          [canonicalOwner]: updatedEntity,
+        },
+      }));
+      await this.upsertCompanion(canonicalOwner, updatedEntity);
+      return true;
+    }
+
+    const existingShared = (this.userState.settings.sharedVaultItems || []).find(
+      (x) => x && x.id === safeId
+    );
+
+    await this.cancelPendingMutations(
+      (m) =>
+        m.entityType === 'shared_vault_asset' &&
+        m.entityId === safeId &&
+        m.operation === 'upsert'
+    );
+
+    const fallbackShared: SanctuaryVaultItem = {
+      id: safeId,
+      scope: 'shared',
+      contributedByType: 'user',
+      contributedByName: 'Amanda',
+      mediaCategory: 'note',
+      title: 'Deleted Asset',
+      companionReactions: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const tombstoneShared: SanctuaryVaultItem = {
+      ...(existingShared || fallbackShared),
+      id: safeId,
+      scope: 'shared',
+      updatedAt: now,
+      isDeleted: true,
+    };
+
+    await this.enqueueMutation(
+      {
+        entityType: 'shared_vault_asset',
+        entityId: safeId,
+        operation: 'delete',
+        payload: tombstoneShared,
+        revision: rev,
+      },
+      {}
+    );
+
+    await this.updateSettings((prev) => ({
+      ...prev,
+      sharedVaultItems: (prev.sharedVaultItems || []).filter((x) => x && x.id !== safeId),
+    }));
+    return true;
   }
 
   public async addMemory(params: {

@@ -275,7 +275,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
       )}
 
       {/* ── CHUNKY TOY-BOX QUICK ACTION HUBS (SHARED-ELEMENT ARCHIVE PORTALS) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 sm:gap-3 w-full max-w-3xl mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2.5 sm:gap-3 w-full max-w-4xl mb-8">
         {/* Hub 1: Sanctuary Quarters */}
         <motion.button
           layoutId={resolveSharedLayoutId('hub-tile-quarters', reducedMotion)}
@@ -299,6 +299,31 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
           </motion.div>
           <span className="text-xs font-extrabold text-[#2d225c]">Quarters</span>
           <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Entities</span>
+        </motion.button>
+
+        {/* Hub 2: Vault Dashboard (Private vs. Shared Folders) */}
+        <motion.button
+          layoutId={resolveSharedLayoutId('hub-tile-vault', reducedMotion)}
+          transition={{ layout: sharedTransition }}
+          style={{ borderRadius: 24 }}
+          whileHover={reducedMotion ? undefined : { y: -2 }}
+          whileTap={reducedMotion ? undefined : { y: 3 }}
+          onClick={() => {
+            triggerHaptic('light');
+            ui.openModalWithOrigin('sanctuaryVault', 'hub-tile-vault');
+          }}
+          className="flex flex-col items-center p-3 sm:p-3.5 rounded-3xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_6px_0_0_#2d225c] active:shadow-[0_2px_0_0_#2d225c] transition-colors text-center group cursor-pointer"
+        >
+          <motion.div
+            layoutId={resolveSharedLayoutId('hub-tile-vault', reducedMotion, 'icon')}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 16 }}
+            className="w-10 h-10 rounded-2xl bg-[#F198B7] border-[2px] border-[#2d225c] flex items-center justify-center mb-1.5 shadow-[0_2px_0_0_#2d225c] group-hover:scale-105 transition-transform"
+          >
+            <FolderHeart className="w-5 h-5 text-[#2d225c]" />
+          </motion.div>
+          <span className="text-xs font-extrabold text-[#2d225c]">Vaults</span>
+          <span className="text-[10px] font-bold text-[#2d225c]/70 mt-0.5">Folders</span>
         </motion.button>
 
         {/* Hub 2: Model Wishes */}

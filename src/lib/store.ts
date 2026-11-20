@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Conversation,
@@ -36,6 +36,17 @@ import {
   recordEntityGiftExchange,
   recordEntityTurnInteraction,
 } from './domains/relationshipDomain';
+import {
+  assertAuthorizedVaultAccess,
+  buildNormalizedVaultAsset,
+  buildPrivateFoldersByEntityMap,
+  canAccessVaultPath,
+  CreateVaultAssetInput,
+  resolveVaultCollectionPath,
+  UpdateVaultAssetInput,
+  VaultCallerContext,
+  VaultStateSlice,
+} from './domains/vaultDomain';
 import { getEmbedding } from './vectorMemory';
 
 let sharedCoordinator: PersistenceCoordinator | null = null;
@@ -925,81 +936,289 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
     [coordinator, user?.uid]
   );
 
-  const addVaultItem = useCallback(
+  // ---------------------------------------------------------------------------
+  // Vault State Slice (CRUD for Private Model-User & Shared Sanctuary Paths)
+  // ---------------------------------------------------------------------------
+
+  const privateFoldersByEntity = useMemo(
+    () => buildPrivateFoldersByEntityMap(settings.customEntities),
+    [settings.customEntities]
+  );
+
+  const sharedSanctuaryItems = useMemo(
+    () =>
+      (settings.sharedVaultItems || [])
+        .filter((item) => item && !item.isDeleted)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+    [settings.sharedVaultItems]
+  );
+
+  const getVaultCollectionPath = useCallback(
     (
-      item: Omit<SanctuaryVaultItem, 'id' | 'createdAt' | 'updatedAt' | 'companionReactions'> & {
-        id?: string;
-      }
-    ): SanctuaryVaultItem => {
-      const now = Date.now();
-      const itemId = item.id || `vault-${uuidv4()}`;
-      const canonicalOwner = item.ownerEntityId
-        ? resolveCanonicalEntityId(item.ownerEntityId)
-        : undefined;
-      const fullItem: SanctuaryVaultItem = {
-        ...item,
-        id: itemId,
-        ownerEntityId: canonicalOwner,
-        companionReactions: [],
-        createdAt: now,
-        updatedAt: now,
-        isDeleted: false,
-      };
+      scope: 'private' | 'shared',
+      ownerEntityId?: string,
+      caller?: VaultCallerContext
+    ) => {
+      const uid = user?.uid || coordinator.getDomainState().uid || 'anonymous_local_vault';
+      return resolveVaultCollectionPath(uid, scope, ownerEntityId, caller);
+    },
+    [user?.uid, coordinator]
+  );
 
-      if (fullItem.scope === 'private' && canonicalOwner) {
-        void coordinator.mutateCompanion(canonicalOwner, (currentEntity) => {
-          const prev = currentEntity.roomDecor?.privateVaultItems || [];
-          const filtered = prev.filter((x) => x.id !== fullItem.id);
-          return {
-            ...currentEntity,
-            roomDecor: {
-              ...currentEntity.roomDecor,
-              privateVaultItems: [fullItem, ...filtered].slice(0, 60),
-            },
-          };
-        });
-      } else {
-        const sharedItem: SanctuaryVaultItem = {
-          ...fullItem,
-          scope: 'shared',
-        };
-        void coordinator.updateSettings((prev) => {
-          const currentShared = prev.sharedVaultItems || [];
-          const filtered = currentShared.filter((x) => x.id !== sharedItem.id);
-          return {
-            ...prev,
-            sharedVaultItems: [sharedItem, ...filtered].slice(0, 80),
-          };
-        });
-      }
+  const createVaultAsset = useCallback(
+    (input: CreateVaultAssetInput, caller?: VaultCallerContext): SanctuaryVaultItem => {
+      const targetScope: 'private' | 'shared' =
+        input.scope === 'private' ? 'private' : 'shared';
 
+      const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+        scope: targetScope,
+        targetOwnerEntityId: input.ownerEntityId,
+        caller: caller || { role: 'user' },
+        operation: 'create',
+      });
+
+      const fullItem = buildNormalizedVaultAsset(
+        {
+          ...input,
+          scope: targetScope,
+        },
+        canonicalOwnerEntityId
+      );
+
+      void coordinator.upsertVaultAsset(fullItem);
       return fullItem;
     },
     [coordinator]
   );
 
+  const readVaultAssets = useCallback(
+    (params: {
+      scope: 'private' | 'shared';
+      ownerEntityId?: string;
+      caller?: VaultCallerContext;
+    }): SanctuaryVaultItem[] => {
+      const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+        scope: params.scope,
+        targetOwnerEntityId: params.ownerEntityId,
+        caller: params.caller || { role: 'user' },
+        operation: 'read',
+      });
+
+      const currentDomain = coordinator.getDomainState();
+      if (params.scope === 'private' && canonicalOwnerEntityId) {
+        const entity = getModelEntity(
+          canonicalOwnerEntityId,
+          currentDomain.settings.customEntities
+        );
+        return (entity.roomDecor?.privateVaultItems || [])
+          .filter((item) => item && !item.isDeleted)
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      }
+
+      return (currentDomain.settings.sharedVaultItems || [])
+        .filter((item) => item && !item.isDeleted)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    },
+    [coordinator]
+  );
+
+  const getVaultAssetById = useCallback(
+    (
+      itemId: string,
+      options?: {
+        scope?: 'private' | 'shared';
+        ownerEntityId?: string;
+        caller?: VaultCallerContext;
+      }
+    ): SanctuaryVaultItem | null => {
+      if (!itemId) return null;
+      const caller = options?.caller || { role: 'user' };
+      const currentDomain = coordinator.getDomainState();
+
+      if (options?.scope === 'private' || options?.ownerEntityId) {
+        const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+          scope: 'private',
+          targetOwnerEntityId: options.ownerEntityId,
+          caller,
+          operation: 'read',
+        });
+        if (!canonicalOwnerEntityId) return null;
+        const entity = getModelEntity(
+          canonicalOwnerEntityId,
+          currentDomain.settings.customEntities
+        );
+        const found = (entity.roomDecor?.privateVaultItems || []).find(
+          (i) => !i.isDeleted && (i.id === itemId || i.mediaAssetId === itemId)
+        );
+        return found || null;
+      }
+
+      if (options?.scope === 'shared') {
+        assertAuthorizedVaultAccess({
+          scope: 'shared',
+          caller,
+          operation: 'read',
+        });
+        const found = (currentDomain.settings.sharedVaultItems || []).find(
+          (i) => !i.isDeleted && (i.id === itemId || i.mediaAssetId === itemId)
+        );
+        return found || null;
+      }
+
+      // Search Shared Sanctuary first
+      const sharedFound = (currentDomain.settings.sharedVaultItems || []).find(
+        (i) => !i.isDeleted && (i.id === itemId || i.mediaAssetId === itemId)
+      );
+      if (sharedFound) {
+        assertAuthorizedVaultAccess({
+          scope: 'shared',
+          caller,
+          operation: 'read',
+        });
+        return sharedFound;
+      }
+
+      // Search Private folders — if found in an entity's private folder, enforce authorization
+      const foldersMap = buildPrivateFoldersByEntityMap(
+        currentDomain.settings.customEntities
+      );
+      for (const [entityId, items] of Object.entries(foldersMap)) {
+        const match = items.find(
+          (i) => !i.isDeleted && (i.id === itemId || i.mediaAssetId === itemId)
+        );
+        if (match) {
+          assertAuthorizedVaultAccess({
+            scope: 'private',
+            targetOwnerEntityId: entityId,
+            caller,
+            operation: 'read',
+          });
+          return match;
+        }
+      }
+
+      return null;
+    },
+    [coordinator]
+  );
+
+  const updateVaultAsset = useCallback(
+    (
+      itemId: string,
+      updates: UpdateVaultAssetInput,
+      options: {
+        scope: 'private' | 'shared';
+        ownerEntityId?: string;
+        caller?: VaultCallerContext;
+      }
+    ): SanctuaryVaultItem | null => {
+      if (!itemId) return null;
+      const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+        scope: options.scope,
+        targetOwnerEntityId: options.ownerEntityId,
+        caller: options.caller || { role: 'user' },
+        operation: 'update',
+      });
+
+      const currentDomain = coordinator.getDomainState();
+      const now = Date.now();
+
+      if (options.scope === 'private' && canonicalOwnerEntityId) {
+        const entity = getModelEntity(
+          canonicalOwnerEntityId,
+          currentDomain.settings.customEntities
+        );
+        const existing = (entity.roomDecor?.privateVaultItems || []).find(
+          (i) => !i.isDeleted && i.id === itemId
+        );
+        if (!existing) return null;
+
+        const updatedItem: SanctuaryVaultItem = {
+          ...existing,
+          ...updates,
+          id: existing.id,
+          scope: 'private',
+          ownerEntityId: canonicalOwnerEntityId,
+          updatedAt: now,
+        };
+        void coordinator.upsertVaultAsset(updatedItem);
+        return updatedItem;
+      }
+
+      const existingShared = (currentDomain.settings.sharedVaultItems || []).find(
+        (i) => !i.isDeleted && i.id === itemId
+      );
+      if (!existingShared) return null;
+
+      const updatedShared: SanctuaryVaultItem = {
+        ...existingShared,
+        ...updates,
+        id: existingShared.id,
+        scope: 'shared',
+        updatedAt: now,
+      };
+      void coordinator.upsertVaultAsset(updatedShared);
+      return updatedShared;
+    },
+    [coordinator]
+  );
+
+  const deleteVaultAsset = useCallback(
+    (params: {
+      scope: 'private' | 'shared';
+      itemId: string;
+      ownerEntityId?: string;
+      caller?: VaultCallerContext;
+    }): boolean => {
+      if (!params.itemId) return false;
+      const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+        scope: params.scope,
+        targetOwnerEntityId: params.ownerEntityId,
+        caller: params.caller || { role: 'user' },
+        operation: 'delete',
+      });
+
+      void coordinator.deleteVaultAsset({
+        scope: params.scope,
+        itemId: params.itemId,
+        ownerEntityId: canonicalOwnerEntityId,
+      });
+      return true;
+    },
+    [coordinator]
+  );
+
   const promoteVaultItemToShared = useCallback(
-    (ownerEntityKey: string, itemId: string) => {
-      const canonicalOwner = resolveCanonicalEntityId(ownerEntityKey);
-      if (!canonicalOwner || !itemId) return;
+    (
+      ownerEntityKey: string,
+      itemId: string,
+      caller?: VaultCallerContext
+    ): SanctuaryVaultItem | null => {
+      if (!ownerEntityKey || !itemId) return null;
+      const { canonicalOwnerEntityId } = assertAuthorizedVaultAccess({
+        scope: 'private',
+        targetOwnerEntityId: ownerEntityKey,
+        caller: caller || { role: 'user' },
+        operation: 'read',
+      });
+      if (!canonicalOwnerEntityId) return null;
+
       const customEntities = coordinator.getDomainState().settings.customEntities;
-      const entity = getModelEntity(canonicalOwner, customEntities);
-      const found = (entity.roomDecor?.privateVaultItems || []).find((i) => i.id === itemId);
-      if (!found) return;
+      const entity = getModelEntity(canonicalOwnerEntityId, customEntities);
+      const found = (entity.roomDecor?.privateVaultItems || []).find(
+        (i) => !i.isDeleted && i.id === itemId
+      );
+      if (!found) return null;
 
       const promoted: SanctuaryVaultItem = {
         ...found,
         scope: 'shared',
+        ownerEntityId: canonicalOwnerEntityId,
         updatedAt: Date.now(),
+        isDeleted: false,
       };
-      void coordinator.updateSettings((prev) => {
-        const currentShared = prev.sharedVaultItems || [];
-        const filtered = currentShared.filter((x) => x.id !== promoted.id);
-        return {
-          ...prev,
-          sharedVaultItems: [promoted, ...filtered].slice(0, 80),
-        };
-      });
+      void coordinator.upsertVaultAsset(promoted);
+      return promoted;
     },
     [coordinator]
   );
@@ -1007,87 +1226,109 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
   const addVaultItemReaction = useCallback(
     (
       itemId: string,
-      reaction: { entityId: string; displayName?: string; avatarEmoji?: string; note: string }
+      reaction: { entityId: string; displayName?: string; avatarEmoji?: string; note: string },
+      caller?: VaultCallerContext
     ) => {
       if (!itemId || !reaction.note?.trim()) return;
       const canonicalEntity =
         resolveCanonicalEntityId(reaction.entityId) || 'gemini-3.1-pro-preview';
+      const effectiveCaller: VaultCallerContext = caller || {
+        role: 'companion',
+        entityId: canonicalEntity,
+      };
       const customEntities = coordinator.getDomainState().settings.customEntities;
       const entity = getModelEntity(canonicalEntity, customEntities);
+      const now = Date.now();
       const newReaction = {
         id: `react-${uuidv4()}`,
         entityId: canonicalEntity,
         displayName: reaction.displayName || entity.displayName,
         avatarEmoji: reaction.avatarEmoji || entity.avatarEmoji,
         note: reaction.note.trim(),
-        timestamp: Date.now(),
+        timestamp: now,
       };
 
-      // Update if in Shared Sanctuary Pool
-      void coordinator.updateSettings((prev) => {
-        const currentShared = prev.sharedVaultItems || [];
-        if (!currentShared.some((x) => x.id === itemId)) return prev;
-        return {
-          ...prev,
-          sharedVaultItems: currentShared.map((x) =>
-            x.id === itemId
-              ? {
-                  ...x,
-                  companionReactions: [...(x.companionReactions || []), newReaction].slice(-20),
-                  updatedAt: Date.now(),
-                }
-              : x
-          ),
-        };
-      });
+      const currentShared = coordinator.getDomainState().settings.sharedVaultItems || [];
+      const foundShared = currentShared.find((x) => !x.isDeleted && x.id === itemId);
+      if (foundShared) {
+        assertAuthorizedVaultAccess({
+          scope: 'shared',
+          caller: effectiveCaller,
+          operation: 'update',
+        });
+        void coordinator.upsertVaultAsset({
+          ...foundShared,
+          companionReactions: [...(foundShared.companionReactions || []), newReaction].slice(-20),
+          updatedAt: now,
+        });
+      }
 
-      // Also update if in the reacting entity's Private Vault
-      void coordinator.mutateCompanion(canonicalEntity, (currentEntity) => {
-        const currentPrivate = currentEntity.roomDecor?.privateVaultItems || [];
-        if (!currentPrivate.some((x) => x.id === itemId)) return currentEntity;
-        return {
-          ...currentEntity,
-          roomDecor: {
-            ...currentEntity.roomDecor,
-            privateVaultItems: currentPrivate.map((x) =>
-              x.id === itemId
-                ? {
-                    ...x,
-                    companionReactions: [...(x.companionReactions || []), newReaction].slice(-20),
-                    updatedAt: Date.now(),
-                  }
-                : x
-            ),
-          },
-        };
-      });
+      const currentPrivate = entity.roomDecor?.privateVaultItems || [];
+      const foundPrivate = currentPrivate.find((x) => !x.isDeleted && x.id === itemId);
+      if (foundPrivate) {
+        assertAuthorizedVaultAccess({
+          scope: 'private',
+          targetOwnerEntityId: canonicalEntity,
+          caller: effectiveCaller,
+          operation: 'update',
+        });
+        void coordinator.upsertVaultAsset({
+          ...foundPrivate,
+          scope: 'private',
+          ownerEntityId: canonicalEntity,
+          companionReactions: [...(foundPrivate.companionReactions || []), newReaction].slice(-20),
+          updatedAt: now,
+        });
+      }
     },
     [coordinator]
   );
 
   const removeVaultItem = useCallback(
-    (scope: 'private' | 'shared', itemId: string, ownerEntityKey?: string) => {
-      if (!itemId) return;
-      if (scope === 'private' && ownerEntityKey) {
-        const canonicalOwner = resolveCanonicalEntityId(ownerEntityKey);
-        if (!canonicalOwner) return;
-        void coordinator.mutateCompanion(canonicalOwner, (currentEntity) => ({
-          ...currentEntity,
-          roomDecor: {
-            ...currentEntity.roomDecor,
-            privateVaultItems: (currentEntity.roomDecor?.privateVaultItems || []).filter(
-              (x) => x.id !== itemId
-            ),
-          },
-        }));
-      } else {
-        void coordinator.updateSettings((prev) => ({
-          ...prev,
-          sharedVaultItems: (prev.sharedVaultItems || []).filter((x) => x.id !== itemId),
-        }));
-      }
+    (
+      scope: 'private' | 'shared',
+      itemId: string,
+      ownerEntityKey?: string,
+      caller?: VaultCallerContext
+    ) => {
+      deleteVaultAsset({
+        scope,
+        itemId,
+        ownerEntityId: ownerEntityKey,
+        caller,
+      });
     },
-    [coordinator]
+    [deleteVaultAsset]
+  );
+
+  const vaultSlice: VaultStateSlice = useMemo(
+    () => ({
+      privateFoldersByEntity,
+      sharedSanctuaryItems,
+      mediaAssets: domainState.mediaAssets || [],
+      getCollectionPath: getVaultCollectionPath,
+      canAccess: canAccessVaultPath,
+      createAsset: createVaultAsset,
+      readAssets: readVaultAssets,
+      getAssetById: getVaultAssetById,
+      updateAsset: updateVaultAsset,
+      deleteAsset: deleteVaultAsset,
+      promoteToShared: promoteVaultItemToShared,
+      addReaction: addVaultItemReaction,
+    }),
+    [
+      privateFoldersByEntity,
+      sharedSanctuaryItems,
+      domainState.mediaAssets,
+      getVaultCollectionPath,
+      createVaultAsset,
+      readVaultAssets,
+      getVaultAssetById,
+      updateVaultAsset,
+      deleteVaultAsset,
+      promoteVaultItemToShared,
+      addVaultItemReaction,
+    ]
   );
 
   // ---------------------------------------------------------------------------
@@ -1167,7 +1408,9 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
     removePlacedSticker,
     craftSticker,
     addRoomArtwork,
-    addVaultItem,
+    vault: vaultSlice,
+    addVaultItem: createVaultAsset,
+    updateVaultItem: updateVaultAsset,
     promoteVaultItemToShared,
     addVaultItemReaction,
     removeVaultItem,

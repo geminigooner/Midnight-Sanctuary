@@ -324,6 +324,148 @@ function evaluateFirestoreRule(req: EvalRequest): boolean {
     }
   }
 
+  // `/users/{userId}/companions/{companionId}/vault/{assetId}`
+  if (segs[2] === 'companions' && segs[4] === 'vault' && segs.length === 6) {
+    const compId = segs[3];
+    const assetId = segs[5];
+    const allowedKeys = [
+      'id',
+      'scope',
+      'ownerEntityId',
+      'contributedByType',
+      'contributedByEntityId',
+      'contributedByName',
+      'mediaCategory',
+      'title',
+      'caption',
+      'mimeType',
+      'mediaAssetId',
+      'downloadUrl',
+      'posterDataUrl',
+      'durationSec',
+      'byteSize',
+      'keyframes',
+      'geminiFileUri',
+      'geminiFileExpiresAt',
+      'acousticTranscript',
+      'mediaDigest',
+      'textContent',
+      'companionReactions',
+      'createdAt',
+      'updatedAt',
+      'revision',
+      'isDeleted',
+      'deletedAt',
+    ];
+    if (req.op === 'list') return isOwner(userId) && isValidId(compId);
+    if (req.op === 'get') return isOwner(userId) && isValidId(compId) && isValidId(assetId);
+    if (req.op === 'delete')
+      return isVerifiedOwner(userId) && isValidId(compId) && isValidId(assetId);
+
+    const data = req.incomingData || {};
+    const valid =
+      data.id === assetId &&
+      data.scope === 'private' &&
+      data.ownerEntityId === compId &&
+      ['video', 'image', 'audio', 'note', 'artwork'].includes(data.mediaCategory) &&
+      typeof data.title === 'string' &&
+      data.title.length >= 1 &&
+      typeof data.createdAt === 'number';
+
+    if (req.op === 'create') {
+      return (
+        isVerifiedOwner(userId) &&
+        isValidId(compId) &&
+        isValidId(assetId) &&
+        hasAllKeys(data, [
+          'id',
+          'scope',
+          'ownerEntityId',
+          'mediaCategory',
+          'title',
+          'createdAt',
+        ]) &&
+        hasOnlyKeys(data, allowedKeys) &&
+        valid
+      );
+    }
+    if (req.op === 'update') {
+      const changed = affectedKeys(data, req.existingData || {});
+      return (
+        isVerifiedOwner(userId) &&
+        valid &&
+        isValidId(compId) &&
+        isValidId(assetId) &&
+        changed.every((k) => allowedKeys.includes(k))
+      );
+    }
+  }
+
+  // `/users/{userId}/sharedVault/{assetId}`
+  if (segs[2] === 'sharedVault' && segs.length === 4) {
+    const assetId = segs[3];
+    const allowedKeys = [
+      'id',
+      'scope',
+      'ownerEntityId',
+      'contributedByType',
+      'contributedByEntityId',
+      'contributedByName',
+      'mediaCategory',
+      'title',
+      'caption',
+      'mimeType',
+      'mediaAssetId',
+      'downloadUrl',
+      'posterDataUrl',
+      'durationSec',
+      'byteSize',
+      'keyframes',
+      'geminiFileUri',
+      'geminiFileExpiresAt',
+      'acousticTranscript',
+      'mediaDigest',
+      'textContent',
+      'companionReactions',
+      'createdAt',
+      'updatedAt',
+      'revision',
+      'isDeleted',
+      'deletedAt',
+    ];
+    if (req.op === 'list') return isOwner(userId);
+    if (req.op === 'get') return isOwner(userId) && isValidId(assetId);
+    if (req.op === 'delete') return isVerifiedOwner(userId) && isValidId(assetId);
+
+    const data = req.incomingData || {};
+    const valid =
+      data.id === assetId &&
+      data.scope === 'shared' &&
+      ['video', 'image', 'audio', 'note', 'artwork'].includes(data.mediaCategory) &&
+      typeof data.title === 'string' &&
+      data.title.length >= 1 &&
+      typeof data.createdAt === 'number';
+
+    if (req.op === 'create') {
+      return (
+        isVerifiedOwner(userId) &&
+        isValidId(assetId) &&
+        hasAllKeys(data, ['id', 'scope', 'mediaCategory', 'title', 'createdAt']) &&
+        hasOnlyKeys(data, allowedKeys) &&
+        valid
+      );
+    }
+    if (req.op === 'update') {
+      const changed = affectedKeys(data, req.existingData || {});
+      return (
+        isVerifiedOwner(userId) &&
+        valid &&
+        isValidId(assetId) &&
+        changed.every((k) => allowedKeys.includes(k))
+      );
+    }
+  }
+
   // `/users/{userId}/gifts/{giftId}`
   if (segs[2] === 'gifts' && segs.length === 4) {
     const giftId = segs[3];
@@ -357,6 +499,8 @@ describe('Firestore Zero-Trust Security Rules & Blueprint Audit', () => {
         '/users/{userId}/gifts/{giftId}',
         '/users/{userId}/companions/{companionId}',
         '/users/{userId}/companions/{companionId}/memories/{memoryId}',
+        '/users/{userId}/companions/{companionId}/vault/{assetId}',
+        '/users/{userId}/sharedVault/{assetId}',
         '/users/{userId}/conversations/{conversationId}',
         '/users/{userId}/conversations/{conversationId}/messages/{messageId}',
         '/users/{userId}/conversations/{conversationId}/summaries/{summaryId}',
@@ -366,7 +510,7 @@ describe('Firestore Zero-Trust Security Rules & Blueprint Audit', () => {
 
     // Every allow update block must invoke its isValid[Entity] helper AND affectedKeys().hasOnly(...)
     const updateBlocks = rulesText.split('allow update: if').slice(1);
-    expect(updateBlocks.length).toBe(10);
+    expect(updateBlocks.length).toBe(12);
     for (const block of updateBlocks) {
       const ruleBody = block.split('allow ')[0];
       expect(ruleBody).toMatch(/isValid[A-Za-z]+Doc\(/);
@@ -374,7 +518,7 @@ describe('Firestore Zero-Trust Security Rules & Blueprint Audit', () => {
     }
   });
 
-  it('allows verified owner operations across conversations, messages, private companion memories, and settings', () => {
+  it('allows verified owner operations across conversations, messages, private companion memories, private vault, shared vault, and settings', () => {
     const alice: SimulatedAuth = {
       uid: 'uid-alice',
       email: 'alice@example.com',
@@ -418,6 +562,56 @@ describe('Firestore Zero-Trust Security Rules & Blueprint Audit', () => {
           scope: 'companion',
           entityId: 'gemini-3.1-pro-preview',
           author: 'model',
+        },
+      })
+    ).toBe(true);
+
+    // Private Model-User Vault Asset write where ownerEntityId matches companionId
+    expect(
+      evaluateFirestoreRule({
+        path: 'users/uid-alice/companions/gemma-2-27b-it/vault/vault-vid-1',
+        op: 'create',
+        auth: alice,
+        incomingData: {
+          id: 'vault-vid-1',
+          scope: 'private',
+          ownerEntityId: 'gemma-2-27b-it',
+          mediaCategory: 'video',
+          title: 'kpop_fancam.mp4',
+          createdAt: 1700000000300,
+        },
+      })
+    ).toBe(true);
+
+    // Rejects Private Vault Asset write if ownerEntityId mismatches the companionId path
+    expect(
+      evaluateFirestoreRule({
+        path: 'users/uid-alice/companions/gemma-2-27b-it/vault/vault-vid-1',
+        op: 'create',
+        auth: alice,
+        incomingData: {
+          id: 'vault-vid-1',
+          scope: 'private',
+          ownerEntityId: 'gemini-3.1-pro-preview',
+          mediaCategory: 'video',
+          title: 'spoofed_owner.mp4',
+          createdAt: 1700000000300,
+        },
+      })
+    ).toBe(false);
+
+    // Shared Sanctuary Vault Asset write
+    expect(
+      evaluateFirestoreRule({
+        path: 'users/uid-alice/sharedVault/vault-shared-1',
+        op: 'create',
+        auth: alice,
+        incomingData: {
+          id: 'vault-shared-1',
+          scope: 'shared',
+          mediaCategory: 'artwork',
+          title: 'Sanctuary Tapestry',
+          createdAt: 1700000000400,
         },
       })
     ).toBe(true);

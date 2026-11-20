@@ -30,6 +30,7 @@ import {
   assembleSovereignContext,
   serializeSpeakerAttributedTranscript,
 } from '../../lib/domains/contextAssembler';
+import { assertAuthorizedVaultAccess } from '../../lib/domains/vaultDomain';
 import { buildEntityStampedToolSideEffect, gemmaTools } from './toolRegistry';
 
 export interface AvailableKeysResolution {

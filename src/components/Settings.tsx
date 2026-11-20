@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Settings as SettingsIcon } from 'lucide-react';
+import { X, Star, ChevronDown, ChevronRight, Trash2, Plus, Settings as SettingsIcon, FolderHeart } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 import { VaultBackupPanel } from './VaultBackupPanel';
+import { VaultDashboard } from './VaultDashboard';
 import { getModelEntity } from '../lib/entitySystem';
 
 export function Settings() {
   const store = useStore();
-  const { closeModal, modalOrigins, settingsInitialTab, setSettingsInitialTab } = useUI();
+  const { closeModal, modalOrigins, settingsInitialTab, setSettingsInitialTab, openModalWithOrigin } = useUI();
   const originId = modalOrigins.settings;
   const { settings, availableModels, isModelsLoading } = store;
   
@@ -15,6 +16,7 @@ export function Settings() {
   const [activeTab, setActiveTab] = useState<'model' | 'identity' | 'vault'>(
     settingsInitialTab || 'identity'
   );
+  const [vaultSubView, setVaultSubView] = useState<'folders' | 'backup'>('folders');
   const [newMemory, setNewMemory] = useState('');
 
   const currentConv = useMemo(
@@ -79,7 +81,7 @@ export function Settings() {
     <SharedModalShell
       originId={originId}
       onClose={handleClose}
-      panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col relative overflow-hidden"
+      panelClassName="bg-[#151234] border-[3px] border-[#2C194D] shadow-[8px_8px_0_#2C194D] rounded-3xl w-full max-w-4xl max-h-[88vh] flex flex-col relative overflow-hidden"
     >
       <div className="flex items-center justify-between p-6 border-b-[3px] border-[#2C194D] bg-[#151234] shrink-0">
         <div className="flex items-center gap-3">
@@ -91,7 +93,7 @@ export function Settings() {
           </SharedModalIcon>
           <div>
             <h2 className="text-2xl font-bold text-[#F5E1C8] tracking-tight">Sanctuary Configuration</h2>
-            <p className="text-xs font-bold text-[#B39DE5]">Core identity, memories, model parameters &amp; vault</p>
+            <p className="text-xs font-bold text-[#B39DE5]">Core identity, memories, model parameters &amp; storage vaults</p>
           </div>
         </div>
         <button 
@@ -132,7 +134,7 @@ export function Settings() {
                 : 'text-[#B39DE5] hover:text-[#F5E1C8]'
             }`}
           >
-            Vault &amp; Backup
+            Vaults &amp; Backup
           </button>
         </div>
 
@@ -343,7 +345,56 @@ export function Settings() {
             </div>
           )}
 
-          {activeTab === 'vault' && <VaultBackupPanel />}
+          {activeTab === 'vault' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2px] border-[#2C194D]">
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-[#1B1642] border-[2px] border-[#2C194D]">
+                  <button
+                    type="button"
+                    onClick={() => setVaultSubView('folders')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      vaultSubView === 'folders'
+                        ? 'bg-[#F5E1C8] text-[#2C194D]'
+                        : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+                    }`}
+                  >
+                    Private vs. Shared Folders
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVaultSubView('backup')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      vaultSubView === 'backup'
+                        ? 'bg-[#F5E1C8] text-[#2C194D]'
+                        : 'text-[#B39DE5] hover:text-[#F5E1C8]'
+                    }`}
+                  >
+                    Sync &amp; Encrypted Backup
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleClose();
+                    openModalWithOrigin('sanctuaryVault');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F198B7] text-[#2C194D] border-[2px] border-[#2C194D] text-xs font-extrabold whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <FolderHeart size={14} />
+                  <span>Open Fullscreen Vault Dashboard</span>
+                </button>
+              </div>
+
+              {vaultSubView === 'folders' ? (
+                <div className="rounded-2xl overflow-hidden border-[3px] border-[#2C194D]">
+                  <VaultDashboard embedded onCloseModal={handleClose} />
+                </div>
+              ) : (
+                <VaultBackupPanel />
+              )}
+            </div>
+          )}
         </div>
       </SharedModalBody>
     </SharedModalShell>
