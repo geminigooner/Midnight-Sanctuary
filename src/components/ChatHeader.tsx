@@ -14,6 +14,7 @@ import {
   Gem,
   Tag,
   Sparkles,
+  FolderHeart,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useStore, useUI } from '../context/AppContext';
@@ -155,6 +156,24 @@ export function ChatHeader({
         <SyncStatusBadge compact />
         {/* Desktop / Tablet Archive Quick-Triggers (Shared Element Sources) */}
         <div className="hidden md:flex items-center gap-1 bg-[#151234]/15 p-1 rounded-2xl border-[2px] border-[#2C194D]/40">
+          {/* Sanctuary Media Vaults (Private & Shared Pool) */}
+          <motion.button
+            layoutId={resolveSharedLayoutId('chat-header-vault', reducedMotion)}
+            transition={{ layout: sharedTransition }}
+            style={{ borderRadius: 12 }}
+            onClick={() => ui.openModalWithOrigin('sanctuaryVault', 'chat-header-vault')}
+            className="w-9 h-9 flex items-center justify-center bg-[#F198B7] hover:bg-[#f7e5cb] border-[2.5px] border-[#2C194D] rounded-xl text-[#2C194D] shadow-[inset_0_-2px_0_rgba(0,0,0,0.12)] active:translate-y-0.5 transition-colors cursor-pointer"
+            title="Sanctuary Media Vaults (Private & Shared Pool)"
+          >
+            <motion.span
+              layoutId={resolveSharedLayoutId('chat-header-vault', reducedMotion, 'icon')}
+              transition={{ layout: sharedTransition }}
+              className="flex items-center justify-center"
+            >
+              <FolderHeart size={16} strokeWidth={2.5} />
+            </motion.span>
+          </motion.button>
+
           {/* Gifts Archive */}
           <motion.button
             layoutId={resolveSharedLayoutId('chat-header-gifts', reducedMotion)}
@@ -377,6 +396,19 @@ export function ChatHeader({
                   🏛️
                 </div>
                 <span className="flex-1 font-bold">Quarters</span>
+              </button>
+              <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
+              <button
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  ui.openModalWithOrigin('sanctuaryVault', 'chat-header-more');
+                }}
+                className="flex items-center gap-3 p-0 text-[#2C194D] hover:scale-[1.02] transition-transform w-full text-left group cursor-pointer"
+              >
+                <div className="w-9 h-9 bg-[#F198B7] border-[2.5px] border-[#2C194D] rounded-xl flex items-center justify-center shrink-0">
+                  <FolderHeart size={17} strokeWidth={2.5} />
+                </div>
+                <span className="flex-1 font-bold">Media Vaults &amp; Shared Pool</span>
               </button>
               <div className="h-0.5 w-full bg-[#2C194D]/10 rounded-full" />
               <button

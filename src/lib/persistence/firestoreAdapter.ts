@@ -40,9 +40,15 @@ export function buildSanitizedPreviewMessage(m: Message, convId: string, idx = 0
   const normalized = normalizeMessageSchema(m, convId, idx);
   const { parts, generatedImages, ...mRest } = normalized;
   const cleanParts = (parts || []).map((p: any) => {
-    const { inlineData, thoughtSignature, ...pRest } = p || {};
+    const { inlineData, videoAttachment, fileData, thoughtSignature, ...pRest } = p || {};
     if (inlineData) {
       return { ...pRest, text: pRest.text || '[Image attachment]' };
+    }
+    if (videoAttachment) {
+      return {
+        ...pRest,
+        text: pRest.text || `[Video: ${videoAttachment.fileName || 'video clip'}]`,
+      };
     }
     return pRest;
   });

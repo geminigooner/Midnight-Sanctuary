@@ -1,7 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import html2canvas from 'html2canvas';
-import { Conversation, Message, AppSettings, JewelMetrics, Gift as GiftType, UserProfile, getPublicMessageText, isInternalToolResponseTurn, SvgScribbleData, MusicTrackData } from '../lib/types';
+import {
+  Conversation,
+  Message,
+  AppSettings,
+  JewelMetrics,
+  Gift as GiftType,
+  UserProfile,
+  getPublicMessageText,
+  isInternalToolResponseTurn,
+  SvgScribbleData,
+  MusicTrackData,
+  VideoAttachmentMeta,
+  SanctuaryVaultItem,
+} from '../lib/types';
 import { streamChat } from '../lib/gemini';
 import { sanitizeSvg } from '../lib/svgSanitizer';
 import { PresenceState } from '../components/Presence';
@@ -33,6 +46,15 @@ export interface UseChatStreamOptions {
   onPlaceSticker?: (sticker: { stickerId: string; emoji: string; name: string; targetId: string; note?: string; placedBy?: string }) => void;
   onCraftSticker?: (sticker: { name: string; emoji: string; description: string; sparkleColor: string; category?: string; glowEffect?: any; badgeShape?: any; customSvg?: string; craftedBy?: string }) => void;
   onAddRoomArtwork?: (modelKey: string, artwork: { title: string; prompt: string; imageUrl: string }) => void;
+  onAddVaultItem?: (
+    item: Omit<SanctuaryVaultItem, 'id' | 'createdAt' | 'updatedAt' | 'companionReactions'> & {
+      id?: string;
+    }
+  ) => SanctuaryVaultItem;
+  onAddVaultItemReaction?: (
+    itemId: string,
+    reaction: { entityId: string; displayName?: string; avatarEmoji?: string; note: string }
+  ) => void;
 }
 
 export function useChatStream({
@@ -56,6 +78,8 @@ export function useChatStream({
   onPlaceSticker,
   onCraftSticker,
   onAddRoomArtwork,
+  onAddVaultItem,
+  onAddVaultItemReaction,
 }: UseChatStreamOptions) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [presence, setPresence] = useState<PresenceState>('resting');
@@ -113,12 +137,21 @@ export function useChatStream({
       replaceIndex?: number;
       additionalMessages?: Message[];
       attachments?: { mimeType: string; data: string; previewUrl?: string }[];
+      videoAttachments?: VideoAttachmentMeta[];
       targetConversationId?: string;
       targetConversation?: Conversation;
       targetSettings?: AppSettings;
     }
   ) => {
-    const { replaceIndex, additionalMessages, attachments = [], targetConversationId, targetConversation, targetSettings } = options || {};
+    const {
+      replaceIndex,
+      additionalMessages,
+      attachments = [],
+      videoAttachments = [],
+      targetConversationId,
+      targetConversation,
+      targetSettings,
+    } = options || {};
 
     const requestConversationId = targetConversationId || conversationRef.current?.id;
 
@@ -159,7 +192,12 @@ export function useChatStream({
       }
     }
 
-    if (!textToAnalyse.trim() && attachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) {
+    if (
+      !textToAnalyse.trim() &&
+      attachments.length === 0 &&
+      videoAttachments.length === 0 &&
+      (!additionalMessages || additionalMessages.length === 0)
+    ) {
       return;
     }
 
@@ -197,6 +235,7 @@ export function useChatStream({
     const parts: any[] = [];
     if (trimmedPrompt) parts.push({ text: textToAnalyse });
     attachments.forEach(a => parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } }));
+    videoAttachments.forEach(va => parts.push({ videoAttachment: va }));
     
     if (!additionalMessages || additionalMessages.length === 0) {
       const userMsg: Message = {
@@ -212,8 +251,10 @@ export function useChatStream({
       currentMessages.push(...additionalMessages);
       additionalMessages.forEach(msg => onAddMessage(requestConversationId, msg));
     }
-    if (currentMessages.length === 1 && trimmedPrompt) {
-      onUpdate(requestConversationId, { title: trimmedPrompt.slice(0, 30) });
+    if (currentMessages.length === 1 && (trimmedPrompt || videoAttachments.length > 0)) {
+      const defaultTitle =
+        trimmedPrompt || `Video: ${videoAttachments[0]?.fileName || 'Sanctuary Clip'}`;
+      onUpdate(requestConversationId, { title: defaultTitle.slice(0, 30) });
     }
 
     const currentGenId = ++generationIdRef.current;
@@ -547,6 +588,40 @@ export function useChatStream({
               results: chunk.results || []
             });
             updateModelMessage(currentModelText, currentModelThought, 'thinking');
+          } else if ((chunk as any).type === 'vault_contribute') {
+            hasToolCalls = true;
+            if (onAddVaultItem) {
+              const contributorEntity = getModelEntity(
+                (chunk as any).entityId || (chunk as any).modelId || activeEntity.id,
+                effectiveSettings.customEntities
+              );
+              onAddVaultItem({
+                scope: 'shared',
+                contributedByType: 'companion',
+                contributedByEntityId: contributorEntity.id,
+                contributedByName: contributorEntity.displayName,
+                mediaCategory: (chunk as any).mediaCategory || 'note',
+                title: (chunk as any).title || `${contributorEntity.displayName}'s Contribution`,
+                caption: (chunk as any).caption,
+                textContent: (chunk as any).textContent,
+                downloadUrl: (chunk as any).imageUrl,
+                posterDataUrl: (chunk as any).imageUrl,
+              });
+            }
+          } else if ((chunk as any).type === 'vault_reaction') {
+            hasToolCalls = true;
+            if (onAddVaultItemReaction && (chunk as any).vaultItemId && (chunk as any).note) {
+              const reactorEntity = getModelEntity(
+                (chunk as any).entityId || (chunk as any).modelId || activeEntity.id,
+                effectiveSettings.customEntities
+              );
+              onAddVaultItemReaction((chunk as any).vaultItemId, {
+                entityId: reactorEntity.id,
+                displayName: reactorEntity.displayName,
+                avatarEmoji: reactorEntity.avatarEmoji,
+                note: (chunk as any).note,
+              });
+            }
           } else if (chunk.type === 'client_tool_call') {
             // The backend ends this request at a client-side tool call. We capture the result
             // here and send exactly one follow-up request after this generation finishes.
@@ -723,6 +798,8 @@ export function useChatStream({
     onPlaceSticker,
     onCraftSticker,
     onAddRoomArtwork,
+    onAddVaultItem,
+    onAddVaultItemReaction,
     setTemporaryPresence
   ]);
 
@@ -738,7 +815,7 @@ export function useChatStream({
         m.role === 'user' &&
         !isInternalToolResponseTurn(m) &&
         (Boolean(getPublicMessageText(m).trim()) ||
-          (m.parts || []).some((p: any) => Boolean(p?.inlineData)))
+          (m.parts || []).some((p: any) => Boolean(p?.inlineData || p?.videoAttachment)))
       ) {
         lastUserIndex = i;
         break;
@@ -755,10 +832,15 @@ export function useChatStream({
             mimeType: p.inlineData!.mimeType,
             data: p.inlineData!.data,
           })) || [];
+      const userVideoAttachments =
+        targetUserMsg.parts
+          ?.filter((p: any) => Boolean(p?.videoAttachment))
+          .map((p: any) => p.videoAttachment!) || [];
 
       sendMessage(getPublicMessageText(targetUserMsg) || '', {
         replaceIndex: lastUserIndex,
         attachments: userAttachments,
+        videoAttachments: userVideoAttachments,
         targetConversationId: conv.id,
         targetConversation: conv,
         targetSettings: { ...settings, model: targetModel },

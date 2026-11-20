@@ -78,6 +78,9 @@ function base64ToUint8Array(base64: string): Uint8Array {
 
 function extensionForMime(mimeType: string): string {
   const clean = (mimeType || '').toLowerCase();
+  if (clean.includes('mp4')) return 'mp4';
+  if (clean.includes('quicktime') || clean.includes('mov')) return 'mov';
+  if (clean.includes('webm')) return 'webm';
   if (clean.includes('jpeg') || clean.includes('jpg')) return 'jpg';
   if (clean.includes('webp')) return 'webp';
   if (clean.includes('gif')) return 'gif';
@@ -225,6 +228,148 @@ export class MediaStorageService {
     return {
       asset: saved,
       resolvedUrl: saved.downloadUrl || dataUrl,
+    };
+  }
+
+  /**
+   * Registers and uploads a binary File/Blob (e.g., an iPhone/Pixel video up to 10 minutes)
+   * directly to Firebase Cloud Storage without converting the whole file to a Base64 string in JS heap.
+   */
+  public async storeBinaryVideoAsset(input: {
+    file: File | Blob;
+    fileName?: string;
+    mimeType?: string;
+    category?: MediaAssetCategory;
+    referenceTag: string;
+    ownerEntityId?: string;
+    width?: number;
+    height?: number;
+    posterDataUrl?: string;
+  }): Promise<StoredMediaResult> {
+    const mimeType = (input.mimeType || input.file.type || 'video/mp4').toLowerCase();
+    const byteSize = input.file.size || 0;
+    // Sample first 256KB + file size + last 64KB for fast content-addressable SHA-256 fingerprint without loading 300MB into memory
+    const headSlice = await input.file.slice(0, Math.min(262_144, byteSize)).arrayBuffer();
+    const tailSlice =
+      byteSize > 262_144
+        ? await input.file.slice(Math.max(0, byteSize - 65_536), byteSize).arrayBuffer()
+        : new ArrayBuffer(0);
+    const sampleBytes = new Uint8Array(headSlice.byteLength + tailSlice.byteLength + 16);
+    sampleBytes.set(new Uint8Array(headSlice), 0);
+    sampleBytes.set(new Uint8Array(tailSlice), headSlice.byteLength);
+    const sizeView = new DataView(sampleBytes.buffer, headSlice.byteLength + tailSlice.byteLength, 16);
+    sizeView.setFloat64(0, byteSize, true);
+
+    const sha256 = await computeMediaSha256(sampleBytes);
+    const assetId = ensureValidDocId(`video_${sha256.slice(0, 40)}`, 'media');
+    const uid = this.coordinator.getDomainState().uid || '__local_unauthenticated__';
+    const canonicalOwnerEntity = input.ownerEntityId
+      ? resolveCanonicalEntityId(input.ownerEntityId)
+      : undefined;
+
+    // Cache either the poster frame or small videos (< 15MB) in local IndexedDB `media_blobs`
+    if (byteSize > 0 && byteSize <= 15 * 1024 * 1024 && typeof FileReader !== 'undefined') {
+      try {
+        const smallDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(input.file);
+        });
+        if (smallDataUrl) {
+          await this.coordinator.getVault().putMediaBlob({
+            ownerUid: uid,
+            assetId,
+            mimeType,
+            dataUrl: smallDataUrl,
+            byteSize,
+            createdAt: Date.now(),
+          });
+        }
+      } catch {
+        // Fallback to poster or object URL
+      }
+    } else if (input.posterDataUrl) {
+      await this.coordinator.getVault().putMediaBlob({
+        ownerUid: uid,
+        assetId: `${assetId}_poster`,
+        mimeType: 'image/jpeg',
+        dataUrl: input.posterDataUrl,
+        byteSize: input.posterDataUrl.length,
+        createdAt: Date.now(),
+      });
+    }
+
+    const existing = this.coordinator.getMediaAsset(assetId);
+    if (existing && !existing.isDeleted && existing.downloadUrl) {
+      const updatedRefs = Array.from(
+        new Set([...(existing.references || []), input.referenceTag].filter(Boolean))
+      );
+      const updatedAsset = await this.coordinator.upsertMediaAsset({
+        ...existing,
+        references: updatedRefs,
+        ownerEntityId: existing.ownerEntityId || canonicalOwnerEntity,
+        updatedAt: Date.now(),
+      });
+      return {
+        asset: updatedAsset,
+        resolvedUrl: updatedAsset.downloadUrl || '',
+      };
+    }
+
+    const ext = extensionForMime(mimeType);
+    const storagePath = `users/${uid}/blobs/${sha256}.${ext}`;
+    let storageBackend: 'firebase_storage' | 'vault_chunked' = 'vault_chunked';
+    let downloadUrl: string | undefined;
+
+    if (
+      this.allowCloudStorage &&
+      uid !== '__local_unauthenticated__' &&
+      this.coordinator.getSyncStatus().isOnline
+    ) {
+      try {
+        const storage = getStorage(firebaseApp);
+        const blobRef = storageRef(storage, storagePath);
+        await uploadBytes(blobRef, input.file, {
+          contentType: mimeType,
+          customMetadata: {
+            uid,
+            sha256,
+            category: input.category || 'chat_attachment',
+            ...(input.fileName ? { fileName: input.fileName.slice(0, 120) } : {}),
+            ...(canonicalOwnerEntity ? { ownerEntityId: canonicalOwnerEntity } : {}),
+          },
+        });
+        downloadUrl = await getDownloadURL(blobRef);
+        storageBackend = 'firebase_storage';
+      } catch {
+        storageBackend = 'vault_chunked';
+      }
+    }
+
+    const now = Date.now();
+    const record: MediaAssetRecord = {
+      id: assetId,
+      uid,
+      ownerEntityId: canonicalOwnerEntity,
+      sha256,
+      mimeType,
+      sizeBytes: byteSize,
+      width: input.width,
+      height: input.height,
+      category: input.category || 'chat_attachment',
+      storageBackend,
+      storagePath,
+      downloadUrl,
+      references: input.referenceTag ? [input.referenceTag] : [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const saved = await this.coordinator.upsertMediaAsset(record);
+    return {
+      asset: saved,
+      resolvedUrl: saved.downloadUrl || '',
     };
   }
 

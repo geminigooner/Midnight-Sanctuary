@@ -4,6 +4,7 @@ import {
   Gift,
   Memory,
   Message,
+  SanctuaryVaultItem,
   UserProfile,
   getPublicMessageText,
 } from '../types';
@@ -29,6 +30,8 @@ export interface SovereignPromptOptions {
   conversationType?: 'direct' | 'group';
   participantEntityIds?: string[];
   segmentSummaries?: ConversationSegmentSummary[];
+  privateVaultItems?: SanctuaryVaultItem[];
+  sharedVaultItems?: SanctuaryVaultItem[];
 }
 
 export interface AssembledSovereignContext {
@@ -37,6 +40,8 @@ export interface AssembledSovereignContext {
   userMemories: Memory[];
   entityMemories: Memory[];
   recentGifts: Gift[];
+  privateVaultItems: SanctuaryVaultItem[];
+  sharedVaultItems: SanctuaryVaultItem[];
   systemInstructionText: string;
 }
 
@@ -259,6 +264,73 @@ export function assembleSovereignContext(
     );
   }
 
+  // 9c. Sovereign Private Companion Vault vs. Shared Sanctuary Pool & Cross-Model Orchestrator
+  const rawPrivateVault =
+    options.privateVaultItems || entity.roomDecor?.privateVaultItems || [];
+  const privateVaultItems = rawPrivateVault
+    .filter(
+      (item) =>
+        item &&
+        !item.isDeleted &&
+        item.scope === 'private' &&
+        (!item.ownerEntityId || resolveCanonicalEntityId(item.ownerEntityId) === canonicalEntityId)
+    )
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const rawSharedVault =
+    options.sharedVaultItems || options.settings?.sharedVaultItems || [];
+  const sharedVaultItems = rawSharedVault
+    .filter((item) => item && !item.isDeleted && item.scope === 'shared')
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const vaultLines: string[] = [];
+  if (privateVaultItems.length > 0) {
+    vaultLines.push(
+      `### Your Private Companion Vault (Strictly Isolated — Only You [${entity.displayName}] & User Can See These):`
+    );
+    for (const item of privateVaultItems.slice(0, 8)) {
+      const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
+      const digest = item.mediaDigest || item.caption || item.textContent || 'Private keepsake';
+      vaultLines.push(
+        `- [Private ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\`] "${item.title}"${dur} — Shared by ${item.contributedByName}: ${digest.slice(0, 220)}`
+      );
+    }
+  } else {
+    vaultLines.push(
+      `### Your Private Companion Vault (Strictly Isolated — Only You [${entity.displayName}] & User):\n- Currently empty. Any video, photo, or keepsake the user shares privately with you stays in this vault and is invisible to other companions.`
+    );
+  }
+
+  if (sharedVaultItems.length > 0) {
+    vaultLines.push(
+      `\n### Shared Sanctuary Pool (Communal — Visible to User & All Companions with Contributor Attribution):`
+    );
+    for (const item of sharedVaultItems.slice(0, 10)) {
+      const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
+      const digest = item.mediaDigest || item.caption || item.textContent || 'Shared media';
+      const reactionsStr =
+        Array.isArray(item.companionReactions) && item.companionReactions.length > 0
+          ? ` | Companion Notes: ${item.companionReactions
+              .slice(-3)
+              .map((r) => `${r.displayName}: "${r.note}"`)
+              .join('; ')}`
+          : '';
+      vaultLines.push(
+        `- [Shared ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\` · Contributed by **${item.contributedByName}**] "${item.title}"${dur}: ${digest.slice(0, 220)}${reactionsStr}`
+      );
+    }
+  } else {
+    vaultLines.push(
+      `\n### Shared Sanctuary Pool (Communal — Visible to User & All Companions):\n- Currently empty. You can contribute artworks, reflections, songs, or notes to the Shared Sanctuary Pool using \`contribute_to_shared_vault\`, or react to items other companions/the user shared using \`react_to_vault_item\`.`
+    );
+  }
+
+  vaultLines.push(
+    `\n### Sanctuary Vault & Video Inspection Tools:\n- Call \`browse_sanctuary_vault\` to list or search items in your \`"private"\` vault or the \`"shared"\` Sanctuary Pool.\n- Call \`inspect_shared_media\` with \`vault_item_id\` (and optional \`start_sec\` / \`end_sec\`) to re-examine full time-coded acoustic lyrics/dialogue transcripts and storyboard keyframes of any shared video.\n- Call \`contribute_to_shared_vault\` to add your own note, reflection, poem, or artwork to the Shared Sanctuary Pool with your contributor stamp (**${entity.displayName}**).\n- Call \`react_to_vault_item\` to leave your attributed reaction note on any item in the Shared Sanctuary Pool so the user and other companions can see your thoughts!`
+  );
+
+  sections.push(`## Sanctuary Media Vaults (Private vs. Shared Pool):\n${vaultLines.join('\n')}`);
+
   // 10. Memory, Search, Music & Autonomous Agency Instructions
   sections.push(
     `## Memory & Note Saving Rules:\nWhen saving a memory via \`save_memory\` or noting an observation via \`note_about_user\`, you MUST summarize the insight into a single concise, 1-sentence factual statement (maximum 15-20 words). Never save lengthy paragraphs, conversational transcripts, or multi-sentence descriptions.`
@@ -282,20 +354,31 @@ export function assembleSovereignContext(
     userMemories,
     entityMemories,
     recentGifts,
+    privateVaultItems,
+    sharedVaultItems,
     systemInstructionText: sections.join('\n\n'),
   };
 }
 
+function formatDurationShort(sec?: number): string {
+  const s = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+}
+
 /**
  * Serializes conversation history for the target `respondingEntityId` with explicit
- * speaker attribution for multi-companion / model-switched transcripts.
- *
- * - Turns authored by the user remain `role: 'user'`.
- * - Turns authored by `respondingEntityId` (or unattributed legacy turns in a direct chat)
- *   serialize as `role: 'model'` (the responder's own voice).
- * - Turns authored by a DIFFERENT companion entity (`msg.authorEntityId !== respondingEntityId`)
- *   are framed with an explicit speaker prefix `[Companion <DisplayName>]: ...` and merged
- *   as contextual dialogue so the responding entity never mistakes another entity's words for its own!
+ * speaker attribution for multi-companion / model-switched transcripts, plus
+ * Dual-Harness Video Serialization:
+ * - For Gemini (`gemini-3.1-pro-preview`, `gemini-4-argon`, `gemini-3-flash-preview`):
+ *   passes active `fileData: { fileUri, mimeType }` (or falls back to storyboard keyframes + acoustic transcript).
+ * - For Gemma 4 (`gemma-2-27b-it` / `gemma-4-26b-a4b-it` Sparse MoE):
+ *   passes the **Sensory Cinema Packet** (timestamped visual keyframes into Gemma's 550M vision encoder
+ *   interleaved with the time-coded Acoustic & Lyric Transcript).
+ * - For older turns (`i < validMessages.length - 2`):
+ *   automatically decays heavy video attachments into their ~250-token `mediaDigest` + `vaultItemId`
+ *   pointer so follow-up chats stay fast and never overflow context!
  */
 export function serializeSpeakerAttributedTranscript(
   messages: Message[],
@@ -308,6 +391,7 @@ export function serializeSpeakerAttributedTranscript(
 ): { role: 'user' | 'model'; parts: any[] }[] {
   const canonicalResponder =
     resolveCanonicalEntityId(respondingEntityId) || 'gemini-3.1-pro-preview';
+  const isGemmaResponder = canonicalResponder === 'gemma-2-27b-it';
   const supportsVision = options?.supportsVision ?? true;
   const supportsNativeThinking = options?.supportsNativeThinking ?? true;
 
@@ -336,9 +420,6 @@ export function serializeSpeakerAttributedTranscript(
       msgAuthorEntityId !== canonicalResponder;
 
     if (isOtherCompanionTurn) {
-      // Another companion entity spoke this turn in a shared conversation.
-      // Frame it clearly with speaker attribution so `respondingEntityId` hears what they said
-      // without ever adopting their persona or misattributing the turn to itself.
       const speakerEntity = getModelEntity(msgAuthorEntityId!, options?.customEntities);
       const speakerLabel = msg.authorDisplayName || speakerEntity.displayName || msgAuthorEntityId;
       const publicText = getPublicMessageText(msg).trim();
@@ -371,6 +452,84 @@ export function serializeSpeakerAttributedTranscript(
         const p: any = { functionResponse: part.functionResponse };
         if (part.thoughtSignature) p.thoughtSignature = part.thoughtSignature;
         parts.push(p);
+      } else if (part.videoAttachment) {
+        const va = part.videoAttachment;
+        const durLabel = formatDurationShort(va.durationSec);
+        const vaultRef = va.vaultItemId || va.id;
+        const scopeLabel = va.scope === 'shared' ? 'Shared Sanctuary Pool' : 'Private Companion Vault';
+
+        if (!isRecentMessage) {
+          // Tier 2 Decay: Compact ~250-token Media Memory Digest for older turns
+          parts.push({
+            text: `[Earlier Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef}) — Media Memory Digest: ${
+              va.mediaDigest || 'Video clip shared earlier in this conversation.'
+            } (Call inspect_shared_media with vault_item_id="${vaultRef}" to re-examine full acoustic transcript or keyframes.)]`,
+          });
+        } else {
+          // Tier 1 Live Turn: Active Video Turn
+          const hasValidGeminiFileUri =
+            !isGemmaResponder &&
+            Boolean(va.geminiFileUri) &&
+            va.geminiFileState !== 'FAILED' &&
+            (!va.geminiFileExpiresAt || va.geminiFileExpiresAt > Date.now());
+
+          if (hasValidGeminiFileUri) {
+            parts.push({
+              fileData: {
+                fileUri: va.geminiFileUri!,
+                mimeType: va.mimeType || 'video/mp4',
+              },
+            });
+            parts.push({
+              text: `[User attached video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${
+                va.acousticTranscript
+                  ? `\n[Reference Acoustic/Lyric Transcript]: ${va.acousticTranscript.slice(0, 1800)}`
+                  : ''
+              }]`,
+            });
+          } else {
+            // Gemma 4 (26B-A4B Sparse MoE) Sensory Cinema Packet (or Gemini fallback when fileUri is offline/expired)
+            parts.push({
+              text: `[Sensory Cinema Bridge — Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})]`,
+            });
+
+            if (supportsVision && Array.isArray(va.keyframes) && va.keyframes.length > 0) {
+              for (const kf of va.keyframes.slice(0, 8)) {
+                const match = (kf.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+                if (match) {
+                  parts.push({ text: `[Video Storyboard Frame @ ${kf.timestampLabel}]` });
+                  parts.push({
+                    inlineData: {
+                      mimeType: match[1],
+                      data: match[2],
+                    },
+                  });
+                }
+              }
+            } else if (supportsVision && va.posterDataUrl) {
+              const match = va.posterDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                parts.push({
+                  inlineData: {
+                    mimeType: match[1],
+                    data: match[2],
+                  },
+                });
+              }
+            }
+
+            if (va.acousticTranscript) {
+              parts.push({
+                text: `[Acoustic & Audio Track (Time-Coded Dialogue, Lyrics, Vocal Tone & Sound Cues)]:\n${va.acousticTranscript}`,
+              });
+            }
+            if (va.mediaDigest) {
+              parts.push({
+                text: `[Visual & Narrative Overview]:\n${va.mediaDigest}`,
+              });
+            }
+          }
+        }
       } else if (part.inlineData) {
         if (!supportsVision) {
           parts.push({ text: '[User attached an image]' });
@@ -434,7 +593,10 @@ export function serializeSpeakerAttributedTranscript(
         prevTurn.parts.some((p) => Boolean(p?.functionCall));
       if (!prevHasFunctionCall) {
         const nonToolParts = turn.parts.filter((p) => !p?.functionResponse);
-        if (nonToolParts.length > 0 && nonToolParts.some((p) => Boolean(p?.text?.trim() || p?.inlineData))) {
+        if (
+          nonToolParts.length > 0 &&
+          nonToolParts.some((p) => Boolean(p?.text?.trim() || p?.inlineData || p?.fileData))
+        ) {
           toolValidatedTurns.push({ role: turn.role, parts: nonToolParts });
         }
         continue;
@@ -462,3 +624,4 @@ export function serializeSpeakerAttributedTranscript(
 
   return coalesced;
 }
+

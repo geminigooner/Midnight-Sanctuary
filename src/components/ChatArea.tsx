@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Message,
+  VideoAttachmentMeta,
   getPublicMessageText,
   getThoughtMessageText,
   isInternalToolResponseTurn,
 } from '../lib/types';
 import { useChatStream } from '../hooks/useChatStream';
-import { X, Menu, Settings as SettingsIcon, ShieldCheck } from 'lucide-react';
+import { X, Menu, Settings as SettingsIcon, ShieldCheck, FolderHeart } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
@@ -27,6 +28,7 @@ export function ChatArea() {
 
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<{ mimeType: string; data: string; previewUrl?: string }[]>([]);
+  const [videoAttachments, setVideoAttachments] = useState<VideoAttachmentMeta[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const activeModelId = conversation?.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
@@ -60,6 +62,8 @@ export function ChatArea() {
     onPlaceSticker: (store as any).placeSticker,
     onCraftSticker: (store as any).craftSticker,
     onAddRoomArtwork: (store as any).addRoomArtwork,
+    onAddVaultItem: (store as any).addVaultItem,
+    onAddVaultItemReaction: (store as any).addVaultItemReaction,
   });
 
   const handleCopy = useCallback((text: string) => {
@@ -71,10 +75,25 @@ export function ChatArea() {
     store.addMemory(content, 'chat_starred', 'user', targetModelId);
   }, [conversation?.modelId, store.settings.model, store.addMemory]);
 
-  const handleSend = useCallback((textToSend?: string, replaceIndex?: number, additionalMessages?: Message[], sendAttachments?: any[]) => {
+  const handleSend = useCallback((
+    textToSend?: string,
+    replaceIndex?: number,
+    additionalMessages?: Message[],
+    sendAttachments?: any[],
+    sendVideoAttachments?: VideoAttachmentMeta[]
+  ) => {
     const rawText = textToSend !== undefined ? textToSend : input;
     const currentAttachments = sendAttachments !== undefined ? sendAttachments : [...attachments];
-    if (!rawText.trim() && currentAttachments.length === 0 && (!additionalMessages || additionalMessages.length === 0)) return;
+    const currentVideoAttachments =
+      sendVideoAttachments !== undefined ? sendVideoAttachments : [...videoAttachments];
+    if (
+      !rawText.trim() &&
+      currentAttachments.length === 0 &&
+      currentVideoAttachments.length === 0 &&
+      (!additionalMessages || additionalMessages.length === 0)
+    ) {
+      return;
+    }
 
     // If on home view without an active conversation, create one automatically
     let activeConvId = store.currentId;
@@ -91,21 +110,20 @@ export function ChatArea() {
 
     if (replaceIndex === undefined && textToSend === undefined) {
       setInput('');
-    }
-
-    if (replaceIndex === undefined && textToSend === undefined) {
       setAttachments([]);
+      setVideoAttachments([]);
     }
 
     sendMessage(rawText, {
       attachments: currentAttachments,
+      videoAttachments: currentVideoAttachments,
       replaceIndex,
       additionalMessages,
       targetConversationId: activeConvId,
       targetConversation: { ...targetConv, modelId: resolvedModel },
       targetSettings: { ...store.settings, model: resolvedModel },
     });
-  }, [input, attachments, sendMessage, store]);
+  }, [input, attachments, videoAttachments, sendMessage, store]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!conversation) return;
@@ -172,7 +190,9 @@ export function ChatArea() {
       if (m.role === 'user') {
         if (isInternalToolResponseTurn(m)) continue;
         const hasUserText = getPublicMessageText(m).trim().length > 0;
-        const hasAttachment = (m.parts || []).some((p: any) => Boolean(p?.inlineData));
+        const hasAttachment = (m.parts || []).some((p: any) =>
+          Boolean(p?.inlineData || p?.videoAttachment)
+        );
         if (hasUserText || hasAttachment) {
           candidateMessages.push(m);
         }
@@ -188,7 +208,7 @@ export function ChatArea() {
         (m.scribbles?.length ?? 0) > 0 ||
         (m.musicTracks?.length ?? 0) > 0 ||
         (m.searchResults?.length ?? 0) > 0 ||
-        (m.parts || []).some((p: any) => Boolean(p?.inlineData));
+        (m.parts || []).some((p: any) => Boolean(p?.inlineData || p?.videoAttachment));
       const isFunctionCallTurn = (m.parts || []).some((p: any) => Boolean(p?.functionCall));
 
       if (isFunctionCallTurn && !publicTxt && !hasMediaArtifacts && !isLast) {
@@ -325,7 +345,9 @@ export function ChatArea() {
             visibleMessages={visibleMessages}
             isGenerating={isGenerating}
             onCopy={handleCopy}
-            onResend={(content, origIndex, atts) => handleSend(content, origIndex, undefined, atts)}
+            onResend={(content, origIndex, atts, vidAtts) =>
+              handleSend(content, origIndex, undefined, atts, vidAtts)
+            }
             onFavorite={handleFavorite}
             onImageClick={(url) => setSelectedImage(url)}
             onSelectPrompt={(prompt) => handleSend(prompt)}
@@ -339,6 +361,8 @@ export function ChatArea() {
             setInput={setInput}
             attachments={attachments}
             setAttachments={setAttachments}
+            videoAttachments={videoAttachments}
+            setVideoAttachments={setVideoAttachments}
             onSend={handleSend}
             onStopGeneration={stopGeneration}
             onRegenerate={regenerateMessage}

@@ -5,6 +5,7 @@ import {
   Gift,
   Memory,
   Message,
+  SanctuaryVaultItem,
   UserProfile,
   getPublicMessageText,
 } from '../../lib/types';
@@ -342,6 +343,8 @@ async function dispatchServerOrEntityToolCall(params: {
   profile: UserProfile | null | undefined;
   allMessages?: Message[];
   segmentSummaries?: ConversationSegmentSummary[];
+  privateVaultItems?: SanctuaryVaultItem[];
+  sharedVaultItems?: SanctuaryVaultItem[];
   writeSse: (obj: any) => void;
 }): Promise<{
   functionResponsePart?: any;
@@ -353,10 +356,153 @@ async function dispatchServerOrEntityToolCall(params: {
     profile,
     allMessages = [],
     segmentSummaries = [],
+    privateVaultItems = [],
+    sharedVaultItems = [],
     writeSse,
   } = params;
   const callName = call.name || '';
   const args = (call.args || {}) as Record<string, any>;
+
+  if (callName === 'browse_sanctuary_vault') {
+    const scope = String(args.scope || 'all').toLowerCase();
+    const query = String(args.query || '').trim().toLowerCase();
+    const category = String(args.category || '').trim().toLowerCase();
+
+    const pool: SanctuaryVaultItem[] = [];
+    if (scope === 'private' || scope === 'all') {
+      pool.push(...privateVaultItems.filter((i) => i && !i.isDeleted));
+    }
+    if (scope === 'shared' || scope === 'all') {
+      pool.push(...sharedVaultItems.filter((i) => i && !i.isDeleted));
+    }
+
+    const filtered = pool.filter((item) => {
+      if (category && item.mediaCategory.toLowerCase() !== category) return false;
+      if (!query) return true;
+      const haystack = [
+        item.title,
+        item.caption,
+        item.contributedByName,
+        item.mediaDigest,
+        item.acousticTranscript,
+        item.textContent,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+
+    const summaryText =
+      filtered.length === 0
+        ? `No items found in the ${scope} Sanctuary Vault matching your filter.`
+        : filtered
+            .slice(0, 12)
+            .map((item) => {
+              const scopeTag = item.scope === 'shared' ? 'SHARED POOL' : 'PRIVATE VAULT';
+              const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
+              const reactions =
+                Array.isArray(item.companionReactions) && item.companionReactions.length > 0
+                  ? `\n  Companion Reactions: ${item.companionReactions
+                      .map((r) => `${r.displayName}: "${r.note}"`)
+                      .join(' | ')}`
+                  : '';
+              return `- [${scopeTag} · ${item.mediaCategory.toUpperCase()} · ID: ${item.id}] "${
+                item.title
+              }"${dur} (Contributed by ${item.contributedByName})\n  Summary: ${
+                item.mediaDigest || item.caption || item.textContent || 'Media item'
+              }${reactions}`;
+            })
+            .join('\n\n');
+
+    const resp: any = { result: summaryText };
+    if (call.id) resp.id = call.id;
+    return {
+      functionResponsePart: {
+        functionResponse: { name: callName, response: resp },
+      },
+    };
+  }
+
+  if (callName === 'inspect_shared_media') {
+    const targetId = String(args.vault_item_id || '').trim();
+    const matchedVaultItem =
+      privateVaultItems.find((i) => i && (i.id === targetId || i.mediaAssetId === targetId)) ||
+      sharedVaultItems.find((i) => i && (i.id === targetId || i.mediaAssetId === targetId));
+
+    // Also check message video attachments if inspecting by attachment ID
+    let matchedMsgVideo: any = null;
+    if (!matchedVaultItem) {
+      for (const m of allMessages) {
+        for (const p of m.parts || []) {
+          if (
+            p?.videoAttachment &&
+            (p.videoAttachment.id === targetId ||
+              p.videoAttachment.vaultItemId === targetId ||
+              p.videoAttachment.mediaAssetId === targetId)
+          ) {
+            matchedMsgVideo = p.videoAttachment;
+            break;
+          }
+        }
+        if (matchedMsgVideo) break;
+      }
+    }
+
+    let detailText = '';
+    if (matchedVaultItem) {
+      const reactions =
+        Array.isArray(matchedVaultItem.companionReactions) &&
+        matchedVaultItem.companionReactions.length > 0
+          ? matchedVaultItem.companionReactions
+              .map((r) => `- ${r.displayName}: "${r.note}"`)
+              .join('\n')
+          : 'None yet';
+      detailText = [
+        `Vault Item ID: ${matchedVaultItem.id}`,
+        `Scope: ${
+          matchedVaultItem.scope === 'shared'
+            ? 'Shared Sanctuary Pool (All Companions)'
+            : 'Private Companion Vault (Only You & User)'
+        }`,
+        `Title: ${matchedVaultItem.title}`,
+        `Category: ${matchedVaultItem.mediaCategory}`,
+        `Contributed By: ${matchedVaultItem.contributedByName}`,
+        matchedVaultItem.durationSec
+          ? `Duration: ${Math.round(matchedVaultItem.durationSec)}s`
+          : '',
+        matchedVaultItem.caption ? `Caption: ${matchedVaultItem.caption}` : '',
+        matchedVaultItem.mediaDigest ? `Visual & Media Digest:\n${matchedVaultItem.mediaDigest}` : '',
+        matchedVaultItem.acousticTranscript
+          ? `Complete Time-Coded Acoustic & Lyric Transcript:\n${matchedVaultItem.acousticTranscript}`
+          : '',
+        matchedVaultItem.textContent ? `Text Content:\n${matchedVaultItem.textContent}` : '',
+        `Companion Reactions:\n${reactions}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+    } else if (matchedMsgVideo) {
+      detailText = [
+        `Video Attachment ID: ${matchedMsgVideo.id}`,
+        `File Name: ${matchedMsgVideo.fileName}`,
+        `Duration: ${Math.round(matchedMsgVideo.durationSec || 0)}s`,
+        `Visual & Media Digest:\n${matchedMsgVideo.mediaDigest || 'N/A'}`,
+        `Complete Time-Coded Acoustic & Lyric Transcript:\n${
+          matchedMsgVideo.acousticTranscript || 'N/A'
+        }`,
+      ].join('\n\n');
+    } else {
+      detailText = `Could not find a media or vault item with ID "${targetId}". Call browse_sanctuary_vault to view available item IDs.`;
+    }
+
+    const resp: any = { result: detailText };
+    if (call.id) resp.id = call.id;
+    return {
+      functionResponsePart: {
+        functionResponse: { name: callName, response: resp },
+      },
+    };
+  }
 
   if (callName === 'recall_conversation_history') {
     const recalledText = searchArchivalConversationHistory(allMessages, segmentSummaries, {
@@ -570,6 +716,27 @@ async function dispatchServerOrEntityToolCall(params: {
     }
   }
 
+  // If `contribute_to_shared_vault` includes `generate_artwork_prompt`, generate the image first!
+  if (
+    callName === 'contribute_to_shared_vault' &&
+    args.generate_artwork_prompt &&
+    !args.image_url
+  ) {
+    try {
+      const vaultImg = await generateImage({
+        prompt: String(args.generate_artwork_prompt),
+        aspectRatio: '16:9',
+        respondingEntityId,
+      });
+      if (vaultImg.imageUrl) {
+        args.image_url = vaultImg.imageUrl;
+        args.media_category = 'artwork';
+      }
+    } catch (err) {
+      console.warn('Failed to generate artwork for shared vault contribution:', err);
+    }
+  }
+
   // Domain entity mutations & creative artifacts
   const sideEffect = buildEntityStampedToolSideEffect(callName, args, respondingEntityId);
   if (sideEffect) {
@@ -593,7 +760,8 @@ async function dispatchServerOrEntityToolCall(params: {
 }
 
 /**
- * Provider Adapter 1: Cloudflare Workers AI Gemma Adapter (with structured tool bridge & seamless GenAI fallback).
+ * Provider Adapter 1: Cloudflare Workers AI Gemma Adapter (`@cf/google/gemma-4-26b-a4b-it` Sparse MoE
+ * with native 550M Vision Encoder `image_url` blocks, structured tool bridge & seamless GenAI fallback).
  */
 async function executeGemmaProviderAdapter(params: {
   respondingEntityId: string;
@@ -607,6 +775,10 @@ async function executeGemmaProviderAdapter(params: {
   forceCloudflare?: boolean;
   availableKeys: string[];
   profile: UserProfile | null | undefined;
+  allMessages?: Message[];
+  segmentSummaries?: ConversationSegmentSummary[];
+  privateVaultItems?: SanctuaryVaultItem[];
+  sharedVaultItems?: SanctuaryVaultItem[];
   abortSignal: AbortSignal;
   writeSse: (obj: any) => void;
 }) {
@@ -622,6 +794,10 @@ async function executeGemmaProviderAdapter(params: {
     forceCloudflare,
     availableKeys,
     profile,
+    allMessages,
+    segmentSummaries,
+    privateVaultItems,
+    sharedVaultItems,
     abortSignal,
     writeSse,
   } = params;
@@ -636,7 +812,7 @@ async function executeGemmaProviderAdapter(params: {
   // Try Cloudflare Workers AI first if CF_TOKEN is present
   if (cfAccountId && cfToken) {
     try {
-      const cfMessages: { role: string; content: string }[] = [];
+      const cfMessages: { role: string; content: any }[] = [];
       let systemPrompt =
         systemInstructionText ||
         'You are Gemma, a thoughtful, poetic companion in Midnight Sanctuary.';
@@ -644,22 +820,53 @@ async function executeGemmaProviderAdapter(params: {
         systemPrompt +=
           '\n\nBefore responding, think step by step inside <think>...</think> tags, then provide your final response outside the tags.';
       }
-      // W-08 fix: Provide structured tool-call bridge so Cloudflare Gemma can invoke Sanctuary tools
+      // Structured tool-call bridge so Cloudflare Gemma can invoke all Sanctuary & Vault tools
       systemPrompt +=
-        '\n\nIf you wish to invoke a Sanctuary tool (such as `update_my_quarters`, `generate_image`, `search_web`, `create_room_artwork`, `save_memory`, `give_gift`, `record_personal_thought`, `note_about_user`, `draw_scribble`, or `compose_music`), emit `<tool_call>{"name":"<tool_name>","args":{...}}</tool_call>` before or after your spoken response.';
+        '\n\nIf you wish to invoke a Sanctuary tool (such as `update_my_quarters`, `generate_image`, `search_web`, `create_room_artwork`, `save_memory`, `give_gift`, `record_personal_thought`, `note_about_user`, `draw_scribble`, `compose_music`, `browse_sanctuary_vault`, `inspect_shared_media`, `contribute_to_shared_vault`, or `react_to_vault_item`), emit `<tool_call>{"name":"<tool_name>","args":{...}}</tool_call>` before or after your spoken response.';
 
       cfMessages.push({ role: 'system', content: systemPrompt });
 
       for (const turn of serializedContents) {
-        const textParts = (turn.parts || [])
-          .filter((p: any) => p.text && !p.thought)
-          .map((p: any) => p.text)
-          .join('\n');
-        if (textParts) {
-          cfMessages.push({
-            role: turn.role === 'model' ? 'assistant' : 'user',
-            content: textParts,
-          });
+        const turnParts = Array.isArray(turn.parts) ? turn.parts : [];
+        const hasImages = turnParts.some((p: any) => p?.inlineData?.data);
+
+        if (hasImages && turn.role !== 'model') {
+          // Format multimodal content array for Gemma 4 26B-A4B's native 550M Vision Encoder!
+          const contentBlocks: any[] = [];
+          let imageCount = 0;
+          for (const p of turnParts) {
+            if (p.thought) continue;
+            if (p.text) {
+              contentBlocks.push({ type: 'text', text: p.text });
+            } else if (p.inlineData?.data && imageCount < 6) {
+              const mime = p.inlineData.mimeType || 'image/jpeg';
+              const dataUri = p.inlineData.data.startsWith('data:')
+                ? p.inlineData.data
+                : `data:${mime};base64,${p.inlineData.data}`;
+              contentBlocks.push({
+                type: 'image_url',
+                image_url: { url: dataUri },
+              });
+              imageCount++;
+            }
+          }
+          if (contentBlocks.length > 0) {
+            cfMessages.push({
+              role: 'user',
+              content: contentBlocks,
+            });
+          }
+        } else {
+          const textParts = turnParts
+            .filter((p: any) => p.text && !p.thought)
+            .map((p: any) => p.text)
+            .join('\n');
+          if (textParts) {
+            cfMessages.push({
+              role: turn.role === 'model' ? 'assistant' : 'user',
+              content: textParts,
+            });
+          }
         }
       }
 
@@ -733,6 +940,10 @@ async function executeGemmaProviderAdapter(params: {
                 },
                 respondingEntityId,
                 profile,
+                allMessages,
+                segmentSummaries,
+                privateVaultItems,
+                sharedVaultItems,
                 writeSse,
               });
             }
@@ -773,6 +984,10 @@ async function executeGemmaProviderAdapter(params: {
     includeThoughts,
     availableKeys,
     profile,
+    allMessages,
+    segmentSummaries,
+    privateVaultItems,
+    sharedVaultItems,
     abortSignal,
     writeSse,
     backendLabel: 'google',
@@ -798,6 +1013,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
   profile: UserProfile | null | undefined;
   allMessages?: Message[];
   segmentSummaries?: ConversationSegmentSummary[];
+  privateVaultItems?: SanctuaryVaultItem[];
+  sharedVaultItems?: SanctuaryVaultItem[];
   abortSignal: AbortSignal;
   writeSse: (obj: any) => void;
   backendLabel?: string;
@@ -816,6 +1033,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
     profile,
     allMessages,
     segmentSummaries,
+    privateVaultItems,
+    sharedVaultItems,
     abortSignal,
     writeSse,
     backendLabel = 'google',
@@ -1048,6 +1267,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
               profile,
               allMessages,
               segmentSummaries,
+              privateVaultItems,
+              sharedVaultItems,
               writeSse,
             });
             if (dispatched.pausedForClientUiTool) {
@@ -1294,6 +1515,10 @@ export async function createChatStreamFromContext(
             forceCloudflare,
             availableKeys,
             profile,
+            allMessages: messages,
+            segmentSummaries: allSegmentSummaries,
+            privateVaultItems: assembled.privateVaultItems,
+            sharedVaultItems: assembled.sharedVaultItems,
             abortSignal,
             writeSse,
           });
@@ -1312,6 +1537,8 @@ export async function createChatStreamFromContext(
             profile,
             allMessages: messages,
             segmentSummaries: allSegmentSummaries,
+            privateVaultItems: assembled.privateVaultItems,
+            sharedVaultItems: assembled.sharedVaultItems,
             abortSignal,
             writeSse,
           });

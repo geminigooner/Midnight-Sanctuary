@@ -154,7 +154,7 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     capabilities: {
       supportsSystemInstructions: true,
       supportsToolCalling: true,
-      supportsVision: false,
+      supportsVision: true,
       supportsThinking: false,
       supportsStreaming: true,
       supportsSamplingParams: true,

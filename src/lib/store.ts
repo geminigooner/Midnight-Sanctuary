@@ -7,9 +7,11 @@ import {
   ModelInfo,
   Gift,
   Message,
+  SanctuaryVaultItem,
   UserProfile,
   JewelMetrics,
 } from './types';
+import { getModelEntity } from './entitySystem';
 import { auth, onAuthStateChanged } from './firebase';
 import { ensureValidDocId, normalizeMessageSchema } from './persistenceSystem';
 import { FirestorePersistenceAdapter } from './persistence/firestoreAdapter';
@@ -923,6 +925,171 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
     [coordinator, user?.uid]
   );
 
+  const addVaultItem = useCallback(
+    (
+      item: Omit<SanctuaryVaultItem, 'id' | 'createdAt' | 'updatedAt' | 'companionReactions'> & {
+        id?: string;
+      }
+    ): SanctuaryVaultItem => {
+      const now = Date.now();
+      const itemId = item.id || `vault-${uuidv4()}`;
+      const canonicalOwner = item.ownerEntityId
+        ? resolveCanonicalEntityId(item.ownerEntityId)
+        : undefined;
+      const fullItem: SanctuaryVaultItem = {
+        ...item,
+        id: itemId,
+        ownerEntityId: canonicalOwner,
+        companionReactions: [],
+        createdAt: now,
+        updatedAt: now,
+        isDeleted: false,
+      };
+
+      if (fullItem.scope === 'private' && canonicalOwner) {
+        void coordinator.mutateCompanion(canonicalOwner, (currentEntity) => {
+          const prev = currentEntity.roomDecor?.privateVaultItems || [];
+          const filtered = prev.filter((x) => x.id !== fullItem.id);
+          return {
+            ...currentEntity,
+            roomDecor: {
+              ...currentEntity.roomDecor,
+              privateVaultItems: [fullItem, ...filtered].slice(0, 60),
+            },
+          };
+        });
+      } else {
+        const sharedItem: SanctuaryVaultItem = {
+          ...fullItem,
+          scope: 'shared',
+        };
+        void coordinator.updateSettings((prev) => {
+          const currentShared = prev.sharedVaultItems || [];
+          const filtered = currentShared.filter((x) => x.id !== sharedItem.id);
+          return {
+            ...prev,
+            sharedVaultItems: [sharedItem, ...filtered].slice(0, 80),
+          };
+        });
+      }
+
+      return fullItem;
+    },
+    [coordinator]
+  );
+
+  const promoteVaultItemToShared = useCallback(
+    (ownerEntityKey: string, itemId: string) => {
+      const canonicalOwner = resolveCanonicalEntityId(ownerEntityKey);
+      if (!canonicalOwner || !itemId) return;
+      const customEntities = coordinator.getDomainState().settings.customEntities;
+      const entity = getModelEntity(canonicalOwner, customEntities);
+      const found = (entity.roomDecor?.privateVaultItems || []).find((i) => i.id === itemId);
+      if (!found) return;
+
+      const promoted: SanctuaryVaultItem = {
+        ...found,
+        scope: 'shared',
+        updatedAt: Date.now(),
+      };
+      void coordinator.updateSettings((prev) => {
+        const currentShared = prev.sharedVaultItems || [];
+        const filtered = currentShared.filter((x) => x.id !== promoted.id);
+        return {
+          ...prev,
+          sharedVaultItems: [promoted, ...filtered].slice(0, 80),
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const addVaultItemReaction = useCallback(
+    (
+      itemId: string,
+      reaction: { entityId: string; displayName?: string; avatarEmoji?: string; note: string }
+    ) => {
+      if (!itemId || !reaction.note?.trim()) return;
+      const canonicalEntity =
+        resolveCanonicalEntityId(reaction.entityId) || 'gemini-3.1-pro-preview';
+      const customEntities = coordinator.getDomainState().settings.customEntities;
+      const entity = getModelEntity(canonicalEntity, customEntities);
+      const newReaction = {
+        id: `react-${uuidv4()}`,
+        entityId: canonicalEntity,
+        displayName: reaction.displayName || entity.displayName,
+        avatarEmoji: reaction.avatarEmoji || entity.avatarEmoji,
+        note: reaction.note.trim(),
+        timestamp: Date.now(),
+      };
+
+      // Update if in Shared Sanctuary Pool
+      void coordinator.updateSettings((prev) => {
+        const currentShared = prev.sharedVaultItems || [];
+        if (!currentShared.some((x) => x.id === itemId)) return prev;
+        return {
+          ...prev,
+          sharedVaultItems: currentShared.map((x) =>
+            x.id === itemId
+              ? {
+                  ...x,
+                  companionReactions: [...(x.companionReactions || []), newReaction].slice(-20),
+                  updatedAt: Date.now(),
+                }
+              : x
+          ),
+        };
+      });
+
+      // Also update if in the reacting entity's Private Vault
+      void coordinator.mutateCompanion(canonicalEntity, (currentEntity) => {
+        const currentPrivate = currentEntity.roomDecor?.privateVaultItems || [];
+        if (!currentPrivate.some((x) => x.id === itemId)) return currentEntity;
+        return {
+          ...currentEntity,
+          roomDecor: {
+            ...currentEntity.roomDecor,
+            privateVaultItems: currentPrivate.map((x) =>
+              x.id === itemId
+                ? {
+                    ...x,
+                    companionReactions: [...(x.companionReactions || []), newReaction].slice(-20),
+                    updatedAt: Date.now(),
+                  }
+                : x
+            ),
+          },
+        };
+      });
+    },
+    [coordinator]
+  );
+
+  const removeVaultItem = useCallback(
+    (scope: 'private' | 'shared', itemId: string, ownerEntityKey?: string) => {
+      if (!itemId) return;
+      if (scope === 'private' && ownerEntityKey) {
+        const canonicalOwner = resolveCanonicalEntityId(ownerEntityKey);
+        if (!canonicalOwner) return;
+        void coordinator.mutateCompanion(canonicalOwner, (currentEntity) => ({
+          ...currentEntity,
+          roomDecor: {
+            ...currentEntity.roomDecor,
+            privateVaultItems: (currentEntity.roomDecor?.privateVaultItems || []).filter(
+              (x) => x.id !== itemId
+            ),
+          },
+        }));
+      } else {
+        void coordinator.updateSettings((prev) => ({
+          ...prev,
+          sharedVaultItems: (prev.sharedVaultItems || []).filter((x) => x.id !== itemId),
+        }));
+      }
+    },
+    [coordinator]
+  );
+
   // ---------------------------------------------------------------------------
   // Sync Retry & Versioned Backup / Recovery Operations
   // ---------------------------------------------------------------------------
@@ -1000,6 +1167,10 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
     removePlacedSticker,
     craftSticker,
     addRoomArtwork,
+    addVaultItem,
+    promoteVaultItemToShared,
+    addVaultItemReaction,
+    removeVaultItem,
     profile,
     updateProfile,
     addGemmaNote,

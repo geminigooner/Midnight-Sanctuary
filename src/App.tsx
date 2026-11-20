@@ -13,6 +13,7 @@ import { ModelDesiresModal } from './components/ModelDesiresModal';
 import { StickerChestModal } from './components/StickerChestModal';
 import { CompanionRosterModal } from './components/CompanionRosterModal';
 import { AuthModal } from './components/AuthModal';
+import { SanctuaryVaultModal } from './components/SanctuaryVaultModal';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './components/SharedModalShell';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { Gem, X } from 'lucide-react';
@@ -30,6 +31,7 @@ export function App() {
   const [stickerChestOpenRaw, setStickerChestOpenRaw] = useState(false);
   const [companionRosterOpenRaw, setCompanionRosterOpenRaw] = useState(false);
   const [authModalOpenRaw, setAuthModalOpenRaw] = useState(false);
+  const [sanctuaryVaultOpenRaw, setSanctuaryVaultOpenRaw] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'identity' | 'model' | 'vault'>('identity');
   const [modalOrigins, setModalOrigins] = useState<Partial<Record<ModalKey, string | undefined>>>({});
   const [pendingPrompt, setPendingPrompt] = useState<{
@@ -51,6 +53,7 @@ export function App() {
       stickerChest: setStickerChestOpenRaw,
       companionRoster: setCompanionRosterOpenRaw,
       authModal: setAuthModalOpenRaw,
+      sanctuaryVault: setSanctuaryVaultOpenRaw,
     }),
     []
   );
@@ -92,6 +95,10 @@ export function App() {
     [makeModalSetter]
   );
   const setAuthModalOpen = useMemo(() => makeModalSetter('authModal', setAuthModalOpenRaw), [makeModalSetter]);
+  const setSanctuaryVaultOpen = useMemo(
+    () => makeModalSetter('sanctuaryVault', setSanctuaryVaultOpenRaw),
+    [makeModalSetter]
+  );
 
   const openModalWithOrigin = useCallback(
     (modal: ModalKey, originId?: string) => {
@@ -131,6 +138,8 @@ export function App() {
     setCompanionRosterOpen,
     authModalOpen: authModalOpenRaw,
     setAuthModalOpen,
+    sanctuaryVaultOpen: sanctuaryVaultOpenRaw,
+    setSanctuaryVaultOpen,
     pendingPrompt,
     setPendingPrompt,
     modalOrigins,
@@ -184,6 +193,8 @@ export function App() {
             {entityQuartersOpenRaw && <EntityQuartersModal key="entity-quarters-modal" />}
 
             {desiresOpenRaw && <ModelDesiresModal key="desires-modal" />}
+
+            {sanctuaryVaultOpenRaw && <SanctuaryVaultModal key="sanctuary-vault-modal" />}
 
             {companionRosterOpenRaw && (
               <CompanionRosterModal

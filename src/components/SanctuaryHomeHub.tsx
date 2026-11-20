@@ -12,6 +12,7 @@ import {
   Compass,
   MessageSquareQuote,
   Users,
+  FolderHeart,
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
@@ -127,7 +128,7 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
           </p>
 
           {/* CHOOSE COMPANION PORTAL BUTTONS */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+          <div className="pt-2 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2.5">
             <motion.button
               layoutId={resolveSharedLayoutId('hub-cta-roster', reducedMotion)}
               transition={{ layout: sharedTransition }}
@@ -164,6 +165,26 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
                 🏛️
               </motion.span>
               <span>Step Into Quarters</span>
+            </motion.button>
+
+            <motion.button
+              layoutId={resolveSharedLayoutId('hub-cta-vault', reducedMotion)}
+              transition={{ layout: sharedTransition }}
+              style={{ borderRadius: 16 }}
+              onClick={() => {
+                triggerHaptic('medium');
+                ui.openModalWithOrigin('sanctuaryVault', 'hub-cta-vault');
+              }}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#9D7FE3] hover:bg-[#9D7FE3]/90 text-[#2d225c] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-none active:translate-y-1 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <motion.span
+                layoutId={resolveSharedLayoutId('hub-cta-vault', reducedMotion, 'icon')}
+                transition={{ layout: sharedTransition }}
+                className="inline-flex items-center justify-center"
+              >
+                <FolderHeart className="w-4 h-4 text-[#2d225c]" />
+              </motion.span>
+              <span>Media Vaults &amp; Shared Pool</span>
             </motion.button>
           </div>
         </motion.div>

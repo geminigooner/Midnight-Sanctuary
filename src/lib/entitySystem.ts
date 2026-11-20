@@ -15,6 +15,7 @@ import type {
   EntityObservation,
   ScopedRelationshipEvent,
 } from './domains/relationshipDomain';
+import type { SanctuaryVaultItem } from './types';
 
 export interface EntityRoomDecor {
   themeColor: string;
@@ -35,6 +36,7 @@ export interface EntityRoomDecor {
   tagline: string;
   wallArtUrl?: string;
   customArtwork?: { title: string; prompt: string; imageUrl: string; timestamp: number }[];
+  privateVaultItems?: SanctuaryVaultItem[];
 }
 
 export interface ModelEntity {

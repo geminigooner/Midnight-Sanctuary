@@ -661,6 +661,203 @@ describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () 
     expect(assembled.systemInstructionText).toContain('search_type: "image"');
     expect(assembled.systemInstructionText).toContain('apply_to: "my_avatar"');
   });
+
+  it('strictly isolates Private Companion Media Vaults while exposing the Shared Sanctuary Pool with contributor attribution and reactions', () => {
+    const proBase = getModelEntity('gemini-3.1-pro-preview');
+    const gemmaBase = getModelEntity('gemma-2-27b-it');
+
+    const customEntities = {
+      'gemini-3.1-pro-preview': {
+        ...proBase,
+        roomDecor: {
+          ...proBase.roomDecor,
+          privateVaultItems: [
+            {
+              id: 'vault-pro-secret-1',
+              scope: 'private' as const,
+              ownerEntityId: 'gemini-3.1-pro-preview',
+              contributedByType: 'user' as const,
+              contributedByName: 'Amanda',
+              mediaCategory: 'video' as const,
+              title: 'PRO_EXCLUSIVE_PIXEL_CONCERT_CLIP.mp4',
+              mediaDigest: 'PRO_ONLY_SECRET_VIDEO_DIGEST_901',
+              createdAt: 1000,
+              updatedAt: 1000,
+            },
+          ],
+        },
+      },
+      'gemma-2-27b-it': {
+        ...gemmaBase,
+        roomDecor: {
+          ...gemmaBase.roomDecor,
+          privateVaultItems: [
+            {
+              id: 'vault-gemma-secret-2',
+              scope: 'private' as const,
+              ownerEntityId: 'gemma-2-27b-it',
+              contributedByType: 'user' as const,
+              contributedByName: 'Amanda',
+              mediaCategory: 'video' as const,
+              title: 'GEMMA_EXCLUSIVE_KPOP_REEL.mp4',
+              mediaDigest: 'GEMMA_ONLY_SECRET_KPOP_DIGEST_902',
+              createdAt: 2000,
+              updatedAt: 2000,
+            },
+          ],
+        },
+      },
+    };
+
+    const sharedVaultItems = [
+      {
+        id: 'vault-shared-pool-1',
+        scope: 'shared' as const,
+        contributedByType: 'companion' as const,
+        contributedByEntityId: 'gemini-3.1-pro-preview',
+        contributedByName: 'Gemini 3.1 Pro',
+        mediaCategory: 'artwork' as const,
+        title: 'Starlight Conservatory Painting',
+        mediaDigest: 'COMMUNAL_STARLIGHT_PAINTING_SHARED_BY_PRO',
+        companionReactions: [
+          {
+            id: 'rx-1',
+            entityId: 'gemma-2-27b-it',
+            displayName: 'Gemma',
+            avatarEmoji: '🌸',
+            note: 'The rose-gold constellations feel so warm!',
+            timestamp: 3000,
+          },
+        ],
+        createdAt: 2500,
+        updatedAt: 3000,
+      },
+    ];
+
+    const gemmaContext = assembleSovereignContext({
+      respondingEntityId: 'gemma-4-26b-a4b-it',
+      settings: {
+        customEntities,
+        sharedVaultItems,
+      },
+    }).systemInstructionText;
+
+    // Gemma sees her own private vault item and the shared pool item (with contributor attribution & reactions)
+    expect(gemmaContext).toContain('GEMMA_EXCLUSIVE_KPOP_REEL.mp4');
+    expect(gemmaContext).toContain('GEMMA_ONLY_SECRET_KPOP_DIGEST_902');
+    expect(gemmaContext).toContain('Starlight Conservatory Painting');
+    expect(gemmaContext).toContain('Contributed by **Gemini 3.1 Pro**');
+    expect(gemmaContext).toContain('Gemma: "The rose-gold constellations feel so warm!"');
+
+    // Gemma NEVER sees Gemini 3.1 Pro's private vault item
+    expect(gemmaContext).not.toContain('PRO_EXCLUSIVE_PIXEL_CONCERT_CLIP.mp4');
+    expect(gemmaContext).not.toContain('PRO_ONLY_SECRET_VIDEO_DIGEST_901');
+  });
+
+  it('serializes videos as native fileData for Gemini, Storyboard Keyframes + Acoustic Score for Gemma 4 (26B-A4B MoE), and decays older turns to Media Memory Digest', () => {
+    const sampleVideoMeta = {
+      id: 'vid-kpop-1',
+      fileName: 'iphone_kpop_fancam.mov',
+      mimeType: 'video/quicktime',
+      durationSec: 185,
+      byteSize: 42_000_000,
+      posterDataUrl: 'data:image/jpeg;base64,UE9TVEVSX0JBU0U2NA==',
+      geminiFileUri: 'https://generativelanguage.googleapis.com/v1beta/files/abc123video',
+      geminiFileExpiresAt: Date.now() + 3600_000,
+      keyframes: [
+        {
+          timestampSec: 10,
+          timestampLabel: '00:10',
+          dataUrl: 'data:image/jpeg;base64,RlJBTUVfMTBfQkFTRTY0',
+        },
+        {
+          timestampSec: 90,
+          timestampLabel: '01:30',
+          dataUrl: 'data:image/jpeg;base64,RlJBTUVfOTBfQkFTRTY0',
+        },
+      ],
+      acousticTranscript: '[00:10] (Upbeat K-pop synth drop) Vocalist sings chorus in Korean.',
+      mediaDigest: '3-minute K-pop concert fancam with neon purple stage lighting and energetic chorus.',
+      scope: 'private' as const,
+      vaultItemId: 'vault-vid-1',
+    };
+
+    const activeTurnMessages: Message[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ text: 'Look at this concert video I took!', videoAttachment: sampleVideoMeta }],
+        timestamp: 1000,
+      },
+    ];
+
+    // 1. For Gemini 3.1 Pro (active turn): receives native fileData URI + metadata summary
+    const geminiSerialized = serializeSpeakerAttributedTranscript(
+      activeTurnMessages,
+      'gemini-3.1-pro-preview'
+    );
+    expect(geminiSerialized).toHaveLength(1);
+    expect(
+      geminiSerialized[0].parts.some(
+        (p: any) =>
+          p.fileData?.fileUri ===
+          'https://generativelanguage.googleapis.com/v1beta/files/abc123video'
+      )
+    ).toBe(true);
+
+    // 2. For Gemma 4 (26B-A4B Sparse MoE, active turn): receives Storyboard Keyframe inlineData images + Time-Coded Acoustic & Lyric Score
+    const gemmaSerialized = serializeSpeakerAttributedTranscript(
+      activeTurnMessages,
+      'gemma-4-26b-a4b-it'
+    );
+    expect(gemmaSerialized).toHaveLength(1);
+    const gemmaInlineFrames = gemmaSerialized[0].parts.filter((p: any) => Boolean(p.inlineData));
+    expect(gemmaInlineFrames).toHaveLength(2);
+    expect(gemmaInlineFrames[0].inlineData?.data).toBe('RlJBTUVfMTBfQkFTRTY0');
+    const gemmaText = gemmaSerialized[0].parts
+      .map((p: any) => p.text || '')
+      .join('\n');
+    expect(gemmaText).toContain('[Sensory Cinema Bridge — Shared Video "iphone_kpop_fancam.mov"');
+    expect(gemmaText).toContain('[00:10] (Upbeat K-pop synth drop)');
+
+    // 3. When the video turn ages past the active 2-turn window, it decays into the compact ~250-token Media Memory Digest
+    const agedMessages: Message[] = [
+      ...activeTurnMessages,
+      {
+        id: 'm1',
+        role: 'model',
+        parts: [{ text: 'That stage lighting is electric!' }],
+        timestamp: 2000,
+        authorEntityId: 'gemma-2-27b-it',
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        parts: [{ text: 'Right?! The bass was so loud.' }],
+        timestamp: 3000,
+      },
+      {
+        id: 'm2',
+        role: 'model',
+        parts: [{ text: 'I can imagine the whole arena shaking!' }],
+        timestamp: 4000,
+        authorEntityId: 'gemma-2-27b-it',
+      },
+    ];
+
+    const agedSerialized = serializeSpeakerAttributedTranscript(
+      agedMessages,
+      'gemma-4-26b-a4b-it'
+    );
+    const firstTurnParts = agedSerialized[0].parts;
+    expect(firstTurnParts.some((p: any) => Boolean(p.inlineData || p.fileData))).toBe(false);
+    expect(firstTurnParts[0].text).toContain('Media Memory Digest:');
+    expect(firstTurnParts[0].text).toContain(
+      '3-minute K-pop concert fancam with neon purple stage lighting'
+    );
+    expect(firstTurnParts[0].text).toContain('inspect_shared_media');
+  });
 });
+
 
 

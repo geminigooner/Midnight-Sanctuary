@@ -18,7 +18,7 @@ export interface MessageListProps {
   visibleMessages: Message[];
   isGenerating: boolean;
   onCopy: (text: string) => void;
-  onResend: (content: string, originalIndex: number, attachments?: any[]) => void;
+  onResend: (content: string, originalIndex: number, attachments?: any[], videoAttachments?: any[]) => void;
   onFavorite: (content: string) => void;
   onImageClick: (url: string) => void;
   onSelectPrompt?: (promptText: string) => void;
@@ -92,7 +92,7 @@ export function MessageList({
               m.role === 'user' &&
               !isInternalToolResponseTurn(m) &&
               (Boolean(getPublicMessageText(m).trim()) ||
-                m.parts?.some((p) => Boolean(p?.inlineData)));
+                m.parts?.some((p) => Boolean(p?.inlineData || p?.videoAttachment)));
 
             // Find preceding real user message (skipping internal tool functionResponse turns) if this is a model response
             let precedingUserMsg: Message | undefined = undefined;
@@ -121,6 +121,11 @@ export function MessageList({
                   data: p.inlineData!.data,
                 })) || [];
 
+            const videoAttachmentsToRetry =
+              (precedingUserMsg || (msg.role === 'user' ? msg : undefined))?.parts
+                ?.filter((p) => p.videoAttachment)
+                ?.map((p) => p.videoAttachment!) || [];
+
             const retryTargetIndex = precedingUserMsg
               ? conversation.messages.findIndex((m) => m.id === precedingUserMsg!.id)
               : origIndex;
@@ -139,11 +144,16 @@ export function MessageList({
                 onCopy={onCopy}
                 precedingUserPrompt={promptToRetry}
                 onRetry={() => {
-                  if (promptToRetry.trim() || attachmentsToRetry.length > 0) {
+                  if (
+                    promptToRetry.trim() ||
+                    attachmentsToRetry.length > 0 ||
+                    videoAttachmentsToRetry.length > 0
+                  ) {
                     onResend(
                       promptToRetry,
                       retryTargetIndex >= 0 ? retryTargetIndex : origIndex,
-                      attachmentsToRetry
+                      attachmentsToRetry,
+                      videoAttachmentsToRetry
                     );
                   } else {
                     store.removeMessage(conversation.id, msg.id);

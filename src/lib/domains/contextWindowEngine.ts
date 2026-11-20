@@ -89,6 +89,20 @@ export function estimateMessageTokens(msg: Message): number {
     if (p.inlineData) {
       total += 258; // Standard multimodal image tile token cost
     }
+    if (p.videoAttachment) {
+      const va = p.videoAttachment;
+      const isFileUriValid =
+        Boolean(va.geminiFileUri) &&
+        (!va.geminiFileExpiresAt || va.geminiFileExpiresAt > Date.now());
+      if (isFileUriValid) {
+        // Active video turn (~260 tokens/sec capped so budget remains stable, or storyboard + transcript)
+        const estFramesTokens = (va.keyframes?.length || 6) * 258;
+        const estTranscriptTokens = estimateTokens(va.acousticTranscript || va.mediaDigest || '');
+        total += Math.max(400, estFramesTokens + estTranscriptTokens);
+      } else {
+        total += Math.max(120, estimateTokens(va.mediaDigest || va.fileName || '') + 80);
+      }
+    }
   }
   if (parts.length === 0 && msg.publicText) {
     total += estimateTokens(msg.publicText);

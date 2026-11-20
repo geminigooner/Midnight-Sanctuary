@@ -5,6 +5,7 @@ import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
 import { ScribbleCard } from './ScribbleCard';
 import { MusicGiftCard } from './MusicGiftCard';
+import { VideoAttachmentCard } from './VideoAttachmentCard';
 import { ErrorState } from './ErrorState';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
@@ -103,7 +104,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     (msg.scribbles && msg.scribbles.length > 0) ||
     (msg.generatedImages && msg.generatedImages.length > 0) ||
     (msg.musicTracks && msg.musicTracks.length > 0) ||
-    msg.parts?.some(p => p.inlineData)
+    msg.parts?.some(p => p.inlineData || p.videoAttachment)
   );
   const isWaitingForToken = isGenerating && isLast && !isUser && !publicText && !thoughtText;
 
@@ -350,6 +351,13 @@ export const MessageBubble = React.memo(function MessageBubble({
                     className="mt-3 rounded-xl max-w-full h-auto max-h-[300px] border-[3px] border-[#2C194D] shadow-lg cursor-pointer hover:opacity-90 transition-opacity" 
                     alt="Attached" 
                     onClick={() => onImageClick?.(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`)}
+                  />
+                ) : part.videoAttachment ? (
+                  <VideoAttachmentCard
+                    key={`vid-${part.videoAttachment.id || i}`}
+                    video={part.videoAttachment}
+                    companionName={modelName}
+                    onImageClick={onImageClick}
                   />
                 ) : null)}
 

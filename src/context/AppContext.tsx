@@ -20,7 +20,8 @@ export type ModalKey =
   | 'desires'
   | 'stickerChest'
   | 'companionRoster'
-  | 'authModal';
+  | 'authModal'
+  | 'sanctuaryVault';
 
 export interface UIState {
   sidebarOpen: boolean;
@@ -45,6 +46,8 @@ export interface UIState {
   setCompanionRosterOpen: React.Dispatch<React.SetStateAction<boolean>>;
   authModalOpen: boolean;
   setAuthModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  sanctuaryVaultOpen: boolean;
+  setSanctuaryVaultOpen: React.Dispatch<React.SetStateAction<boolean>>;
   pendingPrompt: PendingPromptData | null;
   setPendingPrompt: React.Dispatch<React.SetStateAction<PendingPromptData | null>>;
   modalOrigins: Partial<Record<ModalKey, string | undefined>>;

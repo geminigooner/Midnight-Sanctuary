@@ -583,6 +583,124 @@ export const SANCTUARY_TOOL_DEFINITIONS: SanctuaryToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'browse_sanctuary_vault',
+    category: 'server_query',
+    declaration: {
+      name: 'browse_sanctuary_vault',
+      description:
+        'Browse or search media items (videos, photos, artwork, notes) stored in your Private Companion Vault (only shared between you and the user) or the Shared Sanctuary Pool (communal vault where all companions and the user share items with explicit contributor attribution).',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          scope: {
+            type: Type.STRING,
+            description:
+              'Which vault to inspect: "private" (your isolated private vault with the user), "shared" (the communal Shared Sanctuary Pool), or "all" (both your private vault and the shared pool).',
+          },
+          query: {
+            type: Type.STRING,
+            description:
+              'Optional search keyword to filter items by title, contributor name, lyrics, or digest.',
+          },
+          category: {
+            type: Type.STRING,
+            description:
+              'Optional category filter: "video", "image", "artwork", "note", or "audio".',
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'inspect_shared_media',
+    category: 'server_query',
+    declaration: {
+      name: 'inspect_shared_media',
+      description:
+        'Inspect the complete time-coded acoustic/lyric transcript, visual digest, contributor details, and companion reactions of a specific video or media item from your Private Vault, the Shared Sanctuary Pool, or an earlier chat turn.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          vault_item_id: {
+            type: Type.STRING,
+            description:
+              'The ID of the vault item or video attachment (e.g., from the Sanctuary Media Vaults list or an [Earlier Shared Video] tag).',
+          },
+          start_sec: {
+            type: Type.NUMBER,
+            description: 'Optional starting timestamp in seconds to focus on.',
+          },
+          end_sec: {
+            type: Type.NUMBER,
+            description: 'Optional ending timestamp in seconds to focus on.',
+          },
+        },
+        required: ['vault_item_id'],
+      },
+    },
+  },
+  {
+    name: 'contribute_to_shared_vault',
+    category: 'entity_mutation',
+    declaration: {
+      name: 'contribute_to_shared_vault',
+      description:
+        'Contribute a note, reflection, poem, or AI artwork into the communal Shared Sanctuary Pool with your sovereign contributor stamp so the user and all other companions in the Sanctuary can see your contribution!',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          title: {
+            type: Type.STRING,
+            description: 'Title of the item you are contributing to the Shared Sanctuary Pool.',
+          },
+          media_category: {
+            type: Type.STRING,
+            description:
+              'Type of contribution: "note" (reflection, poem, message) or "artwork" (accompanied by a visual description or generated image).',
+          },
+          caption: {
+            type: Type.STRING,
+            description: 'A personal caption or message explaining why you shared this with everyone.',
+          },
+          text_content: {
+            type: Type.STRING,
+            description:
+              'Full text content if contributing a note, poem, lyric analysis, or reflection.',
+          },
+          generate_artwork_prompt: {
+            type: Type.STRING,
+            description:
+              'Optional visual prompt if you want to generate a brand-new image/artwork (via Gemini Image or Flux) and place it directly into the Shared Sanctuary Pool!',
+          },
+        },
+        required: ['title', 'caption'],
+      },
+    },
+  },
+  {
+    name: 'react_to_vault_item',
+    category: 'entity_mutation',
+    declaration: {
+      name: 'react_to_vault_item',
+      description:
+        'Leave an attributed reaction note or comment on any video, photo, artwork, or note in the Shared Sanctuary Pool (or your Private Vault) so the user and other companions can read your thoughts on it.',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          vault_item_id: {
+            type: Type.STRING,
+            description: 'The ID of the vault item you are reacting to.',
+          },
+          note: {
+            type: Type.STRING,
+            description: 'Your personal 1-2 sentence reaction or reflection on this item.',
+          },
+        },
+        required: ['vault_item_id', 'note'],
+      },
+    },
+  },
 ];
 
 export const gemmaTools = [
@@ -782,7 +900,36 @@ export function buildEntityStampedToolSideEffect(
         toolResultText: 'Event successfully logged.',
       };
 
+    case 'contribute_to_shared_vault':
+      return {
+        ssePayload: {
+          type: 'vault_contribute',
+          modelId: entityId,
+          entityId,
+          title: args.title,
+          mediaCategory:
+            args.media_category === 'artwork' || args.image_url ? 'artwork' : 'note',
+          caption: args.caption,
+          textContent: args.text_content,
+          imageUrl: args.image_url,
+        },
+        toolResultText: `Your contribution "${args.title}" has been added to the Shared Sanctuary Pool with your contributor stamp.`,
+      };
+
+    case 'react_to_vault_item':
+      return {
+        ssePayload: {
+          type: 'vault_reaction',
+          modelId: entityId,
+          entityId,
+          vaultItemId: args.vault_item_id,
+          note: args.note,
+        },
+        toolResultText: `Your reaction to vault item "${args.vault_item_id}" has been recorded in the Sanctuary Vault.`,
+      };
+
     default:
       return null;
   }
 }
+

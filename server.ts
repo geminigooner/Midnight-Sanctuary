@@ -12,6 +12,10 @@ import {
   resolveAvailableApiKeys,
 } from './src/backend/gemini.service';
 import { resolveExternalChatContext } from './src/backend/firestoreContext.service';
+import {
+  appendVideoUploadChunk,
+  finalizeVideoIngestion,
+} from './src/backend/videoIngestionService';
 
 declare const __PROD_SERVER__: boolean | undefined;
 
@@ -25,6 +29,61 @@ app.use(express.json({ limit: '50mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', mode: IS_PRODUCTION ? 'production' : 'development' });
+});
+
+app.post('/api/media/upload-chunk', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { uploadId, chunkIndex, totalChunks, chunkBase64 } = req.body || {};
+  if (!uploadId || typeof chunkIndex !== 'number' || typeof chunkBase64 !== 'string') {
+    return res.status(400).json({ error: 'uploadId, chunkIndex, and chunkBase64 are required' });
+  }
+  try {
+    const result = await appendVideoUploadChunk({
+      uploadId,
+      chunkIndex,
+      totalChunks: Number(totalChunks) || 1,
+      chunkBase64,
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('Video chunk upload error:', err);
+    res.status(500).json({ error: err.message || 'Video chunk upload failed' });
+  }
+});
+
+app.post('/api/media/finalize-video', async (req, res) => {
+  if (!(await verifyRequest(req))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const {
+    uploadId,
+    fileName,
+    mimeType,
+    durationSec,
+    byteSize,
+    respondingEntityId,
+    keyframes,
+  } = req.body || {};
+  if (!uploadId) {
+    return res.status(400).json({ error: 'uploadId is required' });
+  }
+  try {
+    const result = await finalizeVideoIngestion({
+      uploadId,
+      fileName: fileName || 'video.mp4',
+      mimeType: mimeType || 'video/mp4',
+      durationSec: Number(durationSec) || 0,
+      byteSize: Number(byteSize) || 0,
+      respondingEntityId,
+      keyframes: Array.isArray(keyframes) ? keyframes : [],
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('Video finalize error:', err);
+    res.status(500).json({ error: err.message || 'Video finalization failed' });
+  }
 });
 
 app.post('/api/generate-image', async (req, res) => {

@@ -1,7 +1,75 @@
+export interface VideoKeyframe {
+  timestampSec: number;
+  timestampLabel: string;
+  dataUrl: string;
+}
+
+export interface VideoAttachmentMeta {
+  id: string;
+  mediaAssetId?: string;
+  vaultItemId?: string;
+  fileName: string;
+  mimeType: string;
+  durationSec: number;
+  width?: number;
+  height?: number;
+  byteSize: number;
+  posterDataUrl: string;
+  keyframes?: VideoKeyframe[];
+  storagePath?: string;
+  downloadUrl?: string;
+  geminiFileUri?: string;
+  geminiFileState?: 'PROCESSING' | 'ACTIVE' | 'FAILED' | 'EXPIRED';
+  geminiFileExpiresAt?: number;
+  acousticTranscript?: string;
+  mediaDigest?: string;
+  scope?: 'private' | 'shared';
+  ownerEntityId?: string;
+}
+
+export interface SanctuaryVaultReaction {
+  id: string;
+  entityId: string;
+  displayName: string;
+  avatarEmoji?: string;
+  note: string;
+  timestamp: number;
+}
+
+export interface SanctuaryVaultItem {
+  id: string;
+  scope: 'private' | 'shared';
+  ownerEntityId?: string;
+  contributedByType: 'user' | 'companion';
+  contributedByEntityId?: string;
+  contributedByName: string;
+  mediaCategory: 'video' | 'image' | 'audio' | 'note' | 'artwork';
+  title: string;
+  caption?: string;
+  mimeType?: string;
+  mediaAssetId?: string;
+  downloadUrl?: string;
+  posterDataUrl?: string;
+  durationSec?: number;
+  byteSize?: number;
+  keyframes?: VideoKeyframe[];
+  geminiFileUri?: string;
+  geminiFileExpiresAt?: number;
+  acousticTranscript?: string;
+  mediaDigest?: string;
+  textContent?: string;
+  companionReactions: SanctuaryVaultReaction[];
+  createdAt: number;
+  updatedAt: number;
+  isDeleted?: boolean;
+}
+
 export interface MessagePart {
   text?: string;
   thought?: boolean;
   inlineData?: { mimeType: string; data: string; mediaAssetId?: string; downloadUrl?: string };
+  videoAttachment?: VideoAttachmentMeta;
+  fileData?: { fileUri: string; mimeType: string };
   functionCall?: any;
   functionResponse?: any;
   thoughtSignature?: string;
@@ -268,6 +336,7 @@ export interface AppSettings {
   customEntities?: Record<string, any>;
   stickers?: any[];
   placedStickers?: any[];
+  sharedVaultItems?: SanctuaryVaultItem[];
 }
 
 export type JewelStage = 'seed' | 'stance' | 'formation' | 'incorporation' | 'archival';
