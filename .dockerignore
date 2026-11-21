@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+coverage
+test-results
+.git
+.github
+.aistudio
+public/assets/aistudio
+*.log
+.DS_Store
+.env*
+!.env.example
