@@ -11,6 +11,7 @@ import {
   Lock,
   Users,
   FolderHeart,
+  FolderOpen,
   Loader2,
   AlertCircle,
 } from 'lucide-react';
@@ -89,6 +90,7 @@ export function ChatInputDock({
   const reducedMotion = useReducedMotion();
   const sharedTransition = getMotion('shared', reducedMotion);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const browseFilesInputRef = useRef<HTMLInputElement>(null);
   const giftFileInputRef = useRef<HTMLInputElement>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
 
@@ -409,17 +411,23 @@ export function ChatInputDock({
     if (!file) return;
 
     const isVideo =
-      file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
+      file.type.startsWith('video/') ||
+      /\.(mp4|mov|webm|m4v|mkv|avi|3gp|ogv)$/i.test(file.name);
+    const isImage =
+      file.type.startsWith('image/') ||
+      /\.(jpg|jpeg|png|webp|gif|heic|avif|bmp)$/i.test(file.name);
 
     if (isVideo) {
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (browseFilesInputRef.current) browseFilesInputRef.current.value = '';
       await handleVideoFileSelected(file);
       return;
     }
 
-    if (!file.type.startsWith('image/')) {
+    if (!isImage) {
       setUploadError('Please choose an image or a video clip (.mp4, .mov, .webm).');
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (browseFilesInputRef.current) browseFilesInputRef.current.value = '';
       return;
     }
 
@@ -526,6 +534,7 @@ export function ChatInputDock({
     }
 
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (browseFilesInputRef.current) browseFilesInputRef.current.value = '';
   };
 
   const canSend =
@@ -772,13 +781,32 @@ export function ChatInputDock({
               onChange={handleFileChange}
               className="hidden"
             />
+            {/* Unrestricted file input so Android/Pixel opens the system Files & Downloads picker instead of Google Photos */}
+            <input
+              type="file"
+              ref={browseFilesInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+            />
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={Boolean(uploadingVideo)}
               className="p-2.5 sm:p-3 text-[#2C194D]/70 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D] disabled:opacity-40 cursor-pointer"
-              title="Attach Image or Video (.mp4, .mov, .webm up to 10 min)"
+              title="Pick Photo or Video from Photos Gallery"
             >
               <Paperclip size={20} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => browseFilesInputRef.current?.click()}
+              disabled={Boolean(uploadingVideo)}
+              className="inline-flex items-center gap-1 px-2.5 py-2 sm:py-2.5 text-[#2C194D] bg-[#B39DE5]/70 hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-extrabold text-xs border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 disabled:opacity-40 cursor-pointer"
+              title="Browse Device Files & Downloads (.mp4, .mov, .webm, photos)"
+            >
+              <FolderOpen size={16} />
+              <span>Files</span>
             </button>
 
             {/* Default Vault Destination Scope Toggle for New Uploads */}

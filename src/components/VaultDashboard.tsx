@@ -21,6 +21,7 @@ import {
   Gift as GiftIcon,
   ChevronRight,
   HardDrive,
+  FolderOpen,
   Pencil,
   Clock,
 } from 'lucide-react';
@@ -109,6 +110,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
   const [editCaption, setEditCaption] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const browseFilesInputRef = useRef<HTMLInputElement>(null);
 
   const activePrivateCompanion: ModelEntity = useMemo(() => {
     const targetId =
@@ -450,6 +452,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (browseFilesInputRef.current) browseFilesInputRef.current.value = '';
 
     const targetScope: 'private' | 'shared' =
       selectedFolder.type === 'shared' ? 'shared' : 'private';
@@ -459,7 +462,11 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
         : defaultEntityId;
 
     const isVideo =
-      file.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
+      file.type.startsWith('video/') ||
+      /\.(mp4|mov|webm|m4v|mkv|avi|3gp|ogv)$/i.test(file.name);
+    const isImage =
+      file.type.startsWith('image/') ||
+      /\.(jpg|jpeg|png|webp|gif|heic|avif|bmp)$/i.test(file.name);
 
     try {
       if (isVideo) {
@@ -532,7 +539,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
         return;
       }
 
-      if (file.type.startsWith('image/')) {
+      if (isImage) {
         setUploadingStatus(`Storing image ${file.name}...`);
         const compressed = await compressImage(file);
         const mediaService = new MediaStorageService(
@@ -1014,12 +1021,19 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
               </div>
             </div>
 
-            {/* Primary Upload / Add Note Controls + Optional Upload Caption */}
+            {/* Primary Upload / Browse Files / Add Note Controls + Optional Upload Caption */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full lg:w-auto">
               <input
                 type="file"
                 accept="image/*,video/mp4,video/quicktime,video/webm,video/*"
                 ref={fileInputRef}
+                onChange={handleUploadMediaFile}
+                className="hidden"
+              />
+              {/* Unrestricted file input so Android/Pixel launches the system Files & Downloads browser */}
+              <input
+                type="file"
+                ref={browseFilesInputRef}
                 onChange={handleUploadMediaFile}
                 className="hidden"
               />
@@ -1037,24 +1051,36 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                 }
                 className="px-3 py-2 rounded-xl bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[2px] border-[#2C194D] text-xs font-bold outline-none min-w-[210px]"
               />
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   disabled={Boolean(uploadingStatus)}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                  title="Pick from Photos / Gallery"
                 >
                   {uploadingStatus ? (
                     <>
                       <Loader2 size={14} className="animate-spin" />
-                      <span className="truncate max-w-[150px]">{uploadingStatus}</span>
+                      <span className="truncate max-w-[140px]">{uploadingStatus}</span>
                     </>
                   ) : (
                     <>
                       <Upload size={14} />
-                      <span>Upload Video / Photo</span>
+                      <span>Photos / Gallery</span>
                     </>
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={Boolean(uploadingStatus)}
+                  onClick={() => browseFilesInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F5E1C8] hover:bg-[#F198B7] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                  title="Open Android/Device Files & Downloads to pick an .mp4 or media file"
+                >
+                  <FolderOpen size={14} />
+                  <span>Browse Files / MP4</span>
                 </button>
 
                 <button
