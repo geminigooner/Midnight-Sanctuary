@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { VideoAttachmentMeta } from '../lib/types';
+import { VideoAttachmentMeta, formatPostedTimestamp } from '../lib/types';
 import {
   Play,
   Film,
@@ -11,6 +11,7 @@ import {
   Sparkles,
   Check,
   Volume2,
+  Edit3,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatVideoDurationLabel } from '../lib/media/videoProcessor';
@@ -22,12 +23,16 @@ export interface VideoAttachmentCardProps {
   video: VideoAttachmentMeta;
   companionName?: string;
   companionEntityId?: string;
+  postedByName?: string;
+  postedAt?: number;
   onImageClick?: (url: string) => void;
 }
 
 export function VideoAttachmentCard({
   video,
   companionName = 'Companion',
+  postedByName,
+  postedAt,
   onImageClick,
 }: VideoAttachmentCardProps) {
   const store = useStore();
@@ -37,6 +42,16 @@ export function VideoAttachmentCard({
   );
   const [showSensoryDetails, setShowSensoryDetails] = useState(false);
   const [sharedToPool, setSharedToPool] = useState(video.scope === 'shared');
+  const [captionText, setCaptionText] = useState(video.caption || '');
+  const [isEditingCaption, setIsEditingCaption] = useState(false);
+  const [draftCaption, setDraftCaption] = useState(video.caption || '');
+
+  useEffect(() => {
+    if (video.caption !== undefined) {
+      setCaptionText(video.caption);
+      setDraftCaption(video.caption);
+    }
+  }, [video.caption]);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +80,28 @@ export function VideoAttachmentCard({
 
   const durationLabel = formatVideoDurationLabel(video.durationSec);
   const sizeMb = video.byteSize ? (video.byteSize / (1024 * 1024)).toFixed(1) : null;
+  const resolvedPosterName =
+    postedByName || video.contributedByName || store.profile?.name || 'You';
+  const resolvedPostedAt = postedAt || video.createdAt;
+
+  const handleSaveCaption = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    triggerHaptic('light');
+    const trimmed = draftCaption.trim();
+    setCaptionText(trimmed);
+    setIsEditingCaption(false);
+    const vaultId = video.vaultItemId || video.id;
+    const targetScope = sharedToPool ? 'shared' : (video.scope || 'private');
+    if (vaultId && (store as any).vault?.updateAsset) {
+      void (store as any).vault.updateAsset(
+        targetScope,
+        vaultId,
+        { caption: trimmed },
+        video.ownerEntityId
+      );
+    }
+  };
 
   const handlePromoteToSharedPool = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -81,7 +118,7 @@ export function VideoAttachmentCard({
         contributedByName: store.profile?.name || 'You',
         mediaCategory: 'video',
         title: video.fileName || 'Shared Sanctuary Video',
-        caption: video.mediaDigest,
+        caption: captionText || video.caption || video.mediaDigest,
         mimeType: video.mimeType,
         mediaAssetId: video.mediaAssetId,
         downloadUrl: resolvedVideoUrl || video.downloadUrl,
@@ -100,26 +137,36 @@ export function VideoAttachmentCard({
 
   return (
     <div className="mt-3 w-full max-w-[440px] rounded-2xl bg-[#151234] border-[3px] border-[#2C194D] shadow-[4px_4px_0_#2C194D] overflow-hidden text-[#F5E1C8] select-none">
-      {/* Header bar */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[#1F173A] border-b-[2px] border-[#2C194D]">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Film size={14} className="text-[#F198B7] shrink-0" />
-          <span className="text-xs font-extrabold text-[#F5E1C8] truncate">
-            {video.fileName || 'Sanctuary Video Clip'}
-          </span>
+      {/* Header bar with Who Posted What & When */}
+      <div className="px-3 py-2 bg-[#1F173A] border-b-[2px] border-[#2C194D] space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Film size={14} className="text-[#F198B7] shrink-0" />
+            <span className="text-xs font-extrabold text-[#F5E1C8] truncate">
+              {video.fileName || 'Sanctuary Video Clip'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {sharedToPool ? (
+              <span className="inline-flex items-center gap-1 text-[#81E6D9] text-[10px] font-black">
+                <Users size={10} />
+                <span>Shared Pool</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[#F198B7] text-[10px] font-black">
+                <Lock size={10} />
+                <span>Private Vault</span>
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {sharedToPool ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#81E6D9]/20 border border-[#81E6D9]/40 text-[#81E6D9] text-[10px] font-black">
-              <Users size={10} />
-              <span>Shared Pool</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#F198B7]/20 border border-[#F198B7]/40 text-[#F198B7] text-[10px] font-black">
-              <Lock size={10} />
-              <span>Private Vault</span>
-            </span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] font-bold text-[#B39DE5]/90 tabular-nums">
+          <span>
+            Posted by <strong className="text-[#F5E1C8] font-black">{resolvedPosterName}</strong> · Video Clip
+          </span>
+          {resolvedPostedAt ? (
+            <span className="text-[#B39DE5]/75">{formatPostedTimestamp(resolvedPostedAt)}</span>
+          ) : null}
         </div>
       </div>
 
@@ -189,6 +236,73 @@ export function VideoAttachmentCard({
               </span>
             </div>
           </>
+        )}
+      </div>
+
+      {/* Caption Bar (View / Inline Add or Edit Caption) */}
+      <div className="px-3 py-2 bg-[#171233] border-t-[2px] border-[#2C194D]">
+        {isEditingCaption ? (
+          <form onSubmit={handleSaveCaption} className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="text"
+              value={draftCaption}
+              onChange={(e) => setDraftCaption(e.target.value)}
+              placeholder="Write a caption for this video..."
+              autoFocus
+              className="flex-1 min-w-0 px-2.5 py-1 rounded-xl bg-[#0D0A1C] border-[2px] border-[#2C194D] text-xs font-bold text-[#F5E1C8] placeholder:text-[#B39DE5]/50 focus:outline-none focus:border-[#F198B7]"
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded-xl bg-[#F198B7] text-[#2C194D] border-[2px] border-[#2C194D] text-[10px] font-black cursor-pointer"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditingCaption(false);
+                setDraftCaption(captionText);
+              }}
+              className="px-2 py-1 rounded-xl bg-[#1F173A] text-[#B39DE5] border border-[#2C194D] text-[10px] font-bold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </form>
+        ) : captionText ? (
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-extrabold text-[#F5E1C8] leading-snug break-words">
+              <span className="text-[#F198B7] mr-1">💬 Caption:</span>"{captionText}"
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic('light');
+                setDraftCaption(captionText);
+                setIsEditingCaption(true);
+              }}
+              className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1F173A] hover:bg-[#2C194D] text-[#B39DE5] hover:text-[#F5E1C8] text-[10px] font-bold transition-colors cursor-pointer"
+              title="Edit video caption"
+            >
+              <Edit3 size={10} />
+              <span>Edit</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic('light');
+              setDraftCaption('');
+              setIsEditingCaption(true);
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-[#B39DE5]/80 hover:text-[#F198B7] transition-colors cursor-pointer"
+          >
+            <Edit3 size={11} />
+            <span>+ Add a caption to this video</span>
+          </button>
         )}
       </div>
 

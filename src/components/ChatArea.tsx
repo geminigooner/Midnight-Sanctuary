@@ -27,7 +27,17 @@ export function ChatArea() {
   const conversation = store.conversations.find(c => c.id === store.currentId);
 
   const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState<{ mimeType: string; data: string; previewUrl?: string }[]>([]);
+  const [attachments, setAttachments] = useState<
+    {
+      mimeType: string;
+      data: string;
+      previewUrl?: string;
+      caption?: string;
+      fileName?: string;
+      scope?: 'private' | 'shared';
+      vaultItemId?: string;
+    }[]
+  >([]);
   const [videoAttachments, setVideoAttachments] = useState<VideoAttachmentMeta[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 

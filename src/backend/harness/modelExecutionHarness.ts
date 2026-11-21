@@ -8,6 +8,7 @@ import {
   SanctuaryVaultItem,
   UserProfile,
   getPublicMessageText,
+  formatPostedTimestamp,
 } from '../../lib/types';
 import { HydratedChatContext, persistFirestoreSegmentSummary } from '../firestoreContext.service';
 import { performWebSearch } from '../searchService';
@@ -402,15 +403,24 @@ async function dispatchServerOrEntityToolCall(params: {
             .map((item) => {
               const scopeTag = item.scope === 'shared' ? 'SHARED POOL' : 'PRIVATE VAULT';
               const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
+              const postedWhen = item.createdAt
+                ? formatPostedTimestamp(item.createdAt, false)
+                : 'Recently';
               const reactions =
                 Array.isArray(item.companionReactions) && item.companionReactions.length > 0
                   ? `\n  Companion Reactions: ${item.companionReactions
-                      .map((r) => `${r.displayName}: "${r.note}"`)
+                      .map(
+                        (r) =>
+                          `${r.displayName} (${
+                            r.timestamp ? formatPostedTimestamp(r.timestamp, false) : postedWhen
+                          }): "${r.note}"`
+                      )
                       .join(' | ')}`
                   : '';
+              const captionLine = item.caption ? `\n  Caption: "${item.caption}"` : '';
               return `- [${scopeTag} · ${item.mediaCategory.toUpperCase()} · ID: ${item.id}] "${
                 item.title
-              }"${dur} (Contributed by ${item.contributedByName})\n  Summary: ${
+              }"${dur} (Posted by ${item.contributedByName} on ${postedWhen})${captionLine}\n  Summary: ${
                 item.mediaDigest || item.caption || item.textContent || 'Media item'
               }${reactions}`;
             })
@@ -452,11 +462,19 @@ async function dispatchServerOrEntityToolCall(params: {
 
     let detailText = '';
     if (matchedVaultItem) {
+      const postedWhen = matchedVaultItem.createdAt
+        ? formatPostedTimestamp(matchedVaultItem.createdAt, false)
+        : 'Recently';
       const reactions =
         Array.isArray(matchedVaultItem.companionReactions) &&
         matchedVaultItem.companionReactions.length > 0
           ? matchedVaultItem.companionReactions
-              .map((r) => `- ${r.displayName}: "${r.note}"`)
+              .map(
+                (r) =>
+                  `- ${r.displayName} (${
+                    r.timestamp ? formatPostedTimestamp(r.timestamp, false) : postedWhen
+                  }): "${r.note}"`
+              )
               .join('\n')
           : 'None yet';
       detailText = [
@@ -467,12 +485,13 @@ async function dispatchServerOrEntityToolCall(params: {
             : 'Private Companion Vault (Only You & User)'
         }`,
         `Title: ${matchedVaultItem.title}`,
-        `Category: ${matchedVaultItem.mediaCategory}`,
-        `Contributed By: ${matchedVaultItem.contributedByName}`,
+        `Category (What): ${matchedVaultItem.mediaCategory}`,
+        `Posted By (Who): ${matchedVaultItem.contributedByName}`,
+        `Posted At (When): ${postedWhen}`,
         matchedVaultItem.durationSec
           ? `Duration: ${Math.round(matchedVaultItem.durationSec)}s`
           : '',
-        matchedVaultItem.caption ? `Caption: ${matchedVaultItem.caption}` : '',
+        matchedVaultItem.caption ? `Caption: "${matchedVaultItem.caption}"` : '',
         matchedVaultItem.mediaDigest ? `Visual & Media Digest:\n${matchedVaultItem.mediaDigest}` : '',
         matchedVaultItem.acousticTranscript
           ? `Complete Time-Coded Acoustic & Lyric Transcript:\n${matchedVaultItem.acousticTranscript}`
@@ -483,15 +502,23 @@ async function dispatchServerOrEntityToolCall(params: {
         .filter(Boolean)
         .join('\n\n');
     } else if (matchedMsgVideo) {
+      const vidWhen = matchedMsgVideo.createdAt
+        ? formatPostedTimestamp(matchedMsgVideo.createdAt, false)
+        : 'Recently';
       detailText = [
         `Video Attachment ID: ${matchedMsgVideo.id}`,
         `File Name: ${matchedMsgVideo.fileName}`,
+        `Posted By (Who): ${matchedMsgVideo.contributedByName || 'User'}`,
+        `Posted At (When): ${vidWhen}`,
         `Duration: ${Math.round(matchedMsgVideo.durationSec || 0)}s`,
+        matchedMsgVideo.caption ? `Caption: "${matchedMsgVideo.caption}"` : '',
         `Visual & Media Digest:\n${matchedMsgVideo.mediaDigest || 'N/A'}`,
         `Complete Time-Coded Acoustic & Lyric Transcript:\n${
           matchedMsgVideo.acousticTranscript || 'N/A'
         }`,
-      ].join('\n\n');
+      ]
+        .filter(Boolean)
+        .join('\n\n');
     } else {
       detailText = `Could not find a media or vault item with ID "${targetId}". Call browse_sanctuary_vault to view available item IDs.`;
     }

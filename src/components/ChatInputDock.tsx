@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Conversation, Message, VideoAttachmentMeta } from '../lib/types';
 import {
   Send,
@@ -29,16 +29,24 @@ import { getSharedPersistenceCoordinator } from '../lib/store';
 import { resolveCanonicalEntityId } from '../lib/domains/entityDomain';
 import { getAllEntities } from '../lib/entitySystem';
 
+export interface StagedImageAttachment {
+  mimeType: string;
+  data: string;
+  previewUrl?: string;
+  caption?: string;
+  fileName?: string;
+  scope?: 'private' | 'shared';
+  vaultItemId?: string;
+}
+
 export interface ChatInputDockProps {
   conversation: Conversation;
   visibleMessages: Message[];
   isGenerating: boolean;
   input: string;
   setInput: (value: string) => void;
-  attachments: { mimeType: string; data: string; previewUrl?: string }[];
-  setAttachments: React.Dispatch<
-    React.SetStateAction<{ mimeType: string; data: string; previewUrl?: string }[]>
-  >;
+  attachments: StagedImageAttachment[];
+  setAttachments: React.Dispatch<React.SetStateAction<StagedImageAttachment[]>>;
   videoAttachments?: VideoAttachmentMeta[];
   setVideoAttachments?: React.Dispatch<React.SetStateAction<VideoAttachmentMeta[]>>;
   onSend: (
@@ -93,9 +101,19 @@ export function ChatInputDock({
   } | null>(null);
   const [showDebugModel, setShowDebugModel] = useState(false);
 
-  const [videoVaultScope, setVideoVaultScope] = useState<'private' | 'shared'>('private');
+  const [videoVaultScope, setVideoVaultScope] = useState<'private' | 'shared'>(
+    conversation?.type === 'group' ? 'shared' : 'private'
+  );
   const [uploadingVideo, setUploadingVideo] = useState<UploadingVideoState | null>(null);
+  const [uploadingVideoCaption, setUploadingVideoCaption] = useState('');
+  const uploadingVideoCaptionRef = useRef('');
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (conversation?.type === 'group') {
+      setVideoVaultScope('shared');
+    }
+  }, [conversation?.id, conversation?.type]);
 
   const activeModelId =
     conversation?.modelId || store.settings.model || 'models/gemini-3.1-pro-preview';
@@ -216,6 +234,7 @@ export function ChatInputDock({
       if (abortController.signal.aborted) return;
 
       // Save item to the chosen Sanctuary Vault (Private Companion Vault or Shared Pool)
+      const initialCaption = uploadingVideoCaptionRef.current.trim() || overLimitNote || '';
       const vaultItem = store.addVaultItem({
         scope: chosenScope,
         ownerEntityId: canonicalEntityId,
@@ -223,7 +242,7 @@ export function ChatInputDock({
         contributedByName: store.profile?.name || 'You',
         mediaCategory: 'video',
         title: file.name,
-        caption: overLimitNote,
+        caption: initialCaption || undefined,
         mimeType: sample.mimeType,
         mediaAssetId: storedAsset?.asset.id,
         downloadUrl: storedAsset?.asset.downloadUrl,
@@ -253,15 +272,21 @@ export function ChatInputDock({
         keyframes: sample.keyframes,
         acousticTranscript: finalized.acousticTranscript,
         mediaDigest: finalized.mediaDigest,
+        caption: initialCaption || undefined,
         scope: chosenScope,
         ownerEntityId: canonicalEntityId,
         vaultItemId: vaultItem.id,
+        contributedByName: store.profile?.name || 'Amanda',
+        contributedByType: 'user',
+        createdAt: vaultItem.createdAt || Date.now(),
       };
 
       if (setVideoAttachments) {
         setVideoAttachments((prev) => [...prev, attachmentMeta]);
       }
       setUploadingVideo(null);
+      setUploadingVideoCaption('');
+      uploadingVideoCaptionRef.current = '';
     } catch (err: any) {
       if (err?.message?.includes('cancelled')) {
         setUploadingVideo(null);
@@ -288,6 +313,92 @@ export function ChatInputDock({
         return {
           ...vid,
           scope: nextScope,
+        };
+      })
+    );
+  };
+
+  const handleUpdateStagedVideoCaption = (videoId: string, caption: string) => {
+    if (!setVideoAttachments) return;
+    setVideoAttachments((prev) =>
+      prev.map((vid) => {
+        if (vid.id !== videoId) return vid;
+        if (vid.vaultItemId && store.vault?.updateAsset) {
+          store.vault.updateAsset(
+            vid.vaultItemId,
+            { caption },
+            {
+              scope: vid.scope || 'private',
+              ownerEntityId: canonicalEntityId,
+            }
+          );
+          if (vid.scope === 'shared') {
+            store.vault.updateAsset(
+              vid.vaultItemId,
+              { caption },
+              { scope: 'shared' }
+            );
+          }
+        }
+        return {
+          ...vid,
+          caption,
+        };
+      })
+    );
+  };
+
+  const handleToggleStagedImageScope = (idx: number) => {
+    setAttachments((prev) =>
+      prev.map((att, i) => {
+        if (i !== idx) return att;
+        const nextScope: 'private' | 'shared' =
+          att.scope === 'shared' ? 'private' : 'shared';
+        if (nextScope === 'shared' && att.vaultItemId) {
+          store.promoteVaultItemToShared(canonicalEntityId, att.vaultItemId);
+        }
+        return {
+          ...att,
+          scope: nextScope,
+        };
+      })
+    );
+  };
+
+  const handleUpdateStagedImageCaption = (idx: number, caption: string) => {
+    setAttachments((prev) =>
+      prev.map((att, i) => {
+        if (i !== idx) return att;
+        if (att.vaultItemId && store.vault?.updateAsset) {
+          store.vault.updateAsset(
+            att.vaultItemId,
+            {
+              caption,
+              mediaDigest: caption
+                ? `Image "${att.fileName || 'Sanctuary Photo'}" — Caption: "${caption}"`
+                : `Image "${att.fileName || 'Sanctuary Photo'}" saved by ${store.profile?.name || 'You'}.`,
+            },
+            {
+              scope: att.scope || 'private',
+              ownerEntityId: canonicalEntityId,
+            }
+          );
+          if (att.scope === 'shared') {
+            store.vault.updateAsset(
+              att.vaultItemId,
+              {
+                caption,
+                mediaDigest: caption
+                  ? `Image "${att.fileName || 'Sanctuary Photo'}" — Caption: "${caption}"`
+                  : `Image "${att.fileName || 'Sanctuary Photo'}" saved by ${store.profile?.name || 'You'}.`,
+              },
+              { scope: 'shared' }
+            );
+          }
+        }
+        return {
+          ...att,
+          caption,
         };
       })
     );
@@ -349,6 +460,21 @@ export function ChatInputDock({
 
       const dataUrl = canvas.toDataURL(targetMimeType, quality);
       const base64Data = dataUrl.split(',')[1];
+      const chosenScope: 'private' | 'shared' =
+        conversation?.type === 'group' ? 'shared' : videoVaultScope;
+
+      const vaultItem = store.addVaultItem({
+        scope: chosenScope,
+        ownerEntityId: canonicalEntityId,
+        contributedByType: 'user',
+        contributedByName: store.profile?.name || 'Amanda',
+        mediaCategory: 'image',
+        title: file.name || 'Sanctuary Photo',
+        mimeType: targetMimeType,
+        byteSize: file.size,
+        posterDataUrl: dataUrl,
+        mediaDigest: `Image "${file.name || 'Sanctuary Photo'}" saved by ${store.profile?.name || 'Amanda'}.`,
+      });
 
       setAttachments((prev) => [
         ...prev,
@@ -356,6 +482,10 @@ export function ChatInputDock({
           mimeType: targetMimeType,
           data: base64Data,
           previewUrl: dataUrl,
+          fileName: file.name,
+          scope: chosenScope,
+          vaultItemId: vaultItem.id,
+          caption: '',
         },
       ]);
       URL.revokeObjectURL(objectUrl);
@@ -365,12 +495,30 @@ export function ChatInputDock({
       reader.onload = (event) => {
         const result = event.target?.result as string;
         const base64Data = result.split(',')[1];
+        const chosenScope: 'private' | 'shared' =
+          conversation?.type === 'group' ? 'shared' : videoVaultScope;
+        const vaultItem = store.addVaultItem({
+          scope: chosenScope,
+          ownerEntityId: canonicalEntityId,
+          contributedByType: 'user',
+          contributedByName: store.profile?.name || 'Amanda',
+          mediaCategory: 'image',
+          title: file.name || 'Sanctuary Photo',
+          mimeType: file.type,
+          byteSize: file.size,
+          posterDataUrl: result,
+          mediaDigest: `Image "${file.name || 'Sanctuary Photo'}" saved by ${store.profile?.name || 'Amanda'}.`,
+        });
         setAttachments((prev) => [
           ...prev,
           {
             mimeType: file.type,
             data: base64Data,
             previewUrl: result,
+            fileName: file.name,
+            scope: chosenScope,
+            vaultItemId: vaultItem.id,
+            caption: '',
           },
         ]);
       };
@@ -404,9 +552,9 @@ export function ChatInputDock({
             </div>
           )}
 
-          {/* Active Chunked Video Upload Progress Card */}
+          {/* Active Chunked Video Upload Progress Card with Live Caption Input */}
           {uploadingVideo && (
-            <div className="mx-2 mt-2 p-3 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[3px_3px_0_#2C194D]">
+            <div className="mx-2 mt-2 p-3 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[3px_3px_0_#2C194D] space-y-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   {uploadingVideo.posterDataUrl ? (
@@ -450,79 +598,61 @@ export function ChatInputDock({
                 </div>
               </div>
 
-              <div className="mt-2.5 w-full h-2 rounded-full bg-[#2C194D] overflow-hidden">
+              <div className="w-full h-2 rounded-full bg-[#2C194D] overflow-hidden">
                 <div
                   className="h-full bg-[#F198B7] transition-all duration-300"
                   style={{ width: `${Math.max(5, uploadingVideo.progressPct)}%` }}
                 />
               </div>
+
+              <input
+                type="text"
+                value={uploadingVideoCaption}
+                onChange={(e) => {
+                  setUploadingVideoCaption(e.target.value);
+                  uploadingVideoCaptionRef.current = e.target.value;
+                }}
+                placeholder="Write a caption for this video while it uploads..."
+                className="w-full px-2.5 py-1.5 rounded-xl bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[2px] border-[#2C194D] text-xs font-bold outline-none"
+              />
+
               {uploadingVideo.warning && (
-                <p className="mt-1.5 text-[10px] font-bold text-[#F198B7]">
+                <p className="text-[10px] font-bold text-[#F198B7]">
                   {uploadingVideo.warning}
                 </p>
               )}
             </div>
           )}
 
-          {/* Staged Images & Staged Cinema Videos */}
+          {/* Staged Images & Staged Cinema Videos (with Caption Input & Shared/Private Scope Toggle) */}
           {(attachments.length > 0 || videoAttachments.length > 0) && (
-            <div className="flex flex-wrap items-center gap-2.5 px-2 pt-2 overflow-x-auto custom-scrollbar">
+            <div className="flex flex-wrap items-stretch gap-2.5 px-2 pt-2 overflow-x-auto custom-scrollbar">
               {attachments.map((att, i) => (
-                <div key={`img-${i}`} className="relative shrink-0">
-                  <img
-                    src={att.previewUrl}
-                    className="h-16 w-16 object-cover rounded-xl border-[3px] border-[#2C194D]"
-                    alt="attachment"
-                  />
-                  <button
-                    onClick={() =>
-                      setAttachments((prev) => prev.filter((_, idx) => idx !== i))
-                    }
-                    className="absolute -top-2 -right-2 bg-[#151234] text-[#F5E1C8] rounded-full p-1 border-[2.5px] border-[#2C194D] hover:text-red-400 transition-colors cursor-pointer"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-
-              {videoAttachments.map((vid) => (
                 <div
-                  key={vid.id}
-                  className="relative flex items-center gap-2.5 p-2 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[2px_2px_0_#2C194D] shrink-0"
+                  key={`img-${i}`}
+                  className="relative flex flex-col gap-1.5 p-2 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[2px_2px_0_#2C194D] shrink-0 w-56"
                 >
-                  <div className="relative w-14 h-12 rounded-xl overflow-hidden border-[2px] border-[#2C194D] bg-[#0B091B] shrink-0">
-                    {vid.posterDataUrl ? (
-                      <img
-                        src={vid.posterDataUrl}
-                        alt={vid.fileName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-[#F198B7]">
-                        <Film size={18} />
-                      </div>
-                    )}
-                    <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[9px] font-extrabold text-[#F5E1C8] tabular-nums">
-                      {formatVideoDurationLabel(vid.durationSec)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1 pr-4 max-w-[190px]">
-                    <span className="text-xs font-extrabold text-[#F5E1C8] truncate">
-                      {vid.fileName}
-                    </span>
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2 pr-4">
+                    <img
+                      src={att.previewUrl}
+                      className="h-12 w-12 object-cover rounded-xl border-[2px] border-[#2C194D] shrink-0"
+                      alt="attachment"
+                    />
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className="text-xs font-extrabold text-[#F5E1C8] truncate">
+                        {att.fileName || 'Sanctuary Photo'}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => handleToggleStagedVideoScope(vid.id)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-extrabold border transition-colors cursor-pointer ${
-                          vid.scope === 'shared'
+                        onClick={() => handleToggleStagedImageScope(i)}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-extrabold border transition-colors cursor-pointer w-fit ${
+                          att.scope === 'shared'
                             ? 'bg-[#F198B7] text-[#2C194D] border-[#2C194D]'
                             : 'bg-[#9D7FE3] text-[#2C194D] border-[#2C194D]'
                         }`}
                         title="Click to switch between Private Companion Vault and Shared Sanctuary Pool"
                       >
-                        {vid.scope === 'shared' ? (
+                        {att.scope === 'shared' ? (
                           <>
                             <Users size={10} />
                             <span>Shared Pool (All)</span>
@@ -536,6 +666,88 @@ export function ChatInputDock({
                       </button>
                     </div>
                   </div>
+
+                  <input
+                    type="text"
+                    value={att.caption || ''}
+                    onChange={(e) => handleUpdateStagedImageCaption(i, e.target.value)}
+                    placeholder="Add a caption for this photo..."
+                    className="w-full px-2 py-1 rounded-lg bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[1.5px] border-[#2C194D] text-[11px] font-bold outline-none"
+                  />
+
+                  <button
+                    onClick={() =>
+                      setAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    className="absolute -top-2 -right-2 bg-[#151234] text-[#F5E1C8] rounded-full p-1 border-[2.5px] border-[#2C194D] hover:text-red-400 transition-colors cursor-pointer"
+                    title="Remove photo"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+
+              {videoAttachments.map((vid) => (
+                <div
+                  key={vid.id}
+                  className="relative flex flex-col gap-1.5 p-2 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[2px_2px_0_#2C194D] shrink-0 w-64"
+                >
+                  <div className="flex items-center gap-2.5 pr-4">
+                    <div className="relative w-14 h-12 rounded-xl overflow-hidden border-[2px] border-[#2C194D] bg-[#0B091B] shrink-0">
+                      {vid.posterDataUrl ? (
+                        <img
+                          src={vid.posterDataUrl}
+                          alt={vid.fileName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[#F198B7]">
+                          <Film size={18} />
+                        </div>
+                      )}
+                      <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[9px] font-extrabold text-[#F5E1C8] tabular-nums">
+                        {formatVideoDurationLabel(vid.durationSec)}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className="text-xs font-extrabold text-[#F5E1C8] truncate">
+                        {vid.fileName}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStagedVideoScope(vid.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-extrabold border transition-colors cursor-pointer ${
+                            vid.scope === 'shared'
+                              ? 'bg-[#F198B7] text-[#2C194D] border-[#2C194D]'
+                              : 'bg-[#9D7FE3] text-[#2C194D] border-[#2C194D]'
+                          }`}
+                          title="Click to switch between Private Companion Vault and Shared Sanctuary Pool"
+                        >
+                          {vid.scope === 'shared' ? (
+                            <>
+                              <Users size={10} />
+                              <span>Shared Pool (All)</span>
+                            </>
+                          ) : (
+                            <>
+                              <Lock size={10} />
+                              <span>Only {activeCompanion?.displayName || 'Companion'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={vid.caption || ''}
+                    onChange={(e) => handleUpdateStagedVideoCaption(vid.id, e.target.value)}
+                    placeholder="Add a caption for this video..."
+                    className="w-full px-2 py-1 rounded-lg bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[1.5px] border-[#2C194D] text-[11px] font-bold outline-none"
+                  />
 
                   <button
                     type="button"

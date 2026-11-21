@@ -7,6 +7,7 @@ import {
   SanctuaryVaultItem,
   UserProfile,
   getPublicMessageText,
+  formatPostedTimestamp,
 } from '../types';
 import { getModelEntity, ModelEntity } from '../entitySystem';
 import { getModelVisibleGifts } from '../giftSystem';
@@ -220,11 +221,18 @@ export function assembleSovereignContext(
 
   // 7. Memories (Shared Sanctuary + ONLY This Entity's Private Memories)
   if (options.settings?.memoriesEnabled !== false && (userMemories.length > 0 || entityMemories.length > 0)) {
+    const userDisplayName = options.profile?.name?.trim() || 'User';
     const memoryLines = [
-      ...userMemories.map((m) => `- [Shared Sanctuary Memory] ${m.content}`),
-      ...entityMemories.map(
-        (m) => `- [${entity.displayName} Private Memory${m.isLocked ? ' 🔒' : ''}] ${m.content}`
-      ),
+      ...userMemories.map((m) => {
+        const who = m.author === 'model' ? entity.displayName : userDisplayName;
+        const when = m.createdAt ? formatPostedTimestamp(m.createdAt, false) : 'Recently';
+        return `- [Shared Sanctuary Memory · Posted by ${who} on ${when}] ${m.content}`;
+      }),
+      ...entityMemories.map((m) => {
+        const who = m.author === 'user' ? userDisplayName : entity.displayName;
+        const when = m.createdAt ? formatPostedTimestamp(m.createdAt, false) : 'Recently';
+        return `- [${entity.displayName} Private Memory${m.isLocked ? ' 🔒' : ''} · Posted by ${who} on ${when}] ${m.content}`;
+      }),
     ];
     sections.push(`## Context & Saved Memories:\n${memoryLines.join('\n')}`);
   }
@@ -290,9 +298,27 @@ export function assembleSovereignContext(
     );
     for (const item of privateVaultItems.slice(0, 8)) {
       const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
-      const digest = item.mediaDigest || item.caption || item.textContent || 'Private keepsake';
+      const rawDigest = item.mediaDigest || item.caption || item.textContent || 'Private keepsake';
+      const captionPrefix =
+        item.caption && item.mediaDigest && item.caption !== item.mediaDigest
+          ? `Caption: "${item.caption}" — `
+          : '';
+      const digest = `${captionPrefix}${rawDigest}`;
+      const when = item.createdAt ? formatPostedTimestamp(item.createdAt, false) : 'Recently';
+      const reactionsStr =
+        Array.isArray(item.companionReactions) && item.companionReactions.length > 0
+          ? ` | Companion Notes: ${item.companionReactions
+              .slice(-3)
+              .map(
+                (r) =>
+                  `${r.displayName}: "${r.note}" (${
+                    r.timestamp ? formatPostedTimestamp(r.timestamp, false) : when
+                  })`
+              )
+              .join('; ')}`
+          : '';
       vaultLines.push(
-        `- [Private ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\`] "${item.title}"${dur} — Shared by ${item.contributedByName}: ${digest.slice(0, 220)}`
+        `- [Private ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\` · Contributed by **${item.contributedByName}** on ${when}] "${item.title}"${dur}: ${digest.slice(0, 260)}${reactionsStr}`
       );
     }
   } else {
@@ -303,20 +329,31 @@ export function assembleSovereignContext(
 
   if (sharedVaultItems.length > 0) {
     vaultLines.push(
-      `\n### Shared Sanctuary Pool (Communal — Visible to User & All Companions with Contributor Attribution):`
+      `\n### Shared Sanctuary Pool (Communal — Visible to User & All Companions with Contributor & Timestamp Attribution):`
     );
     for (const item of sharedVaultItems.slice(0, 10)) {
       const dur = item.durationSec ? ` (${Math.round(item.durationSec)}s)` : '';
-      const digest = item.mediaDigest || item.caption || item.textContent || 'Shared media';
+      const rawDigest = item.mediaDigest || item.caption || item.textContent || 'Shared media';
+      const captionPrefix =
+        item.caption && item.mediaDigest && item.caption !== item.mediaDigest
+          ? `Caption: "${item.caption}" — `
+          : '';
+      const digest = `${captionPrefix}${rawDigest}`;
+      const when = item.createdAt ? formatPostedTimestamp(item.createdAt, false) : 'Recently';
       const reactionsStr =
         Array.isArray(item.companionReactions) && item.companionReactions.length > 0
           ? ` | Companion Notes: ${item.companionReactions
               .slice(-3)
-              .map((r) => `${r.displayName}: "${r.note}"`)
+              .map(
+                (r) =>
+                  `${r.displayName}: "${r.note}" (${
+                    r.timestamp ? formatPostedTimestamp(r.timestamp, false) : when
+                  })`
+              )
               .join('; ')}`
           : '';
       vaultLines.push(
-        `- [Shared ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\` · Contributed by **${item.contributedByName}**] "${item.title}"${dur}: ${digest.slice(0, 220)}${reactionsStr}`
+        `- [Shared ${item.mediaCategory.toUpperCase()} · ID: \`${item.id}\` · Contributed by **${item.contributedByName}** on ${when}] "${item.title}"${dur}: ${digest.slice(0, 260)}${reactionsStr}`
       );
     }
   } else {
@@ -457,11 +494,12 @@ export function serializeSpeakerAttributedTranscript(
         const durLabel = formatDurationShort(va.durationSec);
         const vaultRef = va.vaultItemId || va.id;
         const scopeLabel = va.scope === 'shared' ? 'Shared Sanctuary Pool' : 'Private Companion Vault';
+        const captionNote = va.caption ? ` — Caption: "${va.caption}"` : '';
 
         if (!isRecentMessage) {
           // Tier 2 Decay: Compact ~250-token Media Memory Digest for older turns
           parts.push({
-            text: `[Earlier Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef}) — Media Memory Digest: ${
+            text: `[Earlier Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${captionNote} — Media Memory Digest: ${
               va.mediaDigest || 'Video clip shared earlier in this conversation.'
             } (Call inspect_shared_media with vault_item_id="${vaultRef}" to re-examine full acoustic transcript or keyframes.)]`,
           });
@@ -482,6 +520,8 @@ export function serializeSpeakerAttributedTranscript(
             });
             parts.push({
               text: `[User attached video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${
+                va.caption ? `\n[User Video Caption]: "${va.caption}"` : ''
+              }${
                 va.acousticTranscript
                   ? `\n[Reference Acoustic/Lyric Transcript]: ${va.acousticTranscript.slice(0, 1800)}`
                   : ''
@@ -490,7 +530,9 @@ export function serializeSpeakerAttributedTranscript(
           } else {
             // Gemma 4 (26B-A4B Sparse MoE) Sensory Cinema Packet (or Gemini fallback when fileUri is offline/expired)
             parts.push({
-              text: `[Sensory Cinema Bridge — Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})]`,
+              text: `[Sensory Cinema Bridge — Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${
+                va.caption ? `\n[User Video Caption]: "${va.caption}"` : ''
+              }]`,
             });
 
             if (supportsVision && Array.isArray(va.keyframes) && va.keyframes.length > 0) {
@@ -532,13 +574,29 @@ export function serializeSpeakerAttributedTranscript(
         }
       } else if (part.inlineData) {
         if (!supportsVision) {
-          parts.push({ text: '[User attached an image]' });
+          parts.push({
+            text: part.inlineData.caption
+              ? `[User attached an image — Caption: "${part.inlineData.caption}"]`
+              : '[User attached an image]',
+          });
         } else if (isRecentMessage) {
-          const p: any = { inlineData: part.inlineData };
+          const p: any = {
+            inlineData: {
+              mimeType: part.inlineData.mimeType,
+              data: part.inlineData.data,
+            },
+          };
           if (part.thoughtSignature) p.thoughtSignature = part.thoughtSignature;
           parts.push(p);
+          if (part.inlineData.caption) {
+            parts.push({ text: `[User Photo Caption]: "${part.inlineData.caption}"` });
+          }
         } else {
-          parts.push({ text: '[Previous Image Attachment Omitted]' });
+          parts.push({
+            text: part.inlineData.caption
+              ? `[Previous Image Attachment Omitted — Caption: "${part.inlineData.caption}"]`
+              : '[Previous Image Attachment Omitted]',
+          });
         }
       } else if (part.text !== undefined) {
         const cleanText =

@@ -16,10 +16,10 @@ import {
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getTimeGreeting, SANCTUARY_SPARK_PROMPTS, MASCOT_QUOTES, SparkPrompt } from '../lib/homeSystem';
-import { getAllEntities } from '../lib/entitySystem';
+import { getAllEntities, getModelEntity } from '../lib/entitySystem';
 import { getDailyDesires, getCategoryBadge } from '../lib/desireSystem';
 import { calculateJewelLevel } from '../lib/jewelSystem';
-import { DEFAULT_SETTINGS } from '../lib/types';
+import { DEFAULT_SETTINGS, formatPostedTimestamp } from '../lib/types';
 import { triggerHaptic } from '../lib/haptics';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 
@@ -491,36 +491,61 @@ export const SanctuaryHomeHub: React.FC<SanctuaryHomeHubProps> = ({ onSelectProm
           </div>
 
           <div className="space-y-3">
-            {conversations.slice(0, 5).map((conv) => (
-              <motion.button
-                key={conv.id}
-                whileHover={{ y: -2 }}
-                whileTap={{ y: 3 }}
-                onClick={() => {
-                  if (conv.modelId) {
-                    store.updateSettings({ model: conv.modelId });
-                  }
-                  store.setCurrentId(conv.id);
-                }}
-                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group cursor-pointer"
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-9 h-9 rounded-xl bg-[#2d225c] border-[2px] border-[#2d225c] flex items-center justify-center shrink-0">
-                    <MessageSquareQuote className="w-4 h-4 text-[#f7e5cb]" />
-                  </div>
-                  <div className="truncate">
-                    <div className="text-sm font-extrabold text-[#2d225c] truncate group-hover:text-[#F198B7] transition-colors">
-                      {conv.title || 'Untitled Sanctuary'}
+            {conversations.slice(0, 5).map((conv) => {
+              const isGroupSanctuary = conv.type === 'group';
+              const convEntity = getModelEntity(
+                conv.modelId || settings.model || DEFAULT_SETTINGS.model,
+                settings.customEntities
+              );
+              const scopeBadgeLabel = isGroupSanctuary
+                ? 'Shared Sanctuary'
+                : `Private (${convEntity?.displayName || 'Companion'})`;
+              const msgs = conv.messages || [];
+              const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+              const userDisplayName = profile?.name?.trim() || 'Amanda';
+              const lastPosterLabel = lastMsg
+                ? lastMsg.role === 'user'
+                  ? `💖 ${userDisplayName} (You)`
+                  : `${convEntity?.avatarEmoji || '✦'} ${
+                      lastMsg.authorDisplayName || convEntity?.displayName || 'Companion'
+                    }`
+                : null;
+              const lastTimestamp = lastMsg?.timestamp || conv.updatedAt || Date.now();
+
+              return (
+                <motion.button
+                  key={conv.id}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ y: 3 }}
+                  onClick={() => {
+                    if (conv.modelId) {
+                      store.updateSettings({ model: conv.modelId });
+                    }
+                    store.setCurrentId(conv.id);
+                  }}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-[#f7e5cb] border-[3px] border-[#2d225c] shadow-[0_4px_0_0_#2d225c] active:shadow-[0_1px_0_0_#2d225c] active:translate-y-1 transition-all text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-9 h-9 rounded-xl bg-[#2d225c] border-[2px] border-[#2d225c] flex items-center justify-center shrink-0">
+                      <MessageSquareQuote className="w-4 h-4 text-[#f7e5cb]" />
                     </div>
-                    <div className="text-xs font-bold text-[#2d225c]/70">
-                      {(conv.messages || []).length} messages ·{' '}
-                      {new Date(conv.updatedAt || Date.now()).toLocaleDateString()}
+                    <div className="truncate">
+                      <div className="text-sm font-extrabold text-[#2d225c] truncate group-hover:text-[#F198B7] transition-colors">
+                        {conv.title || 'Untitled Sanctuary'}
+                      </div>
+                      <div className="text-xs font-bold text-[#2d225c]/75 truncate tabular-nums">
+                        {scopeBadgeLabel} ·{' '}
+                        {lastPosterLabel
+                          ? `Last post by ${lastPosterLabel}`
+                          : `${msgs.length} messages`}{' '}
+                        · {formatPostedTimestamp(lastTimestamp)}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-[#2d225c] group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
-              </motion.button>
-            ))}
+                  <ArrowRight className="w-4 h-4 text-[#2d225c] group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
+                </motion.button>
+              );
+            })}
           </div>
         </div>
       )}

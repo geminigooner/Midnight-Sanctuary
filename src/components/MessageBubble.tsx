@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Message, getPublicMessageText, getThoughtMessageText } from '../lib/types';
+import { Message, getPublicMessageText, getThoughtMessageText, formatPostedTimestamp } from '../lib/types';
 import { Copy, Edit3, X, Smile, Globe, Search, ExternalLink, ChevronDown, ChevronUp, Sparkles, Download, ShieldCheck, LogIn } from 'lucide-react';
 import { StreamingMarkdown } from './StreamingMarkdown';
 import { ThoughtBubble } from './ThoughtBubble';
@@ -24,6 +24,7 @@ export const MessageBubble = React.memo(function MessageBubble({
    onImageClick,
    onDelete,
    onReact,
+   userName,
    modelName,
    avatarEmoji,
    avatarUrl,
@@ -41,6 +42,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   onImageClick?: (url: string) => void;
   onDelete?: () => void;
   onReact?: (reaction: string) => void;
+  userName?: string;
   modelName?: string;
   avatarEmoji?: string;
   avatarUrl?: string;
@@ -166,6 +168,20 @@ export const MessageBubble = React.memo(function MessageBubble({
     );
   }
 
+  const posterDisplayName = isUser
+    ? `${userName || 'Amanda'} (You)`
+    : modelName || msg.authorDisplayName || 'Companion';
+  const posterEmoji = isUser ? '💖' : avatarEmoji || msg.authorAvatar || '✦';
+  const postedWhatDescriptors: string[] = [];
+  if (Boolean(publicText.trim())) postedWhatDescriptors.push('Message');
+  if (msg.parts?.some((p) => p.videoAttachment)) postedWhatDescriptors.push('Video Clip');
+  if (msg.parts?.some((p) => p.inlineData)) postedWhatDescriptors.push('Photo');
+  if (msg.generatedImages && msg.generatedImages.length > 0) postedWhatDescriptors.push('Artwork');
+  if (msg.scribbles && msg.scribbles.length > 0) postedWhatDescriptors.push('Scribble');
+  if (msg.musicTracks && msg.musicTracks.length > 0) postedWhatDescriptors.push('Melody');
+  const postedWhatLabel =
+    postedWhatDescriptors.length > 0 ? postedWhatDescriptors.join(' + ') : 'Sanctuary Post';
+
   return (
     <motion.div 
       variants={reducedMotion ? {} : messageVariants}
@@ -178,6 +194,19 @@ export const MessageBubble = React.memo(function MessageBubble({
           boxShadow: settled ? (isUser ? 'inset 0 1px 2px rgba(255,255,255,0.05), 0 0 15px rgba(196,118,83,0.1)' : '0 4px 20px rgba(244,232,211,0.03), 0 0 20px rgba(244,232,211,0.1)') : undefined
         }}
       >
+        {/* Attribution Header: Who Posted What & When */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 mb-2 pb-1.5 border-b border-[#2C194D]/15 text-[10px] font-bold text-[#2C194D]/80 tabular-nums">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0">{posterEmoji}</span>
+            <span className="font-black text-[#2C194D] truncate">{posterDisplayName}</span>
+            <span className="text-[#2C194D]/50">·</span>
+            <span className="text-[#2C194D]/75 truncate">{postedWhatLabel}</span>
+          </div>
+          {msg.timestamp ? (
+            <span className="text-[#2C194D]/65 shrink-0">{formatPostedTimestamp(msg.timestamp)}</span>
+          ) : null}
+        </div>
+
         {editing ? (
           <div className="flex flex-col gap-2 w-full min-w-0">
             <textarea 
@@ -350,18 +379,30 @@ export const MessageBubble = React.memo(function MessageBubble({
             )}
 
             {msg.parts?.map((part, i) => part.inlineData ? (
-                  <img 
-                    key={i} 
-                    src={`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`} 
-                    className="mt-3 rounded-xl max-w-full h-auto max-h-[300px] border-[3px] border-[#2C194D] shadow-lg cursor-pointer hover:opacity-90 transition-opacity" 
-                    alt="Attached" 
-                    onClick={() => onImageClick?.(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`)}
-                  />
+                  <div key={i} className="mt-3">
+                    <img 
+                      src={`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`} 
+                      className="rounded-xl max-w-full h-auto max-h-[300px] border-[3px] border-[#2C194D] shadow-lg cursor-pointer hover:opacity-90 transition-opacity" 
+                      alt={part.inlineData.caption || part.inlineData.fileName || 'Attached'} 
+                      onClick={() => onImageClick?.(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`)}
+                    />
+                    {part.inlineData.caption && (
+                      <div className="mt-1.5 px-2.5 py-1.5 rounded-xl bg-[#2C194D]/10 border border-[#2C194D]/25 text-xs font-extrabold text-[#2C194D] leading-snug">
+                        💬 "{part.inlineData.caption}"
+                      </div>
+                    )}
+                    <p className="mt-1 text-[10px] font-bold text-[#2C194D]/70 tabular-nums">
+                      Photo posted by <strong className="text-[#2C194D]">{posterDisplayName}</strong>
+                      {msg.timestamp ? ` · ${formatPostedTimestamp(msg.timestamp)}` : ''}
+                    </p>
+                  </div>
                 ) : part.videoAttachment ? (
                   <VideoAttachmentCard
                     key={`vid-${part.videoAttachment.id || i}`}
                     video={part.videoAttachment}
                     companionName={modelName}
+                    postedByName={part.videoAttachment.contributedByName || posterDisplayName}
+                    postedAt={part.videoAttachment.createdAt || msg.timestamp}
                     onImageClick={onImageClick}
                   />
                 ) : null)}
@@ -371,7 +412,11 @@ export const MessageBubble = React.memo(function MessageBubble({
                 {msg.scribbles.map((scribble) => (
                   <ScribbleCard 
                     key={scribble.id} 
-                    scribble={scribble} 
+                    scribble={{
+                      ...scribble,
+                      authorDisplayName: scribble.authorDisplayName || modelName,
+                      timestamp: scribble.timestamp || msg.timestamp,
+                    }} 
                   />
                 ))}
               </div>
@@ -382,7 +427,11 @@ export const MessageBubble = React.memo(function MessageBubble({
                 {msg.musicTracks.map((track) => (
                   <MusicGiftCard 
                     key={track.id || track.title} 
-                    track={track} 
+                    track={{
+                      ...track,
+                      authorDisplayName: track.authorDisplayName || modelName,
+                      timestamp: track.timestamp || msg.timestamp,
+                    }} 
                   />
                 ))}
               </div>
@@ -392,12 +441,13 @@ export const MessageBubble = React.memo(function MessageBubble({
               <div className="mt-3 space-y-3">
                 {msg.generatedImages.map((genImg, gIdx) => (
                   <div key={gIdx} className="bg-[#151234] border-[3px] border-[#2C194D] rounded-2xl p-2.5 shadow-[4px_4px_0_#2C194D] overflow-hidden">
-                    <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2 px-1">
                       <div className="flex items-center gap-1.5 text-xs font-black text-[#F5E1C8]">
                         <Sparkles size={13} className="text-[#F198B7]" />
-                        <span>Visual Output</span>
+                        <span>Posted by {posterDisplayName} · Artwork</span>
                       </div>
-                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#B39DE5]/20 text-[#B39DE5] border border-[#B39DE5]/30 uppercase tracking-wider">
+                      <span className="text-[10px] font-bold text-[#B39DE5] tabular-nums">
+                        {msg.timestamp ? `${formatPostedTimestamp(msg.timestamp)} · ` : ''}
                         {genImg.modelUsed.includes('flux') ? '⚡ Flux' : genImg.provider}
                       </span>
                     </div>
@@ -512,6 +562,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   prev.isLast === next.isLast && 
   prev.isGenerating === next.isGenerating &&
   prev.precedingUserPrompt === next.precedingUserPrompt &&
+  prev.userName === next.userName &&
   prev.modelName === next.modelName &&
   prev.avatarEmoji === next.avatarEmoji &&
   prev.avatarUrl === next.avatarUrl &&

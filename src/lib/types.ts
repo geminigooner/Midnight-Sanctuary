@@ -23,8 +23,13 @@ export interface VideoAttachmentMeta {
   geminiFileExpiresAt?: number;
   acousticTranscript?: string;
   mediaDigest?: string;
+  caption?: string;
   scope?: 'private' | 'shared';
   ownerEntityId?: string;
+  contributedByName?: string;
+  contributedByType?: 'user' | 'companion';
+  contributedByEntityId?: string;
+  createdAt?: number;
 }
 
 export interface SanctuaryVaultReaction {
@@ -67,7 +72,16 @@ export interface SanctuaryVaultItem {
 export interface MessagePart {
   text?: string;
   thought?: boolean;
-  inlineData?: { mimeType: string; data: string; mediaAssetId?: string; downloadUrl?: string };
+  inlineData?: {
+    mimeType: string;
+    data: string;
+    mediaAssetId?: string;
+    downloadUrl?: string;
+    caption?: string;
+    fileName?: string;
+    scope?: 'private' | 'shared';
+    vaultItemId?: string;
+  };
   videoAttachment?: VideoAttachmentMeta;
   fileData?: { fileUri: string; mimeType: string };
   functionCall?: any;
@@ -403,3 +417,74 @@ export interface UserProfile {
   gemmaNotes?: { id?: string; text: string; timestamp: number; authorEntityId?: string }[];
   updatedAt?: number;
 }
+
+/**
+ * Formats a relative time string (e.g. "Just now", "4m ago", "2h ago", "3d ago").
+ */
+export function formatRelativeTime(ts?: number | null): string {
+  if (!ts || !Number.isFinite(ts) || ts <= 0) return '';
+  const diffMs = Date.now() - ts;
+  if (diffMs < 0 || diffMs < 45_000) return 'Just now';
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return '';
+}
+
+/**
+ * Formats an exact date + time + relative timestamp for "Who Posted What & When" attribution
+ * across Shared Sanctuaries and Private Model-User Vaults/Chats.
+ */
+export function formatPostedTimestamp(ts?: number | null, includeRelative = true): string {
+  if (!ts || !Number.isFinite(ts) || ts <= 0) return 'Recently';
+  try {
+    const d = new Date(ts);
+    const dateStr = d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    const rel = includeRelative ? formatRelativeTime(ts) : '';
+    return rel ? `${dateStr} at ${timeStr} (${rel})` : `${dateStr} at ${timeStr}`;
+  } catch {
+    return 'Recently';
+  }
+}
+
+/**
+ * Returns a human-friendly "What was posted" category label.
+ */
+export function formatMediaCategoryLabel(category?: string): string {
+  switch ((category || '').toLowerCase()) {
+    case 'video':
+      return 'Video Clip';
+    case 'image':
+      return 'Photo';
+    case 'artwork':
+      return 'Artwork';
+    case 'note':
+      return 'Sanctuary Note';
+    case 'audio':
+      return 'Audio Recording';
+    case 'svg_scribble':
+      return 'Hand-Drawn Scribble';
+    case 'music_track':
+      return 'Original Melody';
+    case 'memory':
+      return 'Sanctuary Memory';
+    case 'reaction':
+      return 'Reaction Note';
+    case 'gift':
+      return 'Keepsake Gift';
+    default:
+      return category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Sanctuary Post';
+  }
+}
+

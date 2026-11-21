@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { SvgScribbleData } from '../lib/types';
+import { SvgScribbleData, formatPostedTimestamp } from '../lib/types';
 import { getScribbleStyle, sanitizeSvg } from '../lib/svgSanitizer';
 import { Download, Maximize2, X, Sparkles, Heart, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -60,21 +60,22 @@ export function ScribbleCard({
         />
 
         {/* Card Header */}
-        <div className="flex items-center justify-between gap-2 mb-2.5 pt-1">
+        <div className="flex items-start justify-between gap-2 mb-2.5 pt-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-sm shrink-0">🖍️</span>
             <div className="min-w-0">
               <h4 className="text-xs sm:text-sm font-black text-[#2C194D] truncate tracking-tight">
                 {scribble.title || 'Hand-Drawn Scribble'}
               </h4>
-              <p className="text-[10px] font-bold text-[#2C194D]/70 truncate">
-                Handmade by <span className="text-[#2C194D] font-black">{authorName}</span> for Amanda
+              <p className="text-[10px] font-bold text-[#2C194D]/75 truncate tabular-nums">
+                Posted by <span className="text-[#2C194D] font-black">{authorName}</span> · Hand-Drawn Scribble
+                {scribble.timestamp ? ` · ${formatPostedTimestamp(scribble.timestamp)}` : ''}
               </p>
             </div>
           </div>
 
           <span 
-            className="text-[10px] font-black px-2 py-0.5 rounded-full border border-[#2C194D]/30 bg-white/60 text-[#2C194D] shrink-0 shadow-sm"
+            className="text-[10px] font-black text-[#2C194D]/80 shrink-0"
           >
             {styleMeta.badge}
           </span>

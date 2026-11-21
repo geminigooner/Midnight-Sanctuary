@@ -7,6 +7,7 @@ import {
   getUserMemories,
 } from '../lib/memorySystem';
 import { getModelEntity } from '../lib/entitySystem';
+import { formatPostedTimestamp } from '../lib/types';
 import { useStore, useUI } from '../context/AppContext';
 import { SharedModalShell, SharedModalIcon, SharedModalBody } from './SharedModalShell';
 
@@ -31,6 +32,7 @@ export function MemoriesArchive() {
   const activeModelId = activeConv?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
   const activeEntity = getModelEntity(activeModelId, settings.customEntities);
   const activeModelDisplayName = activeEntity.displayName || activeModelId?.split('/').pop() || 'Current Model';
+  const userDisplayName = store.profile?.name?.trim() || 'Amanda';
   
   useEffect(() => {
     const handleClickOutside = () => {
@@ -130,33 +132,58 @@ export function MemoriesArchive() {
               <p>No memories logged under this tab.</p>
             </div>
           ) : (
-            activeList.map((mem) => (
+            activeList.map((mem) => {
+              const isCompanionAuthor =
+                mem.author === 'model' ||
+                mem.origin === 'tool' ||
+                mem.origin === 'save_memory';
+              const memEntity = getModelEntity(
+                mem.modelId || activeEntity.id,
+                settings.customEntities
+              );
+              const whoPosted = isCompanionAuthor
+                ? `${memEntity?.avatarEmoji || '✦'} ${memEntity?.displayName || activeModelDisplayName}`
+                : `💖 ${userDisplayName} (You)`;
+              const whatPosted = mem.isLocked
+                ? 'Locked Core Anchor'
+                : activeTab === 'model'
+                ? `Private Memory (${activeModelDisplayName})`
+                : 'Shared Sanctuary Memory';
+
+              return (
               <div
                 key={mem.id}
                 className={`p-4 bg-[#F5E1C8] border-[3px] ${mem.isLocked ? 'border-[#9D7FE3] shadow-[4px_4px_0_#9D7FE3]' : 'border-[#2C194D] shadow-[3px_3px_0_#2C194D]'} rounded-2xl flex items-center justify-between gap-4`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                    {mem.isLocked && (
-                      <span className="text-[11px] font-extrabold px-2 py-0.5 bg-[#9D7FE3] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] inline-flex items-center gap-1 shadow-[1px_1px_0_#2C194D]">
-                        <Lock size={10} strokeWidth={3} /> Locked Anchor
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5 pb-1.5 border-b border-[#2C194D]/15 text-[11px] font-bold text-[#2C194D]/80 tabular-nums">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-black text-[#2C194D]">
+                        Posted by {whoPosted}
                       </span>
-                    )}
-                    {mem.caption && (
-                      <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D] inline-block">
-                        {mem.caption}
-                      </span>
-                    )}
+                      <span>·</span>
+                      <span className="text-[#2C194D]/75">{whatPosted}</span>
+                      {mem.isLocked && (
+                        <span className="text-[10px] font-extrabold text-[#2C194D] inline-flex items-center gap-0.5">
+                          · <Lock size={10} strokeWidth={3} /> Locked
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold text-[#2C194D]/65">
+                      {formatPostedTimestamp(mem.createdAt)}
+                    </span>
                   </div>
+                  {mem.caption && (
+                    <div className="text-xs font-extrabold text-[#2C194D]/80 mb-1">
+                      {mem.caption}
+                    </div>
+                  )}
                   <p className="text-sm font-bold text-[#2C194D] whitespace-pre-wrap">{mem.content}</p>
                   {mem.lockReason && (
                     <p className="text-xs font-semibold text-[#2C194D]/80 italic mt-1 bg-[#2C194D]/5 p-1.5 rounded-lg border border-[#2C194D]/15">
                       🔒 &ldquo;{mem.lockReason}&rdquo;
                     </p>
                   )}
-                  <span className="text-[10px] font-bold text-[#2C194D]/60 mt-1 block">
-                    {new Date(mem.createdAt).toLocaleString()}
-                  </span>
                 </div>
 
                 <div className="flex items-center gap-1">
@@ -200,7 +227,8 @@ export function MemoriesArchive() {
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </SharedModalBody>

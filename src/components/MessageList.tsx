@@ -136,6 +136,7 @@ export function MessageList({
                 msg={msg}
                 isLast={i === visibleMessages.length - 1}
                 isGenerating={isGenerating}
+                userName={store?.profile?.name || 'Amanda'}
                 modelName={resolvedModelName}
                 avatarEmoji={msgEntity?.avatarEmoji}
                 avatarUrl={msgEntity?.avatarUrl}

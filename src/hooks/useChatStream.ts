@@ -239,7 +239,18 @@ export function useChatStream({
     const trimmedPrompt = textToAnalyse.trim();
     const parts: any[] = [];
     if (trimmedPrompt) parts.push({ text: textToAnalyse });
-    attachments.forEach(a => parts.push({ inlineData: { mimeType: a.mimeType, data: a.data } }));
+    attachments.forEach((a: any) =>
+      parts.push({
+        inlineData: {
+          mimeType: a.mimeType,
+          data: a.data,
+          ...(a.caption ? { caption: a.caption } : {}),
+          ...(a.fileName ? { fileName: a.fileName } : {}),
+          ...(a.scope ? { scope: a.scope } : {}),
+          ...(a.vaultItemId ? { vaultItemId: a.vaultItemId } : {}),
+        },
+      })
+    );
     videoAttachments.forEach(va => parts.push({ videoAttachment: va }));
     
     if (!additionalMessages || additionalMessages.length === 0) {

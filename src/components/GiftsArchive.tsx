@@ -4,6 +4,8 @@ import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
 import { getMotion, resolveSharedLayoutId } from '../lib/motion';
 import { getModelVisibleGifts, getLegacyOrOtherModelGifts } from '../lib/giftSystem';
 import { resolveModelIdentity } from '../lib/modelSystem';
+import { getModelEntity } from '../lib/entitySystem';
+import { formatPostedTimestamp, formatMediaCategoryLabel } from '../lib/types';
 import { useStore, useUI } from '../context/AppContext';
 import { ScribbleCard } from './ScribbleCard';
 import { MusicGiftCard } from './MusicGiftCard';
@@ -26,6 +28,7 @@ export function GiftsArchive() {
   const activeModelId = activeConv?.modelId || settings.model || 'models/gemini-3.1-pro-preview';
   const modelDef = resolveModelIdentity(activeModelId);
   const activeModelDisplayName = modelDef?.displayName || activeModelId?.split('/').pop() || 'Current Model';
+  const userDisplayName = store.profile?.name?.trim() || 'Amanda';
 
   const currentModelGifts = getModelVisibleGifts(gifts, activeModelId);
   const otherGifts = getLegacyOrOtherModelGifts(gifts, activeModelId);
@@ -95,6 +98,13 @@ export function GiftsArchive() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {displayGifts.map((gift) => {
+                  const giftEntity = getModelEntity(
+                    gift.modelId || gift.targetModelId || activeModelId,
+                    settings.customEntities
+                  );
+                  const companionLabel = giftEntity?.displayName || activeModelDisplayName;
+                  const companionEmoji = giftEntity?.avatarEmoji || '✦';
+
                   if (gift.gift_type === 'svg_scribble' || gift.scribble) {
                     const scribbleData = gift.scribble || {
                       id: gift.id,
@@ -103,12 +113,17 @@ export function GiftsArchive() {
                       svgMarkup: gift.content.startsWith('<svg') ? gift.content : '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="#2C194D" stroke-width="4" fill="none"/></svg>',
                       reason: gift.reason,
                       authorModelId: gift.modelId,
+                      authorDisplayName: companionLabel,
                       timestamp: gift.timestamp
                     };
                     return (
                       <ScribbleCard 
                         key={gift.id} 
-                        scribble={scribbleData} 
+                        scribble={{
+                          ...scribbleData,
+                          authorDisplayName: scribbleData.authorDisplayName || companionLabel,
+                          timestamp: scribbleData.timestamp || gift.timestamp,
+                        }} 
                         isCompact={true}
                       />
                     );
@@ -125,18 +140,30 @@ export function GiftsArchive() {
                       notes: [],
                       reason: gift.reason,
                       authorModelId: gift.modelId,
+                      authorDisplayName: companionLabel,
                       timestamp: gift.timestamp,
                     };
                     return (
                       <MusicGiftCard
                         key={gift.id}
-                        track={musicData}
+                        track={{
+                          ...musicData,
+                          authorDisplayName: musicData.authorDisplayName || companionLabel,
+                          timestamp: musicData.timestamp || gift.timestamp,
+                        }}
                         isCompact={true}
                       />
                     );
                   }
 
                   const giftStickers = placedStickers.filter(p => p.targetId === `gift:${gift.id}`);
+                  const isFromUser = gift.from === 'user';
+                  const whoPosted = isFromUser
+                    ? `💖 ${userDisplayName} (You) for ${companionLabel}`
+                    : `${companionEmoji} ${companionLabel} for ${userDisplayName}`;
+                  const whatPosted = gift.inlineData
+                    ? 'Photo Keepsake'
+                    : formatMediaCategoryLabel(gift.gift_type || 'gift');
 
                   return (
                     <div
@@ -172,12 +199,12 @@ export function GiftsArchive() {
                       )}
 
                       <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-bold px-2 py-0.5 bg-[#B39DE5] border-[2px] border-[#2C194D] rounded-full text-[#2C194D]">
-                            {gift.from === 'user' ? 'From You' : 'From Companion'}
+                        <div className="flex flex-wrap justify-between items-center gap-1.5 mb-2 pb-1.5 border-b border-[#2C194D]/15 text-[11px] font-bold text-[#2C194D]/80 tabular-nums">
+                          <span>
+                            Posted by <strong className="text-[#2C194D] font-black">{whoPosted}</strong> · {whatPosted}
                           </span>
-                          <span className="text-[10px] font-bold text-[#2C194D]/60">
-                            {new Date(gift.timestamp).toLocaleDateString()}
+                          <span className="text-[10px] font-bold text-[#2C194D]/65">
+                            {formatPostedTimestamp(gift.timestamp)}
                           </span>
                         </div>
 

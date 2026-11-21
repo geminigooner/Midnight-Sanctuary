@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, Download, Sparkles, Volume2, VolumeX, Music, Disc, Repeat } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MusicTrackData } from '../lib/types';
+import { MusicTrackData, formatPostedTimestamp } from '../lib/types';
 import { playMusicTrack, renderTrackToWavBlob, calculateTrackDuration, NoteEvent } from '../lib/audioSynthesizer';
 import { triggerHaptic } from '../lib/haptics';
 
@@ -205,14 +205,15 @@ export function MusicGiftCard({ track, className = '', isCompact = false }: Musi
             <h4 className="text-sm font-black text-[#2C194D] truncate tracking-tight">
               {track.title || 'Original Melody'}
             </h4>
-            <p className="text-[10px] font-bold text-[#2C194D]/75 truncate">
-              Composed by <strong className="text-[#2C194D] font-black">{authorName}</strong>
+            <p className="text-[10px] font-bold text-[#2C194D]/75 truncate tabular-nums">
+              Posted by <strong className="text-[#2C194D] font-black">{authorName}</strong> · Original Melody
+              {track.timestamp ? ` · ${formatPostedTimestamp(track.timestamp)}` : ''}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border border-[#2C194D]/30 bg-white/70 ${theme.badgeBg} shadow-sm flex items-center gap-1`}>
+          <span className="text-[10px] font-black text-[#2C194D]/80 flex items-center gap-1">
             <span>{theme.icon}</span>
             <span>{theme.name}</span>
           </span>

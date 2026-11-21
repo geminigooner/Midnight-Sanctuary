@@ -252,15 +252,36 @@ function resolveDistPath(): string {
 
 async function startServer() {
   if (!IS_PRODUCTION) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        allowedHosts: true as const,
-      },
-      appType: 'spa',
+    let viteMiddlewares: express.RequestHandler | null = null;
+    let viteInitError: Error | null = null;
+
+    const viteReady = import('vite')
+      .then(({ createServer: createViteServer }) =>
+        createViteServer({
+          server: {
+            middlewareMode: true,
+            allowedHosts: true as const,
+          },
+          appType: 'spa',
+        })
+      )
+      .then((vite) => {
+        viteMiddlewares = vite.middlewares;
+      })
+      .catch((err) => {
+        console.error('Failed to initialize Vite dev server:', err);
+        viteInitError = err instanceof Error ? err : new Error(String(err));
+      });
+
+    app.use(async (req, res, next) => {
+      if (!viteMiddlewares && !viteInitError) {
+        await viteReady;
+      }
+      if (viteInitError || !viteMiddlewares) {
+        return next(viteInitError || new Error('Vite middleware unavailable'));
+      }
+      return viteMiddlewares(req, res, next);
     });
-    app.use(vite.middlewares);
   } else {
     const distPath = resolveDistPath();
 

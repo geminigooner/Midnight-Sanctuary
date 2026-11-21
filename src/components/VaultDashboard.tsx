@@ -22,11 +22,18 @@ import {
   ChevronRight,
   HardDrive,
   Pencil,
+  Clock,
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
-import { getAllEntities, ModelEntity } from '../lib/entitySystem';
+import { getAllEntities, getModelEntity, ModelEntity } from '../lib/entitySystem';
 import { resolveCanonicalEntityId } from '../lib/domains/entityDomain';
-import { SanctuaryVaultItem, Memory, Gift } from '../lib/types';
+import {
+  SanctuaryVaultItem,
+  Memory,
+  Gift,
+  formatPostedTimestamp,
+  formatMediaCategoryLabel,
+} from '../lib/types';
 import {
   extractVideoMetadataAndStoryboard,
   uploadVideoInChunks,
@@ -47,7 +54,14 @@ type FolderSelection =
   | { type: 'shared' }
   | { type: 'private'; entityId: string };
 
-type ContentCategoryFilter = 'all' | 'video' | 'image' | 'note' | 'memories' | 'gifts';
+type ContentCategoryFilter =
+  | 'all'
+  | 'activity'
+  | 'video'
+  | 'image'
+  | 'note'
+  | 'memories'
+  | 'gifts';
 
 function formatBytesLabel(bytes?: number): string {
   if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '0 KB';
@@ -86,6 +100,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTitle, setNoteTitle] = useState('');
   const [noteBody, setNoteBody] = useState('');
+  const [uploadCaption, setUploadCaption] = useState('');
+  const uploadCaptionRef = useRef('');
   const [uploadingStatus, setUploadingStatus] = useState<string | null>(null);
   const [promotedIds, setPromotedIds] = useState<Record<string, boolean>>({});
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -186,7 +202,11 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
     );
 
     return sorted.filter((item) => {
-      if (categoryFilter === 'memories' || categoryFilter === 'gifts') {
+      if (
+        categoryFilter === 'memories' ||
+        categoryFilter === 'gifts' ||
+        categoryFilter === 'activity'
+      ) {
         return false;
       }
       if (categoryFilter === 'video' && item.mediaCategory !== 'video') {
@@ -255,6 +275,177 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   }, [selectedFolder.type, categoryFilter, currentPrivateFolder, searchQuery]);
 
+  const userDisplayName = store.profile?.name?.trim() || 'Amanda';
+
+  // Helper to resolve who posted a memory
+  const resolveMemoryPoster = (mem: Memory) => {
+    const isCompanion =
+      mem.author === 'model' ||
+      mem.origin === 'tool' ||
+      mem.origin === 'save_memory';
+    if (isCompanion) {
+      const ent = getModelEntity(
+        mem.modelId || activePrivateCompanion.id,
+        store.settings.customEntities
+      );
+      return {
+        name: ent?.displayName || activePrivateCompanion.displayName,
+        emoji: ent?.avatarEmoji || activePrivateCompanion.avatarEmoji || '✦',
+        roleLabel: 'Companion',
+      };
+    }
+    return {
+      name: `${userDisplayName} (You)`,
+      emoji: '💖',
+      roleLabel: 'User',
+    };
+  };
+
+  // Helper to resolve who posted a vault item
+  const resolveVaultItemPoster = (item: SanctuaryVaultItem) => {
+    if (item.contributedByType === 'companion') {
+      const ent = getModelEntity(
+        item.contributedByEntityId || item.ownerEntityId || activePrivateCompanion.id,
+        store.settings.customEntities
+      );
+      return {
+        name: item.contributedByName || ent?.displayName || 'Companion',
+        emoji: ent?.avatarEmoji || '✦',
+        roleLabel: 'Companion',
+      };
+    }
+    const rawName = item.contributedByName || userDisplayName;
+    const display =
+      rawName.toLowerCase() === 'you'
+        ? `${userDisplayName} (You)`
+        : rawName.includes('(You)')
+        ? rawName
+        : `${rawName} (You)`;
+    return {
+      name: display,
+      emoji: '💖',
+      roleLabel: 'User',
+    };
+  };
+
+  // Chronological "Who Posted What & When" Activity Ledger for the active folder
+  const folderActivityLedger = useMemo(() => {
+    const entries: {
+      id: string;
+      whoName: string;
+      whoEmoji: string;
+      whatCategory: string;
+      whatTitle: string;
+      whatDetail?: string;
+      provenance?: string;
+      timestamp: number;
+      scopeLabel: string;
+    }[] = [];
+
+    const rawItems =
+      selectedFolder.type === 'shared'
+        ? sharedFolderSummary.vaultItems
+        : currentPrivateFolder?.vaultItems || [];
+    const scopeLabel =
+      selectedFolder.type === 'shared'
+        ? 'Shared Sanctuary'
+        : `${activePrivateCompanion.displayName}'s Private Vault`;
+
+    for (const item of rawItems) {
+      const poster = resolveVaultItemPoster(item);
+      const originOwner =
+        item.scope === 'shared' && item.ownerEntityId
+          ? getModelEntity(item.ownerEntityId, store.settings.customEntities)
+          : null;
+      entries.push({
+        id: `vault-${item.id}`,
+        whoName: poster.name,
+        whoEmoji: poster.emoji,
+        whatCategory: formatMediaCategoryLabel(item.mediaCategory),
+        whatTitle: item.title,
+        whatDetail: item.caption || item.mediaDigest || item.textContent,
+        provenance: originOwner
+          ? `Promoted from ${originOwner.displayName}'s Private Folder`
+          : undefined,
+        timestamp: item.createdAt || item.updatedAt || 0,
+        scopeLabel,
+      });
+
+      for (const rx of item.companionReactions || []) {
+        entries.push({
+          id: `rx-${item.id}-${rx.id}`,
+          whoName: rx.displayName,
+          whoEmoji: rx.avatarEmoji || '✦',
+          whatCategory: `Reaction Note on "${item.title}"`,
+          whatTitle: rx.note,
+          timestamp: rx.timestamp || item.updatedAt || item.createdAt || 0,
+          scopeLabel,
+        });
+      }
+    }
+
+    const rawMems =
+      selectedFolder.type === 'shared'
+        ? sharedFolderSummary.sharedMems
+        : currentPrivateFolder?.privateMems || [];
+    for (const mem of rawMems) {
+      const poster = resolveMemoryPoster(mem);
+      entries.push({
+        id: `mem-${mem.id}`,
+        whoName: poster.name,
+        whoEmoji: poster.emoji,
+        whatCategory: mem.isLocked
+          ? 'Pinned Core Anchor'
+          : selectedFolder.type === 'shared'
+          ? 'Shared Sanctuary Memory'
+          : `Private Memory (${activePrivateCompanion.displayName})`,
+        whatTitle: mem.content,
+        timestamp: mem.createdAt || 0,
+        scopeLabel,
+      });
+    }
+
+    if (selectedFolder.type === 'private') {
+      for (const gift of currentPrivateFolder?.privateGifts || []) {
+        const isFromUser = gift.from === 'user';
+        entries.push({
+          id: `gift-${gift.id}`,
+          whoName: isFromUser
+            ? `${userDisplayName} (You)`
+            : activePrivateCompanion.displayName,
+          whoEmoji: isFromUser ? '💖' : activePrivateCompanion.avatarEmoji || '✦',
+          whatCategory: `${formatMediaCategoryLabel(gift.gift_type || 'gift')} for ${
+            isFromUser ? activePrivateCompanion.displayName : userDisplayName
+          }`,
+          whatTitle: gift.content,
+          whatDetail: gift.reason,
+          timestamp: gift.timestamp || 0,
+          scopeLabel,
+        });
+      }
+    }
+
+    const q = searchQuery.trim().toLowerCase();
+    return entries
+      .filter(
+        (e) =>
+          !q ||
+          e.whoName.toLowerCase().includes(q) ||
+          e.whatCategory.toLowerCase().includes(q) ||
+          e.whatTitle.toLowerCase().includes(q) ||
+          (e.whatDetail || '').toLowerCase().includes(q)
+      )
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [
+    selectedFolder.type,
+    sharedFolderSummary,
+    currentPrivateFolder,
+    activePrivateCompanion,
+    userDisplayName,
+    store.settings.customEntities,
+    searchQuery,
+  ]);
+
   const handleUploadMediaFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -313,6 +504,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
         });
 
         const storedAsset = await storagePromise;
+        const customCaption = uploadCaptionRef.current.trim();
 
         store.vault.createAsset({
           scope: targetScope,
@@ -321,6 +513,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           contributedByName: store.profile?.name || 'You',
           mediaCategory: 'video',
           title: file.name,
+          caption: customCaption || undefined,
           mimeType: sample.mimeType,
           mediaAssetId: storedAsset?.asset.id,
           downloadUrl: storedAsset?.asset.downloadUrl,
@@ -334,6 +527,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           mediaDigest: finalized.mediaDigest,
         });
         setUploadingStatus(null);
+        setUploadCaption('');
+        uploadCaptionRef.current = '';
         return;
       }
 
@@ -355,6 +550,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           })
           .catch(() => null);
 
+        const customCaption = uploadCaptionRef.current.trim();
         store.vault.createAsset({
           scope: targetScope,
           ownerEntityId: targetScope === 'private' ? targetOwnerEntityId : undefined,
@@ -362,6 +558,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           contributedByName: store.profile?.name || 'You',
           mediaCategory: 'image',
           title: file.name,
+          caption: customCaption || undefined,
           mimeType: compressed.mimeType,
           byteSize: file.size,
           mediaAssetId: stored?.asset.id,
@@ -369,9 +566,13 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           posterDataUrl:
             compressed.previewUrl ||
             `data:${compressed.mimeType};base64,${compressed.data}`,
-          mediaDigest: `Image "${file.name}" saved by ${store.profile?.name || 'You'}.`,
+          mediaDigest: customCaption
+            ? `Image "${file.name}" saved by ${store.profile?.name || 'You'} — Caption: "${customCaption}"`
+            : `Image "${file.name}" saved by ${store.profile?.name || 'You'}.`,
         });
         setUploadingStatus(null);
+        setUploadCaption('');
+        uploadCaptionRef.current = '';
       }
     } catch (err) {
       console.error('Vault upload failed:', err);
@@ -406,7 +607,11 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
   const handleStartEditAsset = (item: SanctuaryVaultItem) => {
     setEditingItemId(item.id);
     setEditTitle(item.title);
-    setEditCaption(item.caption || item.mediaDigest || '');
+    setEditCaption(
+      item.mediaCategory === 'note'
+        ? item.caption || item.textContent || item.mediaDigest || ''
+        : item.caption || ''
+    );
   };
 
   const handleSaveEditAsset = (item: SanctuaryVaultItem, ownerId: string) => {
@@ -809,8 +1014,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
               </div>
             </div>
 
-            {/* Primary Upload / Add Note Buttons */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Primary Upload / Add Note Controls + Optional Upload Caption */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full lg:w-auto">
               <input
                 type="file"
                 accept="image/*,video/mp4,video/quicktime,video/webm,video/*"
@@ -818,33 +1023,49 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                 onChange={handleUploadMediaFile}
                 className="hidden"
               />
-              <button
-                type="button"
-                disabled={Boolean(uploadingStatus)}
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                {uploadingStatus ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    <span className="truncate max-w-[150px]">{uploadingStatus}</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={14} />
-                    <span>Upload Video / Photo</span>
-                  </>
-                )}
-              </button>
+              <input
+                type="text"
+                value={uploadCaption}
+                onChange={(e) => {
+                  setUploadCaption(e.target.value);
+                  uploadCaptionRef.current = e.target.value;
+                }}
+                placeholder={
+                  selectedFolder.type === 'shared'
+                    ? 'Add a caption for your shared upload...'
+                    : `Add a caption for ${activePrivateCompanion.displayName}...`
+                }
+                className="px-3 py-2 rounded-xl bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[2px] border-[#2C194D] text-xs font-bold outline-none min-w-[210px]"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(uploadingStatus)}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  {uploadingStatus ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span className="truncate max-w-[150px]">{uploadingStatus}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      <span>Upload Video / Photo</span>
+                    </>
+                  )}
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setShowAddNote((prev) => !prev)}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-[#B39DE5] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Add Note</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddNote((prev) => !prev)}
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-[#B39DE5] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>Add Note</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -896,6 +1117,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
               {(
                 [
                   { id: 'all', label: 'All Assets' },
+                  { id: 'activity', label: `Who & When (${folderActivityLedger.length})` },
                   { id: 'video', label: 'Videos' },
                   { id: 'image', label: 'Photos & Art' },
                   { id: 'note', label: 'Notes' },
@@ -929,7 +1151,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter folder contents..."
+                placeholder="Filter by who, what, or keyword..."
                 className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[2px] border-[#2C194D] text-xs font-bold outline-none"
               />
             </div>
@@ -939,7 +1161,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           <div className="space-y-4">
             {filteredVaultItems.length === 0 &&
             filteredMemories.length === 0 &&
-            filteredGifts.length === 0 ? (
+            filteredGifts.length === 0 &&
+            (categoryFilter !== 'activity' || folderActivityLedger.length === 0) ? (
               <div className="text-center py-10 px-4 rounded-3xl bg-[#1B1642] border-[3px] border-dashed border-[#2C194D]">
                 <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-[#151234] border-[2px] border-[#2C194D] flex items-center justify-center text-[#F198B7]">
                   <HardDrive size={22} />
@@ -970,6 +1193,81 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
               </div>
             ) : null}
 
+            {/* Chronological "Who Posted What & When" Activity Ledger (Shown on 'activity' tab or as a top overview in 'all') */}
+            {folderActivityLedger.length > 0 &&
+              (categoryFilter === 'activity' || categoryFilter === 'all') && (
+                <div className="rounded-2xl bg-[#1B1642] border-[3px] border-[#2C194D] overflow-hidden">
+                  <div className="px-3.5 py-2.5 bg-[#151234] border-b-[2px] border-[#2C194D] flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#F5E1C8]">
+                      <Clock size={14} className="text-[#F198B7]" />
+                      <span>
+                        Who Posted What &amp; When —{' '}
+                        {selectedFolder.type === 'shared'
+                          ? 'Shared Sanctuary Activity Log'
+                          : `${activePrivateCompanion.displayName}'s Private Vault Log`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-[#B39DE5] tabular-nums">
+                      <span>{folderActivityLedger.length} total posts</span>
+                      {categoryFilter === 'all' && folderActivityLedger.length > 5 && (
+                        <button
+                          type="button"
+                          onClick={() => setCategoryFilter('activity')}
+                          className="text-[#F198B7] hover:underline font-extrabold cursor-pointer"
+                        >
+                          View All →
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-[#2C194D] max-h-72 overflow-y-auto custom-scrollbar">
+                    {(categoryFilter === 'activity'
+                      ? folderActivityLedger
+                      : folderActivityLedger.slice(0, 5)
+                    ).map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs"
+                      >
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5 font-bold text-[#B39DE5]">
+                            <span className="text-[#F5E1C8] font-extrabold">
+                              {entry.whoEmoji} {entry.whoName}
+                            </span>
+                            <span aria-hidden="true">posted</span>
+                            <span className="text-[#F198B7] font-extrabold">
+                              {entry.whatCategory}
+                            </span>
+                            {entry.provenance && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="text-[#81E6D9] text-[11px]">
+                                  {entry.provenance}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          <p className="text-[#F5E1C8] font-bold truncate">
+                            &ldquo;{entry.whatTitle}&rdquo;
+                            {entry.whatDetail ? (
+                              <span className="text-[#B39DE5]/80 font-normal">
+                                {' '}
+                                — {entry.whatDetail}
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
+
+                        <div className="text-[11px] font-mono tabular-nums text-[#B39DE5]/90 shrink-0">
+                          {formatPostedTimestamp(entry.timestamp)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             {/* Media Vault Items Grid */}
             {filteredVaultItems.length > 0 && (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -978,45 +1276,79 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                   const ownerId =
                     item.ownerEntityId || activePrivateCompanion.id;
                   const isEditing = editingItemId === item.id;
+                  const poster = resolveVaultItemPoster(item);
+                  const originOwnerEntity =
+                    item.scope === 'shared' && item.ownerEntityId
+                      ? getModelEntity(
+                          item.ownerEntityId,
+                          store.settings.customEntities
+                        )
+                      : null;
+                  const whatCategoryLabel = formatMediaCategoryLabel(
+                    item.mediaCategory
+                  );
+                  const wasEdited =
+                    Boolean(item.updatedAt) &&
+                    Boolean(item.createdAt) &&
+                    item.updatedAt > item.createdAt + 1500;
+
                   return (
                     <div
                       key={item.id}
                       className="flex flex-col justify-between p-4 rounded-2xl bg-[#1B1642] border-[3px] border-[#2C194D] space-y-3"
                     >
                       <div className="space-y-2.5">
-                        {/* Unboxed Metadata Header Line (Zero-Pill Discipline) */}
-                        <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-bold text-[#B39DE5]">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[#F5E1C8] font-extrabold">
-                              {item.contributedByType === 'companion'
-                                ? `Contributed by ${item.contributedByName}`
-                                : `Shared by ${item.contributedByName || 'You'}`}
+                        {/* Unboxed Metadata Header Line: Who Posted What & When (Zero-Pill Discipline) */}
+                        <div className="pb-2 border-b border-[#2C194D] space-y-1 text-xs font-bold text-[#B39DE5]">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[#F5E1C8] font-extrabold">
+                                {poster.emoji} Posted by {poster.name}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-[#F198B7] font-extrabold">
+                                {whatCategoryLabel}
+                              </span>
+                              {item.durationSec ? (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono tabular-nums">
+                                    {formatVideoDurationLabel(item.durationSec)}
+                                  </span>
+                                </>
+                              ) : null}
+                              {item.byteSize ? (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono tabular-nums">
+                                    {formatBytesLabel(item.byteSize)}
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+
+                            <span className="text-[11px] font-mono tabular-nums text-[#F5E1C8]/90">
+                              {formatPostedTimestamp(item.createdAt)}
                             </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="capitalize">
-                              {item.mediaCategory}
-                            </span>
-                            {item.durationSec ? (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="font-mono tabular-nums">
-                                  {formatVideoDurationLabel(item.durationSec)}
-                                </span>
-                              </>
-                            ) : null}
-                            {item.byteSize ? (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="font-mono tabular-nums">
-                                  {formatBytesLabel(item.byteSize)}
-                                </span>
-                              </>
-                            ) : null}
                           </div>
 
-                          <span className="text-[11px] font-mono tabular-nums text-[#B39DE5]/80">
-                            {new Date(item.createdAt).toLocaleDateString()}
-                          </span>
+                          {(originOwnerEntity || wasEdited) && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#81E6D9] tabular-nums">
+                              {originOwnerEntity ? (
+                                <span>
+                                  Originally shared in {originOwnerEntity.avatarEmoji}{' '}
+                                  {originOwnerEntity.displayName}&apos;s Private Folder
+                                </span>
+                              ) : (
+                                <span />
+                              )}
+                              {wasEdited && (
+                                <span className="text-[#B39DE5]/75">
+                                  Edited {formatPostedTimestamp(item.updatedAt, false)}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Media Visual Preview */}
@@ -1036,12 +1368,19 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                               keyframes: item.keyframes,
                               acousticTranscript: item.acousticTranscript,
                               mediaDigest: item.mediaDigest,
+                              caption: item.caption,
                               scope: item.scope,
                               ownerEntityId: ownerId,
                               vaultItemId: item.id,
+                              contributedByName: poster.name,
+                              contributedByType: item.contributedByType,
+                              contributedByEntityId: item.contributedByEntityId,
+                              createdAt: item.createdAt,
                             }}
                             companionName={activePrivateCompanion.displayName}
                             companionEntityId={ownerId}
+                            postedByName={poster.name}
+                            postedAt={item.createdAt}
                           />
                         ) : (item.mediaCategory === 'image' ||
                             item.mediaCategory === 'artwork') &&
@@ -1056,7 +1395,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                           </div>
                         ) : null}
 
-                        {/* Title & Digest / Inline CRUD Edit Mode */}
+                        {/* Title & Caption / Inline CRUD Edit Mode */}
                         {isEditing ? (
                           <div className="p-2.5 rounded-xl bg-[#151234] border-[2px] border-[#2C194D] space-y-2">
                             <input
@@ -1069,8 +1408,9 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                             <textarea
                               value={editCaption}
                               onChange={(e) => setEditCaption(e.target.value)}
-                              placeholder="Caption or note..."
+                              placeholder="Write a caption for this upload..."
                               rows={2}
+                              autoFocus
                               className="w-full px-2.5 py-1.5 rounded-lg bg-[#F5E1C8] text-[#2C194D] font-bold text-xs border-[2px] border-[#2C194D] outline-none resize-none"
                             />
                             <div className="flex justify-end gap-1.5">
@@ -1086,45 +1426,63 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                                 onClick={() => handleSaveEditAsset(item, ownerId)}
                                 className="px-3 py-1 rounded-lg bg-[#F198B7] text-[#2C194D] border-[1.5px] border-[#2C194D] text-[11px] font-extrabold cursor-pointer"
                               >
-                                Save Changes
+                                Save Caption
                               </button>
                             </div>
                           </div>
                         ) : (
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              {item.mediaCategory === 'video' ? (
-                                <Film size={14} className="text-[#F198B7] shrink-0" />
-                              ) : item.mediaCategory === 'image' ||
-                                item.mediaCategory === 'artwork' ? (
-                                <ImageIcon
-                                  size={14}
-                                  className="text-[#9D7FE3] shrink-0"
-                                />
-                              ) : item.mediaCategory === 'audio' ? (
-                                <Music
-                                  size={14}
-                                  className="text-[#F198B7] shrink-0"
-                                />
-                              ) : (
-                                <FileText
-                                  size={14}
-                                  className="text-[#F5E1C8] shrink-0"
-                                />
-                              )}
-                              <h4 className="text-sm font-extrabold text-[#F5E1C8] truncate">
-                                {item.title}
-                              </h4>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {item.mediaCategory === 'video' ? (
+                                  <Film size={14} className="text-[#F198B7] shrink-0" />
+                                ) : item.mediaCategory === 'image' ||
+                                  item.mediaCategory === 'artwork' ? (
+                                  <ImageIcon
+                                    size={14}
+                                    className="text-[#9D7FE3] shrink-0"
+                                  />
+                                ) : item.mediaCategory === 'audio' ? (
+                                  <Music
+                                    size={14}
+                                    className="text-[#F198B7] shrink-0"
+                                  />
+                                ) : (
+                                  <FileText
+                                    size={14}
+                                    className="text-[#F5E1C8] shrink-0"
+                                  />
+                                )}
+                                <h4 className="text-sm font-extrabold text-[#F5E1C8] truncate">
+                                  {item.title}
+                                </h4>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditAsset(item)}
+                                className="text-[11px] font-extrabold text-[#F198B7] hover:underline shrink-0 cursor-pointer"
+                              >
+                                {item.caption ? 'Edit Caption' : '+ Add Caption'}
+                              </button>
                             </div>
-                            {(item.caption || item.mediaDigest) && (
-                              <p className="mt-1 text-xs font-bold text-[#F5E1C8]/85 line-clamp-3 leading-relaxed">
-                                {item.caption || item.mediaDigest}
+
+                            {item.caption && (
+                              <div className="p-2 rounded-xl bg-[#151234] border border-[#2C194D] text-xs font-extrabold text-[#F5E1C8] leading-snug">
+                                <span className="text-[#F198B7]">💬 Caption:</span>{' '}
+                                &ldquo;{item.caption}&rdquo;
+                              </div>
+                            )}
+
+                            {item.mediaDigest && item.mediaDigest !== item.caption && (
+                              <p className="text-xs font-bold text-[#B39DE5]/85 line-clamp-3 leading-relaxed">
+                                {item.mediaDigest}
                               </p>
                             )}
                           </div>
                         )}
 
-                        {/* Cross-Model Orchestrator Reaction Ledger */}
+                        {/* Cross-Model Orchestrator Reaction Ledger (Who Reacted, What Note, and When) */}
                         {item.companionReactions &&
                           item.companionReactions.length > 0 && (
                             <div className="pt-2 border-t border-[#2C194D] space-y-1.5">
@@ -1134,12 +1492,24 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                               {item.companionReactions.map((rx) => (
                                 <div
                                   key={rx.id}
-                                  className="text-xs font-bold text-[#F5E1C8] leading-snug"
+                                  className="p-2 rounded-xl bg-[#151234] border border-[#2C194D] text-xs font-bold text-[#F5E1C8] space-y-0.5"
                                 >
-                                  <span className="text-[#F198B7] font-extrabold">
-                                    {rx.avatarEmoji || '✦'} {rx.displayName}:
-                                  </span>{' '}
-                                  <span>{rx.note}</span>
+                                  <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-[#B39DE5] tabular-nums">
+                                    <span>
+                                      <strong className="text-[#F198B7] font-extrabold">
+                                        {rx.avatarEmoji || '✦'} {rx.displayName}
+                                      </strong>{' '}
+                                      · Reaction Note
+                                    </span>
+                                    <span>
+                                      {formatPostedTimestamp(
+                                        rx.timestamp || item.updatedAt || item.createdAt
+                                      )}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-[#F5E1C8] leading-snug">
+                                    &ldquo;{rx.note}&rdquo;
+                                  </p>
                                 </div>
                               ))}
                             </div>
@@ -1235,37 +1605,48 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                   </span>
                 </div>
                 <div className="divide-y divide-[#2C194D] rounded-2xl bg-[#1B1642] border-[3px] border-[#2C194D] overflow-hidden">
-                  {filteredMemories.slice(0, 12).map((mem) => (
-                    <div
-                      key={mem.id}
-                      className="p-3 flex items-center justify-between gap-3 text-xs font-bold"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[#F5E1C8] leading-relaxed">
-                          {mem.content}
-                        </p>
-                        <div className="flex items-center gap-1.5 text-[11px] text-[#B39DE5] mt-0.5">
-                          <span>
-                            {selectedFolder.type === 'private'
-                              ? `Private (${activePrivateCompanion.displayName})`
-                              : 'Shared Sanctuary'}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-mono tabular-nums">
-                            {new Date(mem.createdAt || Date.now()).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => store.removeMemory(mem.id)}
-                        className="p-1.5 text-[#B39DE5] hover:text-red-400 transition-colors shrink-0 cursor-pointer"
-                        title="Remove memory"
+                  {filteredMemories.slice(0, 12).map((mem) => {
+                    const poster = resolveMemoryPoster(mem);
+                    const whatMemoryLabel = mem.isLocked
+                      ? 'Pinned Core Anchor'
+                      : selectedFolder.type === 'shared'
+                      ? 'Shared Sanctuary Memory'
+                      : `Private Memory (${activePrivateCompanion.displayName})`;
+                    return (
+                      <div
+                        key={mem.id}
+                        className="p-3 flex items-start justify-between gap-3 text-xs font-bold"
                       >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-[#B39DE5] tabular-nums">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[#F5E1C8] font-extrabold">
+                                {poster.emoji} Posted by {poster.name}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-[#F198B7] font-extrabold">
+                                {whatMemoryLabel}
+                              </span>
+                            </div>
+                            <span className="font-mono tabular-nums text-[#B39DE5]/90">
+                              {formatPostedTimestamp(mem.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-[#F5E1C8] leading-relaxed">
+                            {mem.content}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => store.removeMemory(mem.id)}
+                          className="p-1.5 text-[#B39DE5] hover:text-red-400 transition-colors shrink-0 cursor-pointer"
+                          title="Remove memory"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1286,31 +1667,48 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {filteredGifts.slice(0, 8).map((gift) => (
-                    <div
-                      key={gift.id}
-                      className="p-3 rounded-2xl bg-[#1B1642] border-[2.5px] border-[#2C194D] space-y-1"
-                    >
-                      <div className="flex items-center justify-between text-[11px] font-bold text-[#B39DE5]">
-                        <span>
-                          {gift.from === 'user'
-                            ? `From You to ${activePrivateCompanion.displayName}`
-                            : `From ${activePrivateCompanion.displayName} to You`}
-                        </span>
-                        <span className="font-mono tabular-nums">
-                          {new Date(gift.timestamp || Date.now()).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <p className="text-xs font-extrabold text-[#F5E1C8]">
-                        {gift.content}
-                      </p>
-                      {gift.reason && (
-                        <p className="text-[11px] font-bold text-[#B39DE5]/90">
-                          {gift.reason}
+                  {filteredGifts.slice(0, 8).map((gift) => {
+                    const isFromUser = gift.from === 'user';
+                    const giftPosterName = isFromUser
+                      ? `💖 ${userDisplayName} (You)`
+                      : `${activePrivateCompanion.avatarEmoji || '✦'} ${activePrivateCompanion.displayName}`;
+                    const giftRecipientName = isFromUser
+                      ? activePrivateCompanion.displayName
+                      : userDisplayName;
+                    const giftWhatLabel = formatMediaCategoryLabel(
+                      gift.gift_type || 'gift'
+                    );
+                    return (
+                      <div
+                        key={gift.id}
+                        className="p-3 rounded-2xl bg-[#1B1642] border-[2.5px] border-[#2C194D] space-y-1.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-[#B39DE5] tabular-nums pb-1 border-b border-[#2C194D]">
+                          <span>
+                            Posted by{' '}
+                            <strong className="text-[#F5E1C8] font-extrabold">
+                              {giftPosterName}
+                            </strong>{' '}
+                            for {giftRecipientName} ·{' '}
+                            <span className="text-[#F198B7] font-extrabold">
+                              {giftWhatLabel}
+                            </span>
+                          </span>
+                          <span className="font-mono tabular-nums text-[#B39DE5]/90">
+                            {formatPostedTimestamp(gift.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs font-extrabold text-[#F5E1C8]">
+                          {gift.content}
                         </p>
-                      )}
-                    </div>
-                  ))}
+                        {gift.reason && (
+                          <p className="text-[11px] font-bold text-[#B39DE5]/90">
+                            &ldquo;{gift.reason}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
