@@ -2346,7 +2346,8 @@ export class PersistenceCoordinator {
   public async updateMessage(
     convId: string,
     messageId: string,
-    updates: Partial<Message>
+    updates: Partial<Message>,
+    options?: { syncCloudImmediately?: boolean }
   ): Promise<void> {
     const safeConvId = ensureValidDocId(convId, 'conv');
     const safeMsgId = ensureValidDocId(messageId, 'msg');
@@ -2367,10 +2368,12 @@ export class PersistenceCoordinator {
     };
 
     const isTerminalOrReaction =
-      updates.thoughtStatus === 'complete' ||
-      updates.thoughtStatus === 'error' ||
-      updates.finishReason !== undefined ||
-      updates.reaction !== undefined;
+      options?.syncCloudImmediately !== undefined
+        ? options.syncCloudImmediately
+        : updates.thoughtStatus === 'complete' ||
+          updates.thoughtStatus === 'error' ||
+          updates.finishReason !== undefined ||
+          updates.reaction !== undefined;
 
     await this.upsertMessage(safeConvId, merged, {
       syncCloudImmediately: isTerminalOrReaction,

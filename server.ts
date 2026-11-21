@@ -171,46 +171,71 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+    res.write(': connected\n\n');
 
     const abortController = new AbortController();
     res.on('close', () => {
       if (!res.writableEnded) abortController.abort();
     });
 
-    // 2. Delegate prompt construction, API invocation, and SSE streaming to gemini.service
-    const stream = await createChatStreamFromContext(context, abortController.signal);
-    const reader = stream.getReader();
+    // Keep Cloud Run HTTP/2 & mobile carrier NAT streams alive during deep 3.1 Pro reasoning & tool execution
+    const heartbeatTimer = setInterval(() => {
+      if (!res.writableEnded && !abortController.signal.aborted) {
+        try {
+          res.write(': keep-alive\n\n');
+        } catch {}
+      }
+    }, 10000);
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
+    try {
+      // 2. Delegate prompt construction, API invocation, and SSE streaming to gemini.service
+      const stream = await createChatStreamFromContext(context, abortController.signal);
+      const reader = stream.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.writableEnded) {
+          res.write(value);
+        }
+      }
+    } finally {
+      clearInterval(heartbeatTimer);
     }
-    res.end();
+
+    if (!res.writableEnded) {
+      res.end();
+    }
   } catch (err: any) {
     console.error('API Error:', err);
     const model = req.body?.model || '';
     if (!res.headersSent) {
-      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
     }
-    if (err?.status === 429 || (err.message && err.message.includes('429'))) {
-      const companionName =
-        modelRegistry.getDisplayName(model) ||
-        (model.toLowerCase().includes('gemma') ? 'Gemma' : 'Gemini');
-      res.write(
-        `data: ${JSON.stringify({
-          type: 'rate_limit',
-          message: `${companionName} needs a little breather — try again in a bit`,
-        })}\n\n`
-      );
-    } else {
-      res.write(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);
+    if (!res.writableEnded) {
+      if (err?.status === 429 || (err.message && err.message.includes('429'))) {
+        const companionName =
+          modelRegistry.getDisplayName(model) ||
+          (model.toLowerCase().includes('gemma') ? 'Gemma' : 'Gemini');
+        res.write(
+          `data: ${JSON.stringify({
+            type: 'rate_limit',
+            message: `${companionName} needs a little breather — try again in a bit`,
+          })}\n\n`
+        );
+      } else {
+        res.write(`data: ${JSON.stringify({ error: err.message || 'Unknown API Error' })}\n\n`);
+      }
+      res.end();
     }
-    res.end();
   }
 });
 

@@ -131,7 +131,7 @@ export interface Message {
 }
 
 const FALSE_EOF_CUTOFF_REGEX =
-  /\n*\s*\[Reply cut off: (?:Connection to the server dropped before the reply finished\. Please try again\.|the connection stalled before it finished\.)\]\s*$/i;
+  /\n*\s*\*?\[Reply cut off:\s*(?:Connection to the server dropped before the reply finished\.?\s*(?:Please try again\.?)?|the connection stalled before it finished\.?)\]\*?\s*$/i;
 
 export function stripFalseCutoffTrailer(rawText: string | undefined | null): {
   text: string;
@@ -152,7 +152,19 @@ export function stripFalseCutoffTrailer(rawText: string | undefined | null): {
 export function isInternalToolResponseTurn(msg: Message | undefined | null): boolean {
   if (!msg) return false;
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  return parts.some((p: any) => Boolean(p?.functionResponse));
+  if (parts.some((p: any) => Boolean(p?.functionResponse))) return true;
+  // Also catch legacy stripped functionResponse user turns that have zero text and zero attachments
+  if (
+    msg.role === 'user' &&
+    !msg.publicText?.trim() &&
+    parts.every(
+      (p: any) =>
+        !p?.text?.trim() && !p?.inlineData && !p?.videoAttachment && !p?.fileData
+    )
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function getPublicMessageText(msg: Message): string {

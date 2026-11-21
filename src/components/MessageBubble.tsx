@@ -127,6 +127,11 @@ export const MessageBubble = React.memo(function MessageBubble({
   const hasSpokenCompanionReply =
     (Boolean(publicText.trim()) && !isPureErrorPlaceholder) || hasVisualContent;
 
+  // Component-level guard: never render a blank/phantom user bubble (e.g. legacy functionResponse turn)
+  if (isUser && !publicText.trim() && !hasVisualContent && !editing) {
+    return null;
+  }
+
   const isError =
     !isUser &&
     !hasSpokenCompanionReply &&
@@ -193,10 +198,10 @@ export const MessageBubble = React.memo(function MessageBubble({
               <ThoughtBubble
                 text={thoughtText || ''}
                 status={
-                  isWaitingForToken || (isGenerating && isLast && msg.thoughtStatus === 'thinking')
-                    ? 'thinking'
-                    : hasSpokenCompanionReply
+                  hasSpokenCompanionReply
                     ? 'complete'
+                    : isWaitingForToken || (isGenerating && isLast && msg.thoughtStatus === 'thinking')
+                    ? 'thinking'
                     : (msg.thoughtStatus ?? 'complete')
                 }
                 modelName={modelName}

@@ -21,6 +21,7 @@ import {
   Gift as GiftIcon,
   ChevronRight,
   HardDrive,
+  Pencil,
 } from 'lucide-react';
 import { useStore, useUI } from '../context/AppContext';
 import { getAllEntities, ModelEntity } from '../lib/entitySystem';
@@ -87,6 +88,9 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
   const [noteBody, setNoteBody] = useState('');
   const [uploadingStatus, setUploadingStatus] = useState<string | null>(null);
   const [promotedIds, setPromotedIds] = useState<Record<string, boolean>>({});
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCaption, setEditCaption] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,12 +104,14 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
     );
   }, [selectedFolder, defaultEntityId, primaryCompanions, allEntities]);
 
-  // Compute per-companion private folder statistics
+  // Compute per-companion private folder statistics via store.vault
   const privateFoldersSummary = useMemo(() => {
     return primaryCompanions.map((comp) => {
-      const vaultItems = (comp.roomDecor?.privateVaultItems || []).filter(
-        (i) => !i.isDeleted
-      );
+      const vaultItems = (
+        store.vault?.privateFoldersByEntity?.[comp.id] ??
+        comp.roomDecor?.privateVaultItems ??
+        []
+      ).filter((i) => !i.isDeleted);
       const privateMems = (store.companionMemories?.[comp.id] || []).filter(
         (m: Memory & { isDeleted?: boolean }) => !m.isDeleted
       );
@@ -119,6 +125,9 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
       const isolatedPeers = primaryCompanions
         .filter((other) => other.id !== comp.id)
         .map((other) => other.displayName);
+      const collectionPath = store.vault?.getCollectionPath
+        ? store.vault.getCollectionPath('private', comp.id).collectionPath
+        : `users/${store.user?.uid || 'uid'}/companions/${comp.id}/vault`;
 
       return {
         companion: comp,
@@ -129,26 +138,33 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           vaultItems.length + privateMems.length + privateGifts.length,
         totalBytes,
         isolatedPeers,
+        collectionPath,
       };
     });
-  }, [primaryCompanions, store.companionMemories, store.gifts]);
+  }, [primaryCompanions, store.vault, store.companionMemories, store.gifts, store.user?.uid]);
 
-  // Compute Shared Sanctuary folder statistics
+  // Compute Shared Sanctuary folder statistics via store.vault
   const sharedFolderSummary = useMemo(() => {
-    const vaultItems = (store.settings.sharedVaultItems || []).filter(
-      (i) => !i.isDeleted
-    );
+    const vaultItems = (
+      store.vault?.sharedSanctuaryItems ??
+      store.settings.sharedVaultItems ??
+      []
+    ).filter((i) => !i.isDeleted);
     const sharedMems = (store.sharedMemories || []).filter(
       (m: Memory & { isDeleted?: boolean }) => !m.isDeleted
     );
     const totalBytes = vaultItems.reduce((acc, item) => acc + (item.byteSize || 0), 0);
+    const collectionPath = store.vault?.getCollectionPath
+      ? store.vault.getCollectionPath('shared').collectionPath
+      : `users/${store.user?.uid || 'uid'}/sharedVault`;
     return {
       vaultItems,
       sharedMems,
       totalAssetsCount: vaultItems.length + sharedMems.length,
       totalBytes,
+      collectionPath,
     };
-  }, [store.settings.sharedVaultItems, store.sharedMemories]);
+  }, [store.vault, store.settings.sharedVaultItems, store.sharedMemories, store.user?.uid]);
 
   const currentPrivateFolder = useMemo(() => {
     return (

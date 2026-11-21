@@ -30,7 +30,12 @@ export interface UseChatStreamOptions {
   jewelMetrics: JewelMetrics;
   onUpdate: (id: string, updates: Partial<Conversation>) => void;
   onAddMessage: (conversationId: string, message: Message) => void;
-  onUpdateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
+  onUpdateMessage: (
+    conversationId: string,
+    messageId: string,
+    updates: Partial<Message>,
+    options?: { syncCloudImmediately?: boolean }
+  ) => void;
   onRemoveMessage?: (conversationId: string, messageId: string) => void;
   onUpdateJewel: (updates: Partial<JewelMetrics> | ((prev: JewelMetrics) => JewelMetrics)) => void;
   onRecordEntityTurn?: (
@@ -300,7 +305,12 @@ export function useChatStream({
         ? activeEntity.avatarUrl
         : activeEntity.avatarEmoji;
 
-    const updateModelMessage = (text: string, thought: string, status: 'thinking' | 'complete' | 'error') => {
+    const updateModelMessage = (
+      text: string,
+      thought: string,
+      status: 'thinking' | 'complete' | 'error',
+      isFinal = false
+    ) => {
       if (!modelMsgAdded) {
         onAddMessage(requestConversationId, {
           id: modelMsgId,
@@ -308,7 +318,7 @@ export function useChatStream({
           parts: [{ text: '' }],
           publicText: '',
           thoughtText: '',
-          thoughtStatus: status,
+          thoughtStatus: isFinal ? status : 'thinking',
           authorEntityId: activeEntity.id,
           authorDisplayName: activeEntity.displayName,
           authorAvatar: safeAuthorAvatar,
@@ -342,21 +352,26 @@ export function useChatStream({
         partsToSave.push({ text: '' });
       }
 
-      onUpdateMessage(requestConversationId, modelMsgId, {
-        parts: partsToSave,
-        publicText: text,
-        thoughtText: thought,
-        thoughtStatus: status,
-        authorEntityId: activeEntity.id,
-        authorDisplayName: activeEntity.displayName,
-        authorAvatar: safeAuthorAvatar,
-        finishReason: currentModelFinishReason,
-        backend: currentModelBackend,
-        searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
-        generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
-        scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
-        musicTracks: currentModelMusicTracks.length > 0 ? currentModelMusicTracks : undefined,
-      });
+      onUpdateMessage(
+        requestConversationId,
+        modelMsgId,
+        {
+          parts: partsToSave,
+          publicText: text,
+          thoughtText: thought,
+          thoughtStatus: isFinal ? status : 'thinking',
+          authorEntityId: activeEntity.id,
+          authorDisplayName: activeEntity.displayName,
+          authorAvatar: safeAuthorAvatar,
+          finishReason: currentModelFinishReason,
+          backend: currentModelBackend,
+          searchResults: currentModelSearchResults.length > 0 ? currentModelSearchResults : undefined,
+          generatedImages: currentModelGeneratedImages.length > 0 ? currentModelGeneratedImages : undefined,
+          scribbles: currentModelScribbles.length > 0 ? currentModelScribbles : undefined,
+          musicTracks: currentModelMusicTracks.length > 0 ? currentModelMusicTracks : undefined,
+        },
+        { syncCloudImmediately: isFinal }
+      );
     };
 
     try {
@@ -684,21 +699,21 @@ export function useChatStream({
       }
       
       if (!currentModelText && currentModelThought) {
-        updateModelMessage(currentModelThought, '', 'complete');
+        updateModelMessage(currentModelThought, '', 'complete', true);
       } else if (!currentModelText && !currentModelThought) {
          const carriesFunctionCall = currentModelApiParts.some((p: any) => p.functionCall);
          if (carriesFunctionCall && pendingFollowUp) {
            // A client tool call is persisted on this turn; the follow-up carries its result.
-           updateModelMessage('', '', 'complete');
+           updateModelMessage('', '', 'complete', true);
          } else if (hasToolCalls && onRemoveMessage && !carriesFunctionCall) {
            // Tools already fulfilled the response in earlier round or separate gift/artwork card
            onRemoveMessage(requestConversationId, modelMsgId);
          } else {
-           updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error');
+           updateModelMessage('[The model returned an empty response. It may have hit a silent safety filter or an API quirk.]', '', 'error', true);
            setTemporaryPresence('error', 'resting', 5000);
          }
       } else {
-        updateModelMessage(currentModelText, currentModelThought, 'complete');
+        updateModelMessage(currentModelText, currentModelThought, 'complete', true);
         onUpdateJewel(prev => ({
           ...prev,
           totalMessages: prev.totalMessages + 1,
@@ -724,35 +739,35 @@ export function useChatStream({
       if (e.name === 'AbortError') {
          if (!hasSpokenReply && !currentModelThought) {
             const isGemini3 = effectiveSettings.model.includes('gemini-3');
-            updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error');
+            updateModelMessage(`[Request timed out after ${isGemini3 ? 240 : 90} seconds — please try again]`, currentModelThought, 'error', true);
             setTemporaryPresence('error', 'resting', 5000);
          } else {
             // Keep status as 'complete' so a partial or finished spoken message stays a normal cream bubble
             // instead of turning into the dark purple ErrorState card!
-            updateModelMessage(currentModelText || currentModelThought, hasSpokenReply ? currentModelThought : '', 'complete');
+            updateModelMessage(currentModelText || currentModelThought, hasSpokenReply ? currentModelThought : '', 'complete', true);
             setTemporaryPresence('complete', 'resting', 3000);
          }
       } else if (e.name === 'RepetitionError') {
          currentModelText += e.message;
-         updateModelMessage(currentModelText, currentModelThought, 'complete');
+         updateModelMessage(currentModelText, currentModelThought, 'complete', true);
          setTemporaryPresence('repetition_stopped', 'resting', 5000);
       } else if (e.name === 'RateLimitError') {
          currentModelText += `\n\n*${e.message}*`;
-         updateModelMessage(currentModelText, currentModelThought, 'complete');
+         updateModelMessage(currentModelText, currentModelThought, 'complete', true);
          setTemporaryPresence('rate_limit', 'resting', 3000);
       } else {
          if (!hasSpokenReply && !currentModelThought) {
-            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
+            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error', true);
             setTemporaryPresence('error', 'resting', 5000);
          } else if (hasSpokenReply) {
             // Companion already spoke text: never flip the bubble into the purple ErrorState card
             if (!isFalseEofError && currentModelFinishReason !== 'STOP') {
               currentModelText += `\n\n*(Note: ${e.message})*`;
             }
-            updateModelMessage(currentModelText, currentModelThought, 'complete');
+            updateModelMessage(currentModelText, currentModelThought, 'complete', true);
             setTemporaryPresence('complete', 'resting', 3000);
          } else {
-            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error');
+            updateModelMessage(`[Error: ${e.message}]`, currentModelThought, 'error', true);
             setTemporaryPresence('error', 'resting', 5000);
          }
       }

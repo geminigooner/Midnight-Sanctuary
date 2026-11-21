@@ -204,10 +204,11 @@ export async function* streamChat(
   const decoder = new TextDecoder();
   let buffer = '';
   let sawDone = false;
-  let receivedAnyContent = false;
+  let receivedSpokenText = false;
 
   const processLine = (rawLine: string): ChatStreamEvent | 'DONE' | null => {
     const line = rawLine.trim();
+    if (!line || line.startsWith(':')) return null;
     if (!line.startsWith('data: ')) return null;
     const dataStr = line.slice(6).trim();
     if (dataStr === '[DONE]') {
@@ -231,18 +232,14 @@ export async function* streamChat(
       }
       if (data.type === 'finish_reason' || data.type === 'client_tool_call') {
         sawDone = true;
-        receivedAnyContent = true;
       }
       if (data.type === 'text') {
-        receivedAnyContent = true;
+        if (data.text) receivedSpokenText = true;
         return { type: 'text', text: data.text };
       } else if (data.type) {
-        if (data.type !== 'backend') {
-          receivedAnyContent = true;
-        }
         return data as ChatStreamEvent;
       } else if (data.text) {
-        receivedAnyContent = true;
+        receivedSpokenText = true;
         return { type: 'text', text: data.text };
       }
     } catch (e) {
@@ -269,9 +266,9 @@ export async function* streamChat(
           if (evt) yield evt;
         }
       }
-      // If the proxy or mobile HTTP/2 stream closed right after delivering the response,
+      // If the proxy or mobile HTTP/2 stream closed right after delivering spoken text or finish_reason,
       // do not corrupt the already-delivered reply with a false drop error.
-      if ((sawDone || receivedAnyContent) && !abortSignal.aborted) {
+      if ((sawDone || receivedSpokenText) && !abortSignal.aborted) {
         return;
       }
       throw readErr;

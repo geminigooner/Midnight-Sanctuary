@@ -850,8 +850,13 @@ export function useAppStore(passedUser?: any, customCoordinator?: PersistenceCoo
   );
 
   const updateMessage = useCallback(
-    (conversationId: string, messageId: string, updates: Partial<Message>) => {
-      void coordinator.updateMessage(conversationId, messageId, updates);
+    (
+      conversationId: string,
+      messageId: string,
+      updates: Partial<Message>,
+      options?: { syncCloudImmediately?: boolean }
+    ) => {
+      void coordinator.updateMessage(conversationId, messageId, updates, options);
     },
     [coordinator]
   );
