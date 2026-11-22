@@ -87,9 +87,14 @@ function createFallbackCinemaPoster(fileName: string, durationSec: number): stri
  */
 export async function extractVideoMetadataAndStoryboard(
   file: File,
-  options?: { keyframeCount?: number; maxDimension?: number; jpegQuality?: number }
+  options?: {
+    keyframeCount?: number;
+    maxDimension?: number;
+    jpegQuality?: number;
+    onlyChopIfOverTenMinutes?: boolean;
+  }
 ): Promise<ExtractedVideoSample> {
-  const keyframeCount = options?.keyframeCount ?? 8;
+  const requestedKeyframeCount = options?.keyframeCount ?? 8;
   const maxDimension = options?.maxDimension ?? 512;
   const jpegQuality = options?.jpegQuality ?? 0.64;
   const mimeType = normalizeVideoMimeType(file);
@@ -144,6 +149,7 @@ export async function extractVideoMetadataAndStoryboard(
 
     const rawDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 10;
     const durationSec = Math.round(rawDuration * 10) / 10;
+    const isOverTenMin = durationSec > MAX_RECOMMENDED_VIDEO_DURATION_SEC;
     const rawW = video.videoWidth || 1280;
     const rawH = video.videoHeight || 720;
     const scale = Math.min(1, maxDimension / Math.max(rawW, rawH));
@@ -157,6 +163,9 @@ export async function extractVideoMetadataAndStoryboard(
 
     const keyframes: VideoKeyframe[] = [];
     const effectiveMaxSec = Math.min(durationSec, MAX_RECOMMENDED_VIDEO_DURATION_SEC);
+    // For native Gemini models, only chop into 8 frames if the video is over 10 minutes; otherwise capture just 1 instant poster frame
+    const keyframeCount =
+      options?.onlyChopIfOverTenMinutes && !isOverTenMin ? 1 : requestedKeyframeCount;
     const actualFrameCount = durationSec <= 3 ? Math.min(3, keyframeCount) : keyframeCount;
 
     const samplePositions: number[] = [];
@@ -216,7 +225,7 @@ export async function extractVideoMetadataAndStoryboard(
           : posterDataUrl
           ? [{ timestampSec: 0, timestampLabel: '00:00', dataUrl: posterDataUrl }]
           : [],
-      isOverDurationLimit: durationSec > MAX_RECOMMENDED_VIDEO_DURATION_SEC,
+      isOverDurationLimit: isOverTenMin,
     };
   } finally {
     try {

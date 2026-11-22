@@ -196,76 +196,94 @@ export async function finalizeVideoIngestion(params: {
         geminiFileState = 'FAILED';
       }
 
-      // Step B: Stateless Acoustic & Lyric Transcriber + Media Memory Digest for Gemma MoE & Long-Term Memory
-      const extractionPrompt = [
-        `You are a stateless sensory transcription & indexing utility for a private companion app.`,
-        `Analyze this shared video ("${fileName}", duration ~${Math.round(durationSec || 0)}s) and output strict JSON with two fields:`,
-        `1. "acousticTranscript": A time-coded acoustic & audio score ([MM:SS]) capturing ALL spoken dialogue verbatim, song or K-pop lyrics, vocal emotion/laughter/sighs, music beat shifts, and background sound cues so a vision-capable model without an audio waveform decoder can hear every detail of the audio track while looking at the video frames.`,
-        `2. "mediaDigest": A vivid, structured ~180-word summary of what visually and audibly happens across the video, including key timestamps, mood, aesthetic details, and memorable moments for long-term conversation memory.`,
-        `Return ONLY valid JSON: {"acousticTranscript": "...", "mediaDigest": "..."}`,
-      ].join('\n');
+      // Step B: Only run the secondary chopping / transcription bridge if:
+      // 1. The target companion is Gemma (who lacks a native .mp4 fileUri audio-video decoder), OR
+      // 2. The video is over 10 minutes (durationSec > 600), OR
+      // 3. The Gemini Files API upload did not reach ACTIVE state.
+      // For Gemini 3.1 Pro, Gemini 3 Flash, and Gemini 4 Argon on videos <= 10 minutes,
+      // they receive the pure, untouched native .mp4 fileUri directly so their native video+audio
+      // encoders experience the real video frames and raw audio waveform firsthand!
+      const isGemmaCompanion = (respondingEntityId || '').toLowerCase().includes('gemma');
+      const isOverTenMinutes = (durationSec || 0) > 600;
+      const needsChoppedBridge =
+        isGemmaCompanion || isOverTenMinutes || !geminiFileUri || geminiFileState !== 'ACTIVE';
 
-      // Try using the active Gemini File URI first (gives full audio + video fidelity)
-      if (geminiFileUri && geminiFileState === 'ACTIVE') {
-        const modelsToTry = ['gemini-3-flash-preview', 'gemini-3.5-transcribe'];
-        for (const modelName of modelsToTry) {
-          try {
-            const resp = await ai.models.generateContent({
-              model: modelName,
-              contents: [
-                {
-                  role: 'user',
-                  parts: [
-                    { fileData: { fileUri: geminiFileUri, mimeType: cleanMime } },
-                    { text: extractionPrompt },
-                  ],
-                },
-              ],
-            });
-            const rawText = (resp.text || '').trim();
-            const parsed = parseTranscriptionJson(rawText);
-            if (parsed.acousticTranscript || parsed.mediaDigest) {
-              acousticTranscript = parsed.acousticTranscript;
-              mediaDigest = parsed.mediaDigest;
-              break;
+      if (!needsChoppedBridge && geminiFileUri) {
+        mediaDigest = `Native .mp4 video & audio stream ("${fileName}", ${formatDuration(
+          durationSec
+        )}) delivered directly via Gemini Files API for full native multimodal perception.`;
+        acousticTranscript = '';
+      } else {
+        const extractionPrompt = [
+          `You are a stateless sensory transcription & indexing utility for a private companion app.`,
+          `Analyze this shared video ("${fileName}", duration ~${Math.round(durationSec || 0)}s) and output strict JSON with two fields:`,
+          `1. "acousticTranscript": A time-coded acoustic & audio score ([MM:SS]) capturing ALL spoken dialogue verbatim, song or K-pop lyrics, vocal emotion/laughter/sighs, music beat shifts, and background sound cues so a vision-capable model without an audio waveform decoder can hear every detail of the audio track while looking at the video frames.`,
+          `2. "mediaDigest": A vivid, structured ~180-word summary of what visually and audibly happens across the video, including key timestamps, mood, aesthetic details, and memorable moments for long-term conversation memory.`,
+          `Return ONLY valid JSON: {"acousticTranscript": "...", "mediaDigest": "..."}`,
+        ].join('\n');
+
+        // Try using the active Gemini File URI first (gives full audio + video fidelity)
+        if (geminiFileUri && geminiFileState === 'ACTIVE') {
+          const modelsToTry = ['gemini-3-flash-preview', 'gemini-3.5-transcribe'];
+          for (const modelName of modelsToTry) {
+            try {
+              const resp = await ai.models.generateContent({
+                model: modelName,
+                contents: [
+                  {
+                    role: 'user',
+                    parts: [
+                      { fileData: { fileUri: geminiFileUri, mimeType: cleanMime } },
+                      { text: extractionPrompt },
+                    ],
+                  },
+                ],
+              });
+              const rawText = (resp.text || '').trim();
+              const parsed = parseTranscriptionJson(rawText);
+              if (parsed.acousticTranscript || parsed.mediaDigest) {
+                acousticTranscript = parsed.acousticTranscript;
+                mediaDigest = parsed.mediaDigest;
+                break;
+              }
+            } catch {
+              // Try next model or keyframe fallback
             }
-          } catch {
-            // Try next model or keyframe fallback
           }
         }
-      }
 
-      // Fallback: if Files API is still processing or unavailable, synthesize digest from keyframes
-      if ((!acousticTranscript || !mediaDigest) && keyframes.length > 0) {
-        try {
-          const kfParts: any[] = [];
-          for (const kf of keyframes.slice(0, 6)) {
-            const match = (kf.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              kfParts.push({ text: `[Frame @ ${kf.timestampLabel}]` });
-              kfParts.push({
-                inlineData: {
-                  mimeType: match[1],
-                  data: match[2],
-                },
-              });
+        // Fallback: if Files API is still processing or unavailable, synthesize digest from keyframes
+        if ((!acousticTranscript || !mediaDigest) && keyframes.length > 0) {
+          try {
+            const kfParts: any[] = [];
+            for (const kf of keyframes.slice(0, 6)) {
+              const match = (kf.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                kfParts.push({ text: `[Frame @ ${kf.timestampLabel}]` });
+                kfParts.push({
+                  inlineData: {
+                    mimeType: match[1],
+                    data: match[2],
+                  },
+                });
+              }
             }
-          }
-          kfParts.push({ text: extractionPrompt });
+            kfParts.push({ text: extractionPrompt });
 
-          const resp = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: [{ role: 'user', parts: kfParts }],
-          });
-          const parsed = parseTranscriptionJson((resp.text || '').trim());
-          if (!acousticTranscript && parsed.acousticTranscript) {
-            acousticTranscript = parsed.acousticTranscript;
+            const resp = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: [{ role: 'user', parts: kfParts }],
+            });
+            const parsed = parseTranscriptionJson((resp.text || '').trim());
+            if (!acousticTranscript && parsed.acousticTranscript) {
+              acousticTranscript = parsed.acousticTranscript;
+            }
+            if (!mediaDigest && parsed.mediaDigest) {
+              mediaDigest = parsed.mediaDigest;
+            }
+          } catch {
+            // Fallback to default descriptors below
           }
-          if (!mediaDigest && parsed.mediaDigest) {
-            mediaDigest = parsed.mediaDigest;
-          }
-        } catch {
-          // Fallback to default descriptors below
         }
       }
     }
@@ -273,7 +291,13 @@ export async function finalizeVideoIngestion(params: {
     await cleanupUploadDir(uploadId);
   }
 
-  if (!acousticTranscript) {
+  const isNativeDirectActive =
+    !(respondingEntityId || '').toLowerCase().includes('gemma') &&
+    (durationSec || 0) <= 600 &&
+    Boolean(geminiFileUri) &&
+    geminiFileState === 'ACTIVE';
+
+  if (!acousticTranscript && !isNativeDirectActive) {
     acousticTranscript = `[00:00 - ${formatDuration(durationSec)}] Ambient audio track from "${fileName}". Visual storyboard frames are attached directly for frame-by-frame inspection.`;
   }
   if (!mediaDigest) {

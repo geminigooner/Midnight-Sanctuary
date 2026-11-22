@@ -25,6 +25,8 @@ import {
   Pencil,
   Clock,
 } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { getMotion } from '../lib/motion';
 import { useStore, useUI } from '../context/AppContext';
 import { getAllEntities, getModelEntity, ModelEntity } from '../lib/entitySystem';
 import { resolveCanonicalEntityId } from '../lib/domains/entityDomain';
@@ -111,6 +113,21 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const browseFilesInputRef = useRef<HTMLInputElement>(null);
+  const reducedMotion = useReducedMotion();
+  const snappyTransition = getMotion('snappy', reducedMotion);
+  const [vaultPickerLaunching, setVaultPickerLaunching] = useState<'files' | 'gallery' | null>(null);
+
+  const handleTriggerVaultFilePicker = (mode: 'files' | 'gallery') => {
+    setVaultPickerLaunching(mode);
+    if (mode === 'files') {
+      browseFilesInputRef.current?.click();
+    } else {
+      fileInputRef.current?.click();
+    }
+    window.setTimeout(() => {
+      setVaultPickerLaunching((prev) => (prev === mode ? null : prev));
+    }, 650);
+  };
 
   const activePrivateCompanion: ModelEntity = useMemo(() => {
     const targetId =
@@ -470,8 +487,15 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
 
     try {
       if (isVideo) {
-        setUploadingStatus(`Sampling 8-frame storyboard from ${file.name}...`);
-        const sample = await extractVideoMetadataAndStoryboard(file);
+        const isGemmaTarget = targetOwnerEntityId.toLowerCase().includes('gemma');
+        setUploadingStatus(
+          isGemmaTarget
+            ? `Sampling 8-frame storyboard from ${file.name}...`
+            : `Preparing native .mp4 stream for ${file.name}...`
+        );
+        const sample = await extractVideoMetadataAndStoryboard(file, {
+          onlyChopIfOverTenMinutes: !isGemmaTarget,
+        });
 
         let idToken: string | undefined;
         try {
@@ -1021,8 +1045,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
               </div>
             </div>
 
-            {/* Primary Upload / Browse Files / Add Note Controls + Optional Upload Caption */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full lg:w-auto">
+            {/* Primary Upload / Browse Files / Add Note Controls + Optional Upload Caption (Velvet Midnight Aesthetic) */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full lg:w-auto">
               <input
                 type="file"
                 accept="image/*,video/mp4,video/quicktime,video/webm,video/*"
@@ -1049,14 +1073,53 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                     ? 'Add a caption for your shared upload...'
                     : `Add a caption for ${activePrivateCompanion.displayName}...`
                 }
-                className="px-3 py-2 rounded-xl bg-[#F5E1C8] text-[#2C194D] placeholder-[#2C194D]/55 border-[2px] border-[#2C194D] text-xs font-bold outline-none min-w-[210px]"
+                className="min-h-[44px] px-3.5 py-2 rounded-xl bg-[#151234] text-[#F5E1C8] placeholder-[#F5E1C8]/50 border-[2.5px] border-[#2C194D] focus:border-[#F5E1C8] text-xs font-bold outline-none min-w-[210px] shadow-[2px_2px_0_#2C194D] transition-colors"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <motion.button
                   type="button"
                   disabled={Boolean(uploadingStatus)}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F198B7] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
+                  whileHover={reducedMotion ? undefined : { scale: 1.02, y: -1 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  animate={
+                    vaultPickerLaunching === 'files' && !reducedMotion
+                      ? { scale: [1, 0.95, 1.03, 1] }
+                      : { scale: 1 }
+                  }
+                  transition={snappyTransition}
+                  onClick={() => handleTriggerVaultFilePicker('files')}
+                  className={`min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border-[2.5px] text-xs font-extrabold shadow-[3px_3px_0_#2C194D] transition-colors disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer ${
+                    vaultPickerLaunching === 'files'
+                      ? 'bg-[#F5E1C8] text-[#151234] border-[#2C194D]'
+                      : 'bg-[#151234] hover:bg-[#2C194D] text-[#F5E1C8] border-[#F5E1C8]/40'
+                  }`}
+                  title="Open Android/Device Files & Downloads to pick an .mp4 or media file"
+                >
+                  <FolderOpen size={15} />
+                  <span>
+                    {vaultPickerLaunching === 'files'
+                      ? 'Opening Files…'
+                      : 'Browse Files / MP4'}
+                  </span>
+                </motion.button>
+
+                <motion.button
+                  type="button"
+                  disabled={Boolean(uploadingStatus)}
+                  whileHover={reducedMotion ? undefined : { scale: 1.02, y: -1 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  animate={
+                    vaultPickerLaunching === 'gallery' && !reducedMotion
+                      ? { scale: [1, 0.95, 1.03, 1] }
+                      : { scale: 1 }
+                  }
+                  transition={snappyTransition}
+                  onClick={() => handleTriggerVaultFilePicker('gallery')}
+                  className={`min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border-[2.5px] text-xs font-extrabold shadow-[3px_3px_0_#2C194D] transition-colors disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer ${
+                    vaultPickerLaunching === 'gallery'
+                      ? 'bg-[#151234] text-[#F5E1C8] border-[#F5E1C8]'
+                      : 'bg-[#2C194D] hover:bg-[#F5E1C8] text-[#F5E1C8] hover:text-[#151234] border-[#151234]'
+                  }`}
                   title="Pick from Photos / Gallery"
                 >
                   {uploadingStatus ? (
@@ -1067,33 +1130,58 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
                   ) : (
                     <>
                       <Upload size={14} />
-                      <span>Photos / Gallery</span>
+                      <span>
+                        {vaultPickerLaunching === 'gallery'
+                          ? 'Opening Gallery…'
+                          : 'Photos / Gallery'}
+                      </span>
                     </>
                   )}
-                </button>
+                </motion.button>
 
-                <button
+                <motion.button
                   type="button"
-                  disabled={Boolean(uploadingStatus)}
-                  onClick={() => browseFilesInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F5E1C8] hover:bg-[#F198B7] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
-                  title="Open Android/Device Files & Downloads to pick an .mp4 or media file"
-                >
-                  <FolderOpen size={14} />
-                  <span>Browse Files / MP4</span>
-                </button>
-
-                <button
-                  type="button"
+                  whileHover={reducedMotion ? undefined : { scale: 1.02, y: -1 }}
+                  whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+                  transition={snappyTransition}
                   onClick={() => setShowAddNote((prev) => !prev)}
-                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-[#B39DE5] hover:bg-[#F5E1C8] text-[#2C194D] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+                  className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F5E1C8] hover:bg-[#2C194D] text-[#151234] hover:text-[#F5E1C8] border-[2.5px] border-[#2C194D] text-xs font-extrabold shadow-[3px_3px_0_#2C194D] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Plus size={14} />
                   <span>Add Note</span>
-                </button>
+                </motion.button>
               </div>
             </div>
           </div>
+
+          {/* Smooth Velvet Midnight Transition Banner when File Picker Launches */}
+          <AnimatePresence>
+            {vaultPickerLaunching && (
+              <motion.div
+                key="vault-picker-transition-banner"
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={snappyTransition}
+                className="px-4 py-2.5 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[3px_3px_0_#2C194D] flex items-center justify-between gap-3 text-xs font-extrabold"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FolderOpen size={15} className="text-[#F5E1C8] shrink-0" />
+                  <span className="truncate">
+                    {vaultPickerLaunching === 'files'
+                      ? 'Opening Device Files & Downloads (.mp4, .mov, .webm, photos)…'
+                      : 'Opening Photos & Media Gallery…'}
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-[#F5E1C8]/75 shrink-0">
+                  Destination:{' '}
+                  {selectedFolder.type === 'shared'
+                    ? 'Shared Sanctuary Pool'
+                    : `${activePrivateCompanion.displayName} Private Vault`}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Add Note Form */}
           {showAddNote && (

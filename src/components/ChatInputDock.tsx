@@ -12,6 +12,8 @@ import {
   Users,
   FolderHeart,
   FolderOpen,
+  Image as ImageIcon,
+  ChevronUp,
   Loader2,
   AlertCircle,
 } from 'lucide-react';
@@ -110,6 +112,22 @@ export function ChatInputDock({
   const [uploadingVideoCaption, setUploadingVideoCaption] = useState('');
   const uploadingVideoCaptionRef = useRef('');
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showFileSelectionDrawer, setShowFileSelectionDrawer] = useState(false);
+  const [pickerLaunching, setPickerLaunching] = useState<'files' | 'gallery' | null>(null);
+
+  const handleOpenFilePicker = (mode: 'files' | 'gallery') => {
+    setPickerLaunching(mode);
+    // Synchronously invoke native input click within user gesture so mobile Android/Pixel never blocks it
+    if (mode === 'files') {
+      browseFilesInputRef.current?.click();
+    } else {
+      fileInputRef.current?.click();
+    }
+    window.setTimeout(() => {
+      setPickerLaunching((prev) => (prev === mode ? null : prev));
+      setShowFileSelectionDrawer(false);
+    }, 650);
+  };
 
   useEffect(() => {
     if (conversation?.type === 'group') {
@@ -158,16 +176,21 @@ export function ChatInputDock({
     uploadAbortRef.current = abortController;
 
     try {
+      const isGemmaCompanion = canonicalEntityId.toLowerCase().includes('gemma');
       setUploadingVideo({
         fileName: file.name,
         progressPct: 4,
-        stageLabel: 'Sampling 8-frame storyboard & poster...',
+        stageLabel: isGemmaCompanion
+          ? 'Sampling 8-frame storyboard & poster for Gemma...'
+          : 'Reading .mp4 header & poster frame (no chopping under 10m)...',
         durationSec: 0,
         posterDataUrl: '',
         scope: chosenScope,
       });
 
-      const sample = await extractVideoMetadataAndStoryboard(file);
+      const sample = await extractVideoMetadataAndStoryboard(file, {
+        onlyChopIfOverTenMinutes: !isGemmaCompanion,
+      });
       if (abortController.signal.aborted) return;
 
       const overLimitNote = sample.isOverDurationLimit
@@ -177,7 +200,10 @@ export function ChatInputDock({
       setUploadingVideo({
         fileName: file.name,
         progressPct: 12,
-        stageLabel: 'Uploading 8 MB binary chunks...',
+        stageLabel:
+          !isGemmaCompanion && !sample.isOverDurationLimit
+            ? 'Streaming native .mp4 (full video + audio) to Gemini...'
+            : 'Uploading video segments (>10m / Gemma bridge)...',
         durationSec: sample.durationSec,
         posterDataUrl: sample.posterDataUrl,
         scope: chosenScope,
@@ -773,6 +799,134 @@ export function ChatInputDock({
             </div>
           )}
 
+          {/* Velvet Midnight Animated File Selection Drawer & Picker Launch Feedback */}
+          <AnimatePresence>
+            {(showFileSelectionDrawer || pickerLaunching) && !uploadingVideo && (
+              <motion.div
+                key="velvet-midnight-file-picker-drawer"
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={getMotion('snappy', reducedMotion)}
+                className="mx-2 mt-1.5 p-3 rounded-2xl bg-[#151234] border-[2.5px] border-[#2C194D] text-[#F5E1C8] shadow-[4px_4px_0_#2C194D] space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#2C194D]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FolderOpen size={14} className="text-[#F5E1C8] shrink-0" />
+                    <span className="text-xs font-extrabold tracking-wide text-[#F5E1C8] truncate">
+                      {pickerLaunching === 'files'
+                        ? 'Opening Device Files & Downloads (.mp4)...'
+                        : pickerLaunching === 'gallery'
+                        ? 'Opening Photos & Media Gallery...'
+                        : 'Select Media Source & Sanctuary Vault'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVideoVaultScope((prev) =>
+                          prev === 'private' ? 'shared' : 'private'
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#2C194D] hover:bg-[#F5E1C8] text-[#F5E1C8] hover:text-[#151234] border border-[#F5E1C8]/30 text-[10px] font-extrabold transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      {videoVaultScope === 'shared' ? (
+                        <>
+                          <Users size={11} />
+                          <span>Shared Sanctuary Pool</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock size={11} />
+                          <span>Private ({activeCompanion?.displayName || 'Companion'})</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowFileSelectionDrawer(false)}
+                      className="p-1 rounded-lg text-[#F5E1C8]/70 hover:text-[#F5E1C8] hover:bg-[#2C194D] transition-colors cursor-pointer"
+                      title="Close file selector"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <motion.button
+                    type="button"
+                    whileHover={reducedMotion ? undefined : { scale: 1.01, y: -1 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.98 }}
+                    transition={getMotion('snappy', reducedMotion)}
+                    onClick={() => handleOpenFilePicker('files')}
+                    className={`flex items-center gap-3 p-2.5 rounded-xl border-[2px] text-left transition-colors cursor-pointer min-h-[48px] ${
+                      pickerLaunching === 'files'
+                        ? 'bg-[#F5E1C8] text-[#151234] border-[#2C194D] shadow-[2px_2px_0_#2C194D]'
+                        : 'bg-[#2C194D]/75 hover:bg-[#2C194D] text-[#F5E1C8] border-[#F5E1C8]/25'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center border-[2px] shrink-0 transition-colors ${
+                        pickerLaunching === 'files'
+                          ? 'bg-[#151234] text-[#F5E1C8] border-[#2C194D]'
+                          : 'bg-[#151234] text-[#F5E1C8] border-[#2C194D]'
+                      }`}
+                    >
+                      <FolderOpen size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold truncate">
+                        Browse Device Files (.mp4)
+                      </div>
+                      <div
+                        className={`text-[10px] font-bold truncate ${
+                          pickerLaunching === 'files'
+                            ? 'text-[#151234]/80'
+                            : 'text-[#F5E1C8]/75'
+                        }`}
+                      >
+                        Pixel Files, Downloads, Drive &amp; MP4 clips
+                      </div>
+                    </div>
+                  </motion.button>
+
+                  <motion.button
+                    type="button"
+                    whileHover={reducedMotion ? undefined : { scale: 1.01, y: -1 }}
+                    whileTap={reducedMotion ? undefined : { scale: 0.98 }}
+                    transition={getMotion('snappy', reducedMotion)}
+                    onClick={() => handleOpenFilePicker('gallery')}
+                    className={`flex items-center gap-3 p-2.5 rounded-xl border-[2px] text-left transition-colors cursor-pointer min-h-[48px] ${
+                      pickerLaunching === 'gallery'
+                        ? 'bg-[#F5E1C8] text-[#151234] border-[#2C194D] shadow-[2px_2px_0_#2C194D]'
+                        : 'bg-[#2C194D]/75 hover:bg-[#2C194D] text-[#F5E1C8] border-[#F5E1C8]/25'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-[#151234] text-[#F5E1C8] border-[2px] border-[#2C194D] flex items-center justify-center shrink-0">
+                      <ImageIcon size={17} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold truncate">
+                        Photos &amp; Camera Gallery
+                      </div>
+                      <div
+                        className={`text-[10px] font-bold truncate ${
+                          pickerLaunching === 'gallery'
+                            ? 'text-[#151234]/80'
+                            : 'text-[#F5E1C8]/75'
+                        }`}
+                      >
+                        Camera roll photos &amp; gallery videos
+                      </div>
+                    </div>
+                  </motion.button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="flex items-end gap-1.5 sm:gap-2">
             <input
               type="file"
@@ -788,37 +942,58 @@ export function ChatInputDock({
               onChange={handleFileChange}
               className="hidden"
             />
-            <button
+            <motion.button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              whileHover={reducedMotion ? undefined : { scale: 1.04 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.94 }}
+              transition={getMotion('snappy', reducedMotion)}
+              onClick={() => setShowFileSelectionDrawer((prev) => !prev)}
               disabled={Boolean(uploadingVideo)}
-              className="p-2.5 sm:p-3 text-[#2C194D]/70 hover:text-[#2C194D] hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2px] border-transparent hover:border-[#2C194D] disabled:opacity-40 cursor-pointer"
-              title="Pick Photo or Video from Photos Gallery"
+              className={`min-h-[44px] min-w-[44px] p-2.5 rounded-xl transition-colors mb-0.5 shrink-0 font-bold border-[2.5px] flex items-center justify-center disabled:opacity-40 cursor-pointer ${
+                showFileSelectionDrawer || pickerLaunching === 'gallery'
+                  ? 'bg-[#151234] text-[#F5E1C8] border-[#2C194D] shadow-[2px_2px_0_#2C194D]'
+                  : 'bg-[#2C194D] text-[#F5E1C8] border-[#151234] hover:bg-[#151234] shadow-[2px_2px_0_#151234]'
+              }`}
+              title="Open Velvet Midnight Media & File Selector"
             >
-              <Paperclip size={20} />
-            </button>
+              {showFileSelectionDrawer ? <ChevronUp size={19} /> : <Paperclip size={19} />}
+            </motion.button>
 
-            <button
+            <motion.button
               type="button"
-              onClick={() => browseFilesInputRef.current?.click()}
+              whileHover={reducedMotion ? undefined : { scale: 1.03, y: -1 }}
+              whileTap={reducedMotion ? undefined : { scale: 0.95 }}
+              animate={
+                pickerLaunching === 'files' && !reducedMotion
+                  ? { scale: [1, 0.95, 1.03, 1] }
+                  : { scale: 1 }
+              }
+              transition={getMotion('snappy', reducedMotion)}
+              onClick={() => handleOpenFilePicker('files')}
               disabled={Boolean(uploadingVideo)}
-              className="inline-flex items-center gap-1 px-2.5 py-2 sm:py-2.5 text-[#2C194D] bg-[#B39DE5]/70 hover:bg-[#F198B7] rounded-xl transition-colors mb-0.5 shrink-0 font-extrabold text-xs border-[2px] border-[#2C194D] shadow-[2px_2px_0_#2C194D] active:translate-y-0.5 disabled:opacity-40 cursor-pointer"
+              className={`min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl transition-colors mb-0.5 shrink-0 font-extrabold text-xs border-[2.5px] disabled:opacity-40 cursor-pointer whitespace-nowrap ${
+                pickerLaunching === 'files'
+                  ? 'bg-[#F5E1C8] text-[#151234] border-[#2C194D] shadow-[2px_2px_0_#2C194D]'
+                  : 'bg-[#151234] hover:bg-[#2C194D] text-[#F5E1C8] border-[#2C194D] shadow-[2px_2px_0_#2C194D]'
+              }`}
               title="Browse Device Files & Downloads (.mp4, .mov, .webm, photos)"
             >
-              <FolderOpen size={16} />
-              <span>Files</span>
-            </button>
+              <FolderOpen size={15} className="text-[#F5E1C8] shrink-0" />
+              <span>{pickerLaunching === 'files' ? 'Opening…' : 'Files'}</span>
+            </motion.button>
 
             {/* Default Vault Destination Scope Toggle for New Uploads */}
-            <button
+            <motion.button
               type="button"
+              whileTap={reducedMotion ? undefined : { scale: 0.96 }}
+              transition={getMotion('snappy', reducedMotion)}
               onClick={() =>
                 setVideoVaultScope((prev) => (prev === 'private' ? 'shared' : 'private'))
               }
-              className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-2 rounded-xl border-[2px] border-[#2C194D] text-[11px] font-extrabold mb-1 shrink-0 transition-colors cursor-pointer ${
+              className={`hidden sm:inline-flex min-h-[44px] items-center gap-1.5 px-3 py-2 rounded-xl border-[2.5px] border-[#2C194D] text-[11px] font-extrabold mb-0.5 shrink-0 transition-colors cursor-pointer whitespace-nowrap shadow-[2px_2px_0_#2C194D] ${
                 videoVaultScope === 'shared'
-                  ? 'bg-[#F198B7] text-[#2C194D]'
-                  : 'bg-[#B39DE5]/60 text-[#2C194D]'
+                  ? 'bg-[#2C194D] text-[#F5E1C8]'
+                  : 'bg-[#151234] text-[#F5E1C8]'
               }`}
               title={
                 videoVaultScope === 'shared'
@@ -837,7 +1012,7 @@ export function ChatInputDock({
                   <span>Private</span>
                 </>
               )}
-            </button>
+            </motion.button>
 
             {/* Open Sanctuary Media Vault Modal */}
             <motion.button
