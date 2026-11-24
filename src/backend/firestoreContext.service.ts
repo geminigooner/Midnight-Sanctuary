@@ -258,11 +258,70 @@ export async function persistFirestoreSegmentSummary(
   }
 }
 
+function hasRichAttachmentParts(parts: any[] | undefined): boolean {
+  return (
+    Array.isArray(parts) &&
+    parts.some((p: any) =>
+      Boolean(
+        p?.inlineData ||
+          p?.videoAttachment ||
+          p?.fileData ||
+          p?.functionResponse ||
+          p?.functionCall
+      )
+    )
+  );
+}
+
+function mergeRichMessageParts(existingParts: any[], incomingParts: any[]): any[] {
+  const existingVideo = existingParts.find((p: any) => p?.videoAttachment)?.videoAttachment;
+  const incomingVideo = incomingParts.find((p: any) => p?.videoAttachment)?.videoAttachment;
+
+  if (!existingVideo || !incomingVideo) {
+    const incomingHasFileUri = incomingParts.some((p: any) =>
+      Boolean(p?.videoAttachment?.geminiFileUri || p?.fileData?.fileUri)
+    );
+    return incomingHasFileUri ? incomingParts : existingParts;
+  }
+
+  // Merge both videoAttachment objects so neither geminiFileUri nor updated captions/keyframes are lost
+  const mergedVideo = {
+    ...existingVideo,
+    ...incomingVideo,
+    geminiFileUri: incomingVideo.geminiFileUri || existingVideo.geminiFileUri,
+    geminiFileState: incomingVideo.geminiFileState || existingVideo.geminiFileState,
+    geminiFileExpiresAt:
+      incomingVideo.geminiFileExpiresAt || existingVideo.geminiFileExpiresAt,
+    geminiFileKeyId: incomingVideo.geminiFileKeyId || existingVideo.geminiFileKeyId,
+    geminiFileUrisByKey:
+      incomingVideo.geminiFileUrisByKey || existingVideo.geminiFileUrisByKey
+        ? {
+            ...(existingVideo.geminiFileUrisByKey || {}),
+            ...(incomingVideo.geminiFileUrisByKey || {}),
+          }
+        : undefined,
+    keyframes:
+      Array.isArray(incomingVideo.keyframes) &&
+      incomingVideo.keyframes.length >= (existingVideo.keyframes?.length || 0)
+        ? incomingVideo.keyframes
+        : existingVideo.keyframes,
+    acousticTranscript:
+      incomingVideo.acousticTranscript || existingVideo.acousticTranscript,
+    mediaDigest: incomingVideo.mediaDigest || existingVideo.mediaDigest,
+    caption: incomingVideo.caption ?? existingVideo.caption,
+  };
+
+  return incomingParts.map((p: any) =>
+    p?.videoAttachment ? { ...p, videoAttachment: mergedVideo } : p
+  );
+}
+
 /**
- * Merges Firestore-stored conversation messages with any optimistic/in-flight client messages,
- * honoring `deletedMessageIds` tombstones so truncated/deleted messages never resurrect.
+ * Merges Firestore-stored conversation messages with subcollection or optimistic/in-flight client messages,
+ * honoring `deletedMessageIds` tombstones and ensuring sanitized preview messages (`[Video: ...]`)
+ * never overwrite rich `videoAttachment`, `fileData`, `inlineData`, or `functionResponse` payloads.
  */
-function mergeMessages(
+export function mergeMessages(
   firestoreMsgs: Message[],
   clientMsgs: Message[],
   deletedMessageIds: Set<string> = new Set()
@@ -284,14 +343,16 @@ function mergeMessages(
     if (!existing) {
       byId.set(id, { ...cm, id });
     } else {
-      const clientHasInline = (cm.parts || []).some(
-        (p: any) => p?.inlineData || p?.functionResponse
-      );
-      const existingHasInline = (existing.parts || []).some(
-        (p: any) => p?.inlineData || p?.functionResponse
-      );
-      if (clientHasInline && !existingHasInline) {
+      const clientHasRich = hasRichAttachmentParts(cm.parts);
+      const existingHasRich = hasRichAttachmentParts(existing.parts);
+      if (clientHasRich && !existingHasRich) {
         byId.set(id, { ...existing, ...cm, parts: cm.parts });
+      } else if (clientHasRich && existingHasRich) {
+        const mergedParts = mergeRichMessageParts(
+          existing.parts || [],
+          cm.parts || []
+        );
+        byId.set(id, { ...existing, ...cm, parts: mergedParts });
       }
     }
   }

@@ -244,6 +244,8 @@ export interface FinalizedVideoIngestionResult {
   geminiFileUri?: string;
   geminiFileState?: 'PROCESSING' | 'ACTIVE' | 'FAILED';
   geminiFileExpiresAt?: number;
+  geminiFileKeyId?: string;
+  geminiFileUrisByKey?: Record<string, string>;
   acousticTranscript: string;
   mediaDigest: string;
 }
@@ -260,9 +262,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 /**
- * Slices a video file into 8 MB binary slices (`file.slice(start, end)`) and uploads them
- * sequentially to `/api/media/upload-chunk`, then finalizes via `/api/media/finalize-video`
- * to register the Gemini Files API handle and run the Gemma Acoustic & Lyric Transcriber.
+ * Streams a video file over 8 MB HTTP transport packets (`file.slice(start, end)`) so large `.mp4` files
+ * bypass Cloud Run's 32 MB HTTP request ceiling and reassemble byte-for-byte identically on the server,
+ * then finalizes via `/api/media/finalize-video` to register the native Gemini Files API handle.
  */
 export async function uploadVideoInChunks(params: {
   file: File;
@@ -272,6 +274,7 @@ export async function uploadVideoInChunks(params: {
   posterDataUrl: string;
   keyframes: VideoKeyframe[];
   respondingEntityId: string;
+  scope?: 'private' | 'shared';
   idToken?: string;
   onProgress?: (percent: number, stageLabel: string) => void;
   signal?: AbortSignal;
@@ -281,8 +284,9 @@ export async function uploadVideoInChunks(params: {
     uploadId,
     mimeType,
     durationSec,
-     keyframes,
+    keyframes,
     respondingEntityId,
+    scope = 'private',
     idToken,
     onProgress,
     signal,
@@ -290,6 +294,10 @@ export async function uploadVideoInChunks(params: {
 
   const totalBytes = file.size || 1;
   const totalChunks = Math.max(1, Math.ceil(totalBytes / VIDEO_CHUNK_SIZE_BYTES));
+  const isNativeGeminiDirect =
+    !respondingEntityId.toLowerCase().includes('gemma') &&
+    scope !== 'shared' &&
+    durationSec <= MAX_RECOMMENDED_VIDEO_DURATION_SEC;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -312,8 +320,12 @@ export async function uploadVideoInChunks(params: {
     const pct = Math.min(78, Math.round(((chunkIndex + 0.5) / totalChunks) * 78));
     onProgress?.(
       pct,
-      totalChunks > 1
-        ? `Uploading video chunk ${chunkIndex + 1} of ${totalChunks}...`
+      isNativeGeminiDirect
+        ? totalChunks > 1
+          ? `Streaming intact .mp4 binary (${chunkIndex + 1}/${totalChunks})...`
+          : 'Streaming intact .mp4 binary to Gemini...'
+        : totalChunks > 1
+        ? `Uploading video packet ${chunkIndex + 1} of ${totalChunks}...`
         : 'Uploading video clip...'
     );
 
@@ -337,7 +349,12 @@ export async function uploadVideoInChunks(params: {
     }
   }
 
-  onProgress?.(85, 'Preparing audio & visual bridge for your companions...');
+  onProgress?.(
+    85,
+    isNativeGeminiDirect
+      ? 'Registering native .mp4 video + audio with Gemini Files API...'
+      : 'Registering native .mp4 & companion sensory bridge...'
+  );
 
   const finalizeRes = await fetch('/api/media/finalize-video', {
     method: 'POST',
@@ -349,7 +366,8 @@ export async function uploadVideoInChunks(params: {
       durationSec,
       byteSize: file.size,
       respondingEntityId,
-      // Send up to 6 compact keyframes so the server can also produce a visual+audio digest even if Files API is busy
+      scope,
+      // Send up to 6 compact keyframes so the server can also produce a visual+audio digest when needed
       keyframes: keyframes.slice(0, 6),
     }),
     signal,

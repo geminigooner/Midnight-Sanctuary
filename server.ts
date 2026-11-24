@@ -64,6 +64,7 @@ app.post('/api/media/finalize-video', async (req, res) => {
     durationSec,
     byteSize,
     respondingEntityId,
+    scope,
     keyframes,
   } = req.body || {};
   if (!uploadId) {
@@ -77,6 +78,7 @@ app.post('/api/media/finalize-video', async (req, res) => {
       durationSec: Number(durationSec) || 0,
       byteSize: Number(byteSize) || 0,
       respondingEntityId,
+      scope: scope === 'shared' ? 'shared' : 'private',
       keyframes: Array.isArray(keyframes) ? keyframes : [],
     });
     res.json(result);

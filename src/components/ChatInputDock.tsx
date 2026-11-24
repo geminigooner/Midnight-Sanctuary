@@ -177,11 +177,13 @@ export function ChatInputDock({
 
     try {
       const isGemmaCompanion = canonicalEntityId.toLowerCase().includes('gemma');
+      const needsSharedOrGroupGemmaBridge =
+        isGemmaCompanion || chosenScope === 'shared' || conversation?.type === 'group';
       setUploadingVideo({
         fileName: file.name,
         progressPct: 4,
-        stageLabel: isGemmaCompanion
-          ? 'Sampling 8-frame storyboard & poster for Gemma...'
+        stageLabel: needsSharedOrGroupGemmaBridge
+          ? 'Sampling storyboard & preparing shared/Gemma bridge...'
           : 'Reading .mp4 header & poster frame (no chopping under 10m)...',
         durationSec: 0,
         posterDataUrl: '',
@@ -189,7 +191,7 @@ export function ChatInputDock({
       });
 
       const sample = await extractVideoMetadataAndStoryboard(file, {
-        onlyChopIfOverTenMinutes: !isGemmaCompanion,
+        onlyChopIfOverTenMinutes: !needsSharedOrGroupGemmaBridge,
       });
       if (abortController.signal.aborted) return;
 
@@ -201,9 +203,9 @@ export function ChatInputDock({
         fileName: file.name,
         progressPct: 12,
         stageLabel:
-          !isGemmaCompanion && !sample.isOverDurationLimit
+          !needsSharedOrGroupGemmaBridge && !sample.isOverDurationLimit
             ? 'Streaming native .mp4 (full video + audio) to Gemini...'
-            : 'Uploading video segments (>10m / Gemma bridge)...',
+            : 'Uploading video clip & companion sensory bridge...',
         durationSec: sample.durationSec,
         posterDataUrl: sample.posterDataUrl,
         scope: chosenScope,
@@ -243,6 +245,7 @@ export function ChatInputDock({
         posterDataUrl: sample.posterDataUrl,
         keyframes: sample.keyframes,
         respondingEntityId: canonicalEntityId,
+        scope: chosenScope,
         idToken,
         signal: abortController.signal,
         onProgress: (progressPct, stageLabel) => {
@@ -261,6 +264,9 @@ export function ChatInputDock({
       const storedAsset = await storagePromise;
       if (abortController.signal.aborted) return;
 
+      const activeGeminiFileUri =
+        finalized.geminiFileState === 'ACTIVE' ? finalized.geminiFileUri : undefined;
+
       // Save item to the chosen Sanctuary Vault (Private Companion Vault or Shared Pool)
       const initialCaption = uploadingVideoCaptionRef.current.trim() || overLimitNote || '';
       const vaultItem = store.addVaultItem({
@@ -278,8 +284,8 @@ export function ChatInputDock({
         durationSec: sample.durationSec,
         byteSize: file.size,
         keyframes: sample.keyframes,
-        geminiFileUri: finalized.geminiFileUri,
-        geminiFileExpiresAt: finalized.geminiFileExpiresAt,
+        geminiFileUri: activeGeminiFileUri,
+        geminiFileExpiresAt: activeGeminiFileUri ? finalized.geminiFileExpiresAt : undefined,
         acousticTranscript: finalized.acousticTranscript,
         mediaDigest: finalized.mediaDigest,
       });
@@ -295,8 +301,11 @@ export function ChatInputDock({
         posterDataUrl: sample.posterDataUrl,
         mediaAssetId: storedAsset?.asset.id,
         downloadUrl: storedAsset?.asset.downloadUrl,
-        geminiFileUri: finalized.geminiFileUri,
-        geminiFileExpiresAt: finalized.geminiFileExpiresAt,
+        geminiFileUri: activeGeminiFileUri,
+        geminiFileState: finalized.geminiFileState,
+        geminiFileExpiresAt: activeGeminiFileUri ? finalized.geminiFileExpiresAt : undefined,
+        geminiFileKeyId: finalized.geminiFileKeyId,
+        geminiFileUrisByKey: finalized.geminiFileUrisByKey,
         keyframes: sample.keyframes,
         acousticTranscript: finalized.acousticTranscript,
         mediaDigest: finalized.mediaDigest,

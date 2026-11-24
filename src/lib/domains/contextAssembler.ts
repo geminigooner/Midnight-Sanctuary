@@ -424,6 +424,8 @@ export function serializeSpeakerAttributedTranscript(
     supportsVision?: boolean;
     supportsNativeThinking?: boolean;
     customEntities?: Record<string, ModelEntity>;
+    activeKeyFingerprint?: string;
+    disableGeminiFileUri?: boolean;
   }
 ): { role: 'user' | 'model'; parts: any[] }[] {
   const canonicalResponder =
@@ -505,16 +507,24 @@ export function serializeSpeakerAttributedTranscript(
           });
         } else {
           // Tier 1 Live Turn: Active Video Turn
+          const effectiveFileUri =
+            (options?.activeKeyFingerprint &&
+              va.geminiFileUrisByKey?.[options.activeKeyFingerprint]) ||
+            va.geminiFileUri;
+          const isGeminiFileStateReady =
+            !va.geminiFileState || va.geminiFileState === 'ACTIVE';
           const hasValidGeminiFileUri =
+            !options?.disableGeminiFileUri &&
             !isGemmaResponder &&
-            Boolean(va.geminiFileUri) &&
-            va.geminiFileState !== 'FAILED' &&
+            Boolean(effectiveFileUri) &&
+            isGeminiFileStateReady &&
             (!va.geminiFileExpiresAt || va.geminiFileExpiresAt > Date.now());
 
           if (hasValidGeminiFileUri) {
+            const isOverTenMinutes = (va.durationSec || 0) > 600;
             parts.push({
               fileData: {
-                fileUri: va.geminiFileUri!,
+                fileUri: effectiveFileUri!,
                 mimeType: va.mimeType || 'video/mp4',
               },
             });
@@ -522,16 +532,23 @@ export function serializeSpeakerAttributedTranscript(
               text: `[User attached video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${
                 va.caption ? `\n[User Video Caption]: "${va.caption}"` : ''
               }${
-                va.acousticTranscript
-                  ? `\n[Reference Acoustic/Lyric Transcript]: ${va.acousticTranscript.slice(0, 1800)}`
+                isOverTenMinutes && va.acousticTranscript
+                  ? `\n[Reference Acoustic/Lyric Transcript (>10m clip)]: ${va.acousticTranscript.slice(0, 1800)}`
                   : ''
               }]`,
             });
           } else {
-            // Gemma 4 (26B-A4B Sparse MoE) Sensory Cinema Packet (or Gemini fallback when fileUri is offline/expired)
+            // Gemma 4 (26B-A4B Sparse MoE) Sensory Cinema Packet (or Gemini fallback when fileUri is offline/expired/cross-project)
+            const isDirectNativeOnlyClip =
+              (!Array.isArray(va.keyframes) || va.keyframes.length <= 1) &&
+              !va.acousticTranscript;
             parts.push({
               text: `[Sensory Cinema Bridge — Shared Video "${va.fileName}" (Duration: ${durLabel}, Scope: ${scopeLabel}, Vault ID: ${vaultRef})${
                 va.caption ? `\n[User Video Caption]: "${va.caption}"` : ''
+              }${
+                isDirectNativeOnlyClip
+                  ? '\n[Note: This clip was originally ingested as a direct native .mp4 stream; cover frame and summary are attached below.]'
+                  : ''
               }]`,
             });
 

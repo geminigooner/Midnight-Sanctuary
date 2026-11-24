@@ -231,7 +231,9 @@ export function VideoAttachmentCard({
               <span className="px-2 py-0.5 rounded-md bg-black/70 border border-[#F198B7]/30 text-[#F198B7] text-[10px] font-extrabold flex items-center gap-1">
                 <Sparkles size={10} />
                 <span>
-                  {video.geminiFileUri && (video.durationSec || 0) <= 600
+                  {video.geminiFileUri &&
+                  (!video.geminiFileState || video.geminiFileState === 'ACTIVE') &&
+                  (video.durationSec || 0) <= 600
                     ? 'Native .MP4 Video + Audio'
                     : `${video.keyframes?.length || 1} Frames + Audio Bridge`}
                 </span>

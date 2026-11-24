@@ -22,6 +22,8 @@ import {
 } from './contextAssembler';
 import { getModelEntity, getAllEntities, ModelEntity } from '../entitySystem';
 import { buildEntityStampedToolSideEffect } from '../../backend/harness/toolRegistry';
+import { mergeMessages } from '../../backend/firestoreContext.service';
+import { buildSanitizedPreviewMessage } from '../persistence/firestoreAdapter';
 import type { Memory, Gift, UserProfile, Message } from '../types';
 
 describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () => {
@@ -1048,6 +1050,158 @@ describe('Sovereign Companion Entity Architecture & Cross-Entity Isolation', () 
     ).toBe(true);
 
     coord.destroy();
+  });
+
+  it('preserves native MP4 videoAttachment & geminiFileUri across Firestore preview sanitization, PROCESSING state guards, multi-key project URIs, and Shared Gemma cross-over', () => {
+    const richUserVideoMsg: Message = {
+      id: 'msg-native-mp4-1',
+      role: 'user',
+      timestamp: 10_000,
+      parts: [
+        { text: 'Watch this clip from my Pixel!' },
+        {
+          videoAttachment: {
+            id: 'vid-pixel-1',
+            fileName: 'pixel_memory.mp4',
+            mimeType: 'video/mp4',
+            durationSec: 120,
+            byteSize: 18_000_000,
+            posterDataUrl: 'data:image/jpeg;base64,UE9TVEVSXzE=',
+            geminiFileUri: 'https://generativelanguage.googleapis.com/v1beta/files/pro_key_uri',
+            geminiFileState: 'ACTIVE',
+            geminiFileExpiresAt: Date.now() + 3600_000,
+            geminiFileKeyId: 'fp_pro_key_01',
+            geminiFileUrisByKey: {
+              fp_pro_key_01: 'https://generativelanguage.googleapis.com/v1beta/files/pro_key_uri',
+              fp_leg_key_02: 'https://generativelanguage.googleapis.com/v1beta/files/legacy_key_uri',
+            },
+            keyframes: [
+              { timestampSec: 5, timestampLabel: '00:05', dataUrl: 'data:image/jpeg;base64,S0ZfMDE=' },
+              { timestampSec: 60, timestampLabel: '01:00', dataUrl: 'data:image/jpeg;base64,S0ZfMDI=' },
+            ],
+            acousticTranscript: '[00:05] Laughter and warm acoustic guitar chords.',
+            mediaDigest: '2-minute Pixel clip with acoustic guitar and laughter.',
+            caption: 'Our favorite song!',
+            scope: 'shared',
+            vaultItemId: 'vault-shared-mp4-1',
+          },
+        },
+      ],
+    };
+
+    // 1. Firestore convDoc.messages strips videoAttachment into "[Video: pixel_memory.mp4]",
+    //    while subcollection / clientMessages retains full videoAttachment. mergeMessages MUST preserve videoAttachment!
+    const sanitizedPreview = buildSanitizedPreviewMessage(richUserVideoMsg, 'conv-1', 0);
+    expect(sanitizedPreview.parts.some((p) => Boolean(p.videoAttachment))).toBe(false);
+
+    const mergedFromSubcollection = mergeMessages([sanitizedPreview], [richUserVideoMsg]);
+    expect(mergedFromSubcollection).toHaveLength(1);
+    const restoredAttachment = mergedFromSubcollection[0].parts.find(
+      (p) => Boolean(p.videoAttachment)
+    )?.videoAttachment;
+    expect(restoredAttachment?.geminiFileUri).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/files/pro_key_uri'
+    );
+    expect(restoredAttachment?.caption).toBe('Our favorite song!');
+
+    // 2. For Gemini 3.1 Pro on a <=10m shared clip: gets project-matched fileUri and NO secondary Flash transcript clutter
+    const proSerialized = serializeSpeakerAttributedTranscript(
+      mergedFromSubcollection,
+      'gemini-3.1-pro-preview',
+      { activeKeyFingerprint: 'fp_pro_key_01' }
+    );
+    expect(proSerialized[0].parts).toEqual(
+      expect.arrayContaining([
+        {
+          fileData: {
+            fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/pro_key_uri',
+            mimeType: 'video/mp4',
+          },
+        },
+      ])
+    );
+    const proJoinedText = proSerialized[0].parts.map((p: any) => p.text || '').join('\n');
+    expect(proJoinedText).toContain('[User Video Caption]: "Our favorite song!"');
+    expect(proJoinedText).not.toContain('Reference Acoustic/Lyric Transcript');
+
+    // 3. For Gemini 3 Flash using LEGACY_API_KEY (`fp_leg_key_02`): automatically selects the legacy project's fileUri!
+    const flashSerialized = serializeSpeakerAttributedTranscript(
+      mergedFromSubcollection,
+      'gemini-3-flash-preview',
+      { activeKeyFingerprint: 'fp_leg_key_02' }
+    );
+    expect(flashSerialized[0].parts).toEqual(
+      expect.arrayContaining([
+        {
+          fileData: {
+            fileUri: 'https://generativelanguage.googleapis.com/v1beta/files/legacy_key_uri',
+            mimeType: 'video/mp4',
+          },
+        },
+      ])
+    );
+
+    // 4. For Gemma 4 on the exact same Shared Sanctuary clip: gets full storyboard frames + acoustic transcript!
+    const gemmaSharedSerialized = serializeSpeakerAttributedTranscript(
+      mergedFromSubcollection,
+      'gemma-4-26b-a4b-it'
+    );
+    expect(
+      gemmaSharedSerialized[0].parts.filter((p: any) => Boolean(p.inlineData))
+    ).toHaveLength(2);
+    expect(
+      gemmaSharedSerialized[0].parts.map((p: any) => p.text || '').join('\n')
+    ).toContain('[00:05] Laughter and warm acoustic guitar chords.');
+
+    // 5. If geminiFileState is still 'PROCESSING' (or disableGeminiFileUri fallback is triggered),
+    //    contextAssembler NEVER emits an unready fileData URI that would cause 400 FAILED_PRECONDITION.
+    const processingMsg: Message = {
+      ...richUserVideoMsg,
+      id: 'msg-processing-1',
+      parts: [
+        {
+          videoAttachment: {
+            ...restoredAttachment!,
+            geminiFileState: 'PROCESSING',
+          },
+        },
+      ],
+    };
+    const processingSerialized = serializeSpeakerAttributedTranscript(
+      [processingMsg],
+      'gemini-3.1-pro-preview'
+    );
+    expect(
+      processingSerialized[0].parts.some((p: any) => Boolean(p.fileData))
+    ).toBe(false);
+    expect(
+      processingSerialized[0].parts.filter((p: any) => Boolean(p.inlineData))
+    ).toHaveLength(2);
+
+    // 6. Videos > 10 minutes (>600s) DO include the Reference Acoustic/Lyric Transcript alongside fileData
+    const longVideoMsg: Message = {
+      ...richUserVideoMsg,
+      id: 'msg-long-1',
+      parts: [
+        {
+          videoAttachment: {
+            ...restoredAttachment!,
+            durationSec: 750,
+          },
+        },
+      ],
+    };
+    const longProSerialized = serializeSpeakerAttributedTranscript(
+      [longVideoMsg],
+      'gemini-3.1-pro-preview',
+      { activeKeyFingerprint: 'fp_pro_key_01' }
+    );
+    expect(
+      longProSerialized[0].parts.some((p: any) => Boolean(p.fileData))
+    ).toBe(true);
+    expect(
+      longProSerialized[0].parts.map((p: any) => p.text || '').join('\n')
+    ).toContain('[Reference Acoustic/Lyric Transcript (>10m clip)]');
   });
 });
 

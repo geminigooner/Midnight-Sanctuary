@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -7,6 +8,17 @@ import { VideoKeyframe } from '../lib/types';
 
 const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'midnight_sanctuary_video_uploads');
 const GEMINI_FILE_TTL_MS = 47 * 60 * 60 * 1000; // 47 hours safety margin on 48h Gemini Files API TTL
+
+/**
+ * Computes a non-reversible 12-character SHA-256 fingerprint for a server API key
+ * so `geminiFileUri` handles can be matched to the exact Google Cloud project key that uploaded them
+ * without ever exposing secret key material.
+ */
+export function computeApiKeyFingerprint(apiKey: string | undefined | null): string {
+  const trimmed = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!trimmed) return '';
+  return crypto.createHash('sha256').update(trimmed).digest('hex').slice(0, 12);
+}
 
 function sanitizeUploadId(rawId: string): string {
   return String(rawId || 'upload')
@@ -85,40 +97,114 @@ async function cleanupUploadDir(uploadId: string): Promise<void> {
   }
 }
 
-function resolveAnyGeminiApiKey(respondingEntityId?: string): string | null {
+function resolveOrderedGeminiApiKeys(respondingEntityId?: string): string[] {
   const candidates = [
     respondingEntityId || '',
-    'models/gemini-3-flash-preview',
     'models/gemini-3.1-pro-preview',
+    'models/gemini-3-flash-preview',
     'models/gemini-4-argon',
   ].filter(Boolean);
 
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
   for (const candidate of candidates) {
     const { availableKeys } = resolveAvailableApiKeys(candidate);
-    if (availableKeys.length > 0 && availableKeys[0]) {
-      return availableKeys[0];
+    for (const key of availableKeys) {
+      const clean = key.trim();
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        ordered.push(clean);
+      }
     }
   }
 
-  return (
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.GEMINI_3_FLASH_KEY ||
-    process.env.GEMINI_31_PRO_KEY ||
-    null
-  );
+  const fallbackRaw = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GEMINI_3_FLASH_KEY,
+    process.env.GEMINI_31_PRO_KEY,
+  ];
+  for (const raw of fallbackRaw) {
+    const clean = (raw || '').trim();
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      ordered.push(clean);
+    }
+  }
+
+  return ordered;
+}
+
+async function uploadAndPollGeminiFile(params: {
+  apiKey: string;
+  assembledPath: string;
+  cleanMime: string;
+  fileName: string;
+}): Promise<{
+  uri?: string;
+  state: 'PROCESSING' | 'ACTIVE' | 'FAILED';
+  keyFingerprint: string;
+  ai: GoogleGenAI;
+}> {
+  const { apiKey, assembledPath, cleanMime, fileName } = params;
+  const keyFingerprint = computeApiKeyFingerprint(apiKey);
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+
+  const uploaded = await ai.files.upload({
+    file: assembledPath,
+    config: {
+      mimeType: cleanMime,
+      displayName: (fileName || 'sanctuary_video').slice(0, 100),
+    },
+  });
+
+  let currentFile = uploaded;
+  // Poll up to 40 attempts x 1500ms (~60s) so larger HD .mp4 clips finish Google's server-side transcoding
+  const maxPollAttempts = 40;
+  for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
+    if (currentFile.state === 'ACTIVE' || currentFile.state === 'FAILED') {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+    if (currentFile.name) {
+      currentFile = await ai.files.get({ name: currentFile.name });
+    }
+  }
+
+  if (currentFile.uri && currentFile.state === 'ACTIVE') {
+    return {
+      uri: currentFile.uri,
+      state: 'ACTIVE',
+      keyFingerprint,
+      ai,
+    };
+  }
+
+  return {
+    uri: undefined,
+    state: currentFile.state === 'FAILED' ? 'FAILED' : 'PROCESSING',
+    keyFingerprint,
+    ai,
+  };
 }
 
 /**
  * Finalizes an uploaded video:
- * 1. Reassembles the 8 MB chunks in `/tmp`.
- * 2. Uploads the video binary to the Google GenAI Files API (`ai.files.upload`) and polls until `ACTIVE`
- *    so Gemini 3.1 Pro, Gemini 4 Argon, and Gemini 3 Flash can watch full temporal motion + audio natively.
- * 3. Runs a fast, stateless Acoustic & Lyric Transcriber pass (`gemini-3.5-transcribe` with `gemini-3-flash-preview`
- *    multimodal fallback) to produce:
- *    - `acousticTranscript`: Time-coded spoken dialogue, song/K-pop lyrics, vocal tone, laughter, and ambient audio cues
- *      specifically engineered for Gemma 4 (`26B-A4B` Sparse MoE) to pair with her 550M vision encoder keyframes.
- *    - `mediaDigest`: Concise ~200-word structured narrative summary of visual + audio highlights for long-term conversation memory.
+ * 1. Reassembles the 8 MB HTTP transport chunks into the exact original binary in `/tmp`.
+ * 2. Uploads the video binary to the Google GenAI Files API (`ai.files.upload`) and polls up to 60s until `ACTIVE`
+ *    so Gemini 3.1 Pro, Gemini 4 Argon, and Gemini 3 Flash watch full temporal motion + audio natively.
+ *    For Shared Sanctuary / Group uploads where multiple Gemini API keys are configured across different GCP projects,
+ *    registers up to 2 distinct keys in parallel so every Gemini companion has a project-matched `ACTIVE` fileUri.
+ * 3. Runs the secondary Acoustic & Lyric Transcriber pass ONLY when needed (Gemma target, Shared Sanctuary pool where
+ *    Gemma has access, videos > 10 minutes, or when Files API did not reach `ACTIVE`).
  * 4. Cleans up `/tmp` chunk files immediately.
  */
 export async function finalizeVideoIngestion(params: {
@@ -128,12 +214,15 @@ export async function finalizeVideoIngestion(params: {
   durationSec: number;
   byteSize: number;
   respondingEntityId?: string;
+  scope?: 'private' | 'shared';
   keyframes?: VideoKeyframe[];
 }): Promise<{
   uploadId: string;
   geminiFileUri?: string;
   geminiFileState?: 'PROCESSING' | 'ACTIVE' | 'FAILED';
   geminiFileExpiresAt?: number;
+  geminiFileKeyId?: string;
+  geminiFileUrisByKey?: Record<string, string>;
   acousticTranscript: string;
   mediaDigest: string;
 }> {
@@ -142,7 +231,9 @@ export async function finalizeVideoIngestion(params: {
     fileName,
     mimeType,
     durationSec,
+    byteSize,
     respondingEntityId,
+    scope = 'private',
     keyframes = [],
   } = params;
 
@@ -150,63 +241,110 @@ export async function finalizeVideoIngestion(params: {
   let geminiFileUri: string | undefined;
   let geminiFileState: 'PROCESSING' | 'ACTIVE' | 'FAILED' | undefined;
   let geminiFileExpiresAt: number | undefined;
+  let geminiFileKeyId: string | undefined;
+  const geminiFileUrisByKey: Record<string, string> = {};
   let acousticTranscript = '';
   let mediaDigest = '';
 
   try {
     const assembledPath = await reassembleUploadedVideo(uploadId, cleanMime);
-    const apiKey = resolveAnyGeminiApiKey(respondingEntityId);
+    const orderedKeys = resolveOrderedGeminiApiKeys(respondingEntityId);
 
-    if (apiKey) {
-      const ai = new GoogleGenAI({ apiKey });
+    if (orderedKeys.length > 0) {
+      let activeAiClient: GoogleGenAI | null = null;
 
-      // Step A: Register with Gemini Files API for full native temporal video + audio
-      try {
-        const uploaded = await ai.files.upload({
-          file: assembledPath,
-          config: {
-            mimeType: cleanMime,
-            displayName: (fileName || 'sanctuary_video').slice(0, 100),
-          },
-        });
+      // Step A: Register with Gemini Files API for full native temporal video + audio.
+      // For shared/communal uploads (<= 100 MB) when 2 distinct Gemini keys exist (e.g. PRO_API_KEY + LEGACY_API_KEY),
+      // upload in parallel to both keys so cross-companion Group/Shared chats never hit cross-project 403s.
+      const keysToRegister =
+        scope === 'shared' && orderedKeys.length > 1 && (byteSize || 0) <= 100 * 1024 * 1024
+          ? orderedKeys.slice(0, 2)
+          : orderedKeys.slice(0, 1);
 
-        let currentFile = uploaded;
-        const maxPollAttempts = 16;
-        for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
-          if (currentFile.state === 'ACTIVE' || currentFile.state === 'FAILED') {
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 1500));
-          if (currentFile.name) {
-            currentFile = await ai.files.get({ name: currentFile.name });
+      const uploadResults = await Promise.allSettled(
+        keysToRegister.map((apiKey) =>
+          uploadAndPollGeminiFile({
+            apiKey,
+            assembledPath,
+            cleanMime,
+            fileName,
+          })
+        )
+      );
+
+      for (const res of uploadResults) {
+        if (res.status === 'fulfilled') {
+          if (res.value.state === 'ACTIVE' && res.value.uri) {
+            geminiFileUrisByKey[res.value.keyFingerprint] = res.value.uri;
+            if (!geminiFileUri) {
+              geminiFileUri = res.value.uri;
+              geminiFileState = 'ACTIVE';
+              geminiFileKeyId = res.value.keyFingerprint;
+              geminiFileExpiresAt = Date.now() + GEMINI_FILE_TTL_MS;
+              activeAiClient = res.value.ai;
+            }
+          } else if (!geminiFileState) {
+            geminiFileState = res.value.state;
           }
         }
+      }
 
-        if (currentFile.uri && currentFile.state === 'ACTIVE') {
-          geminiFileUri = currentFile.uri;
-          geminiFileState = 'ACTIVE';
-          geminiFileExpiresAt = Date.now() + GEMINI_FILE_TTL_MS;
-        } else if (currentFile.uri) {
-          geminiFileUri = currentFile.uri;
-          geminiFileState = (currentFile.state as any) || 'PROCESSING';
-          geminiFileExpiresAt = Date.now() + GEMINI_FILE_TTL_MS;
+      // If the primary key failed upload (e.g. quota/invalid) and we haven't tried a fallback key yet, try the second key
+      if (!geminiFileUri && keysToRegister.length === 1 && orderedKeys.length > 1) {
+        try {
+          const fallbackUpload = await uploadAndPollGeminiFile({
+            apiKey: orderedKeys[1],
+            assembledPath,
+            cleanMime,
+            fileName,
+          });
+          if (fallbackUpload.state === 'ACTIVE' && fallbackUpload.uri) {
+            geminiFileUri = fallbackUpload.uri;
+            geminiFileState = 'ACTIVE';
+            geminiFileKeyId = fallbackUpload.keyFingerprint;
+            geminiFileUrisByKey[fallbackUpload.keyFingerprint] = fallbackUpload.uri;
+            geminiFileExpiresAt = Date.now() + GEMINI_FILE_TTL_MS;
+            activeAiClient = fallbackUpload.ai;
+          } else {
+            geminiFileState = fallbackUpload.state;
+          }
+        } catch (fallbackErr: any) {
+          console.warn(
+            'Gemini Files API fallback key upload warning:',
+            fallbackErr?.message || fallbackErr
+          );
+          geminiFileState = 'FAILED';
         }
-      } catch (uploadErr: any) {
-        console.warn('Gemini Files API upload warning (falling back to storyboard+transcript):', uploadErr?.message || uploadErr);
+      }
+
+      if (!geminiFileUri && !geminiFileState) {
         geminiFileState = 'FAILED';
       }
 
+      const aiForBridge =
+        activeAiClient ||
+        new GoogleGenAI({
+          apiKey: orderedKeys[0],
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        });
+
       // Step B: Only run the secondary chopping / transcription bridge if:
       // 1. The target companion is Gemma (who lacks a native .mp4 fileUri audio-video decoder), OR
-      // 2. The video is over 10 minutes (durationSec > 600), OR
-      // 3. The Gemini Files API upload did not reach ACTIVE state.
-      // For Gemini 3.1 Pro, Gemini 3 Flash, and Gemini 4 Argon on videos <= 10 minutes,
-      // they receive the pure, untouched native .mp4 fileUri directly so their native video+audio
-      // encoders experience the real video frames and raw audio waveform firsthand!
+      // 2. The upload is placed in the Shared Sanctuary Pool (`scope === 'shared'`, where Gemma 4 also has communal access), OR
+      // 3. The video is over 10 minutes (durationSec > 600), OR
+      // 4. The Gemini Files API upload did not reach ACTIVE state.
+      // NOTE: Even when `scope === 'shared'` populates `acousticTranscript` for Gemma 4, `contextAssembler` omits
+      // the secondary transcript for Gemini models on <=10m clips so Gemini 3.1 Pro / 3 Flash / 4 Argon still
+      // experience the pure native .mp4 video+audio waveform directly!
       const isGemmaCompanion = (respondingEntityId || '').toLowerCase().includes('gemma');
+      const isSharedPool = scope === 'shared';
       const isOverTenMinutes = (durationSec || 0) > 600;
       const needsChoppedBridge =
-        isGemmaCompanion || isOverTenMinutes || !geminiFileUri || geminiFileState !== 'ACTIVE';
+        isGemmaCompanion ||
+        isSharedPool ||
+        isOverTenMinutes ||
+        !geminiFileUri ||
+        geminiFileState !== 'ACTIVE';
 
       if (!needsChoppedBridge && geminiFileUri) {
         mediaDigest = `Native .mp4 video & audio stream ("${fileName}", ${formatDuration(
@@ -227,7 +365,7 @@ export async function finalizeVideoIngestion(params: {
           const modelsToTry = ['gemini-3-flash-preview', 'gemini-3.5-transcribe'];
           for (const modelName of modelsToTry) {
             try {
-              const resp = await ai.models.generateContent({
+              const resp = await aiForBridge.models.generateContent({
                 model: modelName,
                 contents: [
                   {
@@ -270,7 +408,7 @@ export async function finalizeVideoIngestion(params: {
             }
             kfParts.push({ text: extractionPrompt });
 
-            const resp = await ai.models.generateContent({
+            const resp = await aiForBridge.models.generateContent({
               model: 'gemini-3-flash-preview',
               contents: [{ role: 'user', parts: kfParts }],
             });
@@ -293,6 +431,7 @@ export async function finalizeVideoIngestion(params: {
 
   const isNativeDirectActive =
     !(respondingEntityId || '').toLowerCase().includes('gemma') &&
+    scope !== 'shared' &&
     (durationSec || 0) <= 600 &&
     Boolean(geminiFileUri) &&
     geminiFileState === 'ACTIVE';
@@ -309,6 +448,9 @@ export async function finalizeVideoIngestion(params: {
     geminiFileUri,
     geminiFileState,
     geminiFileExpiresAt,
+    geminiFileKeyId,
+    geminiFileUrisByKey:
+      Object.keys(geminiFileUrisByKey).length > 0 ? geminiFileUrisByKey : undefined,
     acousticTranscript,
     mediaDigest,
   };

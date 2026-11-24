@@ -21,6 +21,8 @@ export interface VideoAttachmentMeta {
   geminiFileUri?: string;
   geminiFileState?: 'PROCESSING' | 'ACTIVE' | 'FAILED' | 'EXPIRED';
   geminiFileExpiresAt?: number;
+  geminiFileKeyId?: string;
+  geminiFileUrisByKey?: Record<string, string>;
   acousticTranscript?: string;
   mediaDigest?: string;
   caption?: string;

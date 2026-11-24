@@ -488,13 +488,14 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
     try {
       if (isVideo) {
         const isGemmaTarget = targetOwnerEntityId.toLowerCase().includes('gemma');
+        const needsSharedOrGemmaStoryboard = isGemmaTarget || targetScope === 'shared';
         setUploadingStatus(
-          isGemmaTarget
-            ? `Sampling 8-frame storyboard from ${file.name}...`
+          needsSharedOrGemmaStoryboard
+            ? `Sampling storyboard & preparing shared/Gemma bridge for ${file.name}...`
             : `Preparing native .mp4 stream for ${file.name}...`
         );
         const sample = await extractVideoMetadataAndStoryboard(file, {
-          onlyChopIfOverTenMinutes: !isGemmaTarget,
+          onlyChopIfOverTenMinutes: !needsSharedOrGemmaStoryboard,
         });
 
         let idToken: string | undefined;
@@ -528,6 +529,7 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           posterDataUrl: sample.posterDataUrl,
           keyframes: sample.keyframes,
           respondingEntityId: targetOwnerEntityId,
+          scope: targetScope,
           idToken,
           onProgress: (pct, label) => {
             setUploadingStatus(`${label} (${pct}%)`);
@@ -536,6 +538,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
 
         const storedAsset = await storagePromise;
         const customCaption = uploadCaptionRef.current.trim();
+        const activeGeminiFileUri =
+          finalized.geminiFileState === 'ACTIVE' ? finalized.geminiFileUri : undefined;
 
         store.vault.createAsset({
           scope: targetScope,
@@ -552,8 +556,8 @@ export const VaultDashboard: React.FC<VaultDashboardProps> = ({
           durationSec: sample.durationSec,
           byteSize: file.size,
           keyframes: sample.keyframes,
-          geminiFileUri: finalized.geminiFileUri,
-          geminiFileExpiresAt: finalized.geminiFileExpiresAt,
+          geminiFileUri: activeGeminiFileUri,
+          geminiFileExpiresAt: activeGeminiFileUri ? finalized.geminiFileExpiresAt : undefined,
           acousticTranscript: finalized.acousticTranscript,
           mediaDigest: finalized.mediaDigest,
         });

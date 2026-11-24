@@ -33,6 +33,7 @@ import {
 } from '../../lib/domains/contextAssembler';
 import { assertAuthorizedVaultAccess } from '../../lib/domains/vaultDomain';
 import { buildEntityStampedToolSideEffect, gemmaTools } from './toolRegistry';
+import { computeApiKeyFingerprint } from '../videoIngestionService';
 
 export interface AvailableKeysResolution {
   availableKeys: string[];
@@ -1031,6 +1032,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
   respondingEntityId: string;
   apiModelId: string;
   serializedContents: any[];
+  windowedMessages?: Message[];
+  customEntities?: Record<string, any>;
   systemInstructionText: string;
   temperature?: number;
   topP?: number;
@@ -1051,6 +1054,8 @@ async function executeGoogleGenAIProviderAdapter(params: {
     respondingEntityId,
     apiModelId,
     serializedContents,
+    windowedMessages,
+    customEntities,
     systemInstructionText,
     temperature,
     topP,
@@ -1117,12 +1122,46 @@ async function executeGoogleGenAIProviderAdapter(params: {
     config.systemInstruction = effectiveSystemInstruction;
   }
 
+  // Prioritize an API key matching the active turn's uploaded `geminiFileKeyId` when `availableKeys[0]`
+  // does not already have its own project-scoped `geminiFileUrisByKey` entry, preventing cross-GCP-project 403s.
+  let orderedKeys = [...availableKeys];
+  if (Array.isArray(windowedMessages) && windowedMessages.length > 0 && orderedKeys.length > 1) {
+    const recentSlice = windowedMessages.slice(-2);
+    let preferredKeyFp: string | undefined;
+    const firstKeyFp = computeApiKeyFingerprint(orderedKeys[0]);
+    for (const m of recentSlice) {
+      for (const p of m?.parts || []) {
+        const va = p?.videoAttachment;
+        if (va?.geminiFileKeyId && !va?.geminiFileUrisByKey?.[firstKeyFp]) {
+          preferredKeyFp = va.geminiFileKeyId;
+        }
+      }
+    }
+    if (preferredKeyFp) {
+      const matchingIdx = orderedKeys.findIndex(
+        (k) => computeApiKeyFingerprint(k) === preferredKeyFp
+      );
+      if (matchingIdx > 0) {
+        const [matchedKey] = orderedKeys.splice(matchingIdx, 1);
+        orderedKeys.unshift(matchedKey);
+      }
+    }
+  }
+
   let lastError: any = null;
   let activeKeyIndex = 0;
 
-  while (activeKeyIndex < availableKeys.length) {
-    const currentKey = availableKeys[activeKeyIndex];
-    const ai = new GoogleGenAI({ apiKey: currentKey });
+  while (activeKeyIndex < orderedKeys.length) {
+    const currentKey = orderedKeys[activeKeyIndex];
+    const currentKeyFp = computeApiKeyFingerprint(currentKey);
+    const ai = new GoogleGenAI({
+      apiKey: currentKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
     let activeTransportModel = apiModelId.startsWith('models/')
       ? apiModelId
       : `models/${apiModelId}`;
@@ -1131,7 +1170,15 @@ async function executeGoogleGenAIProviderAdapter(params: {
     let lastFinishReason: string | undefined;
 
     try {
-      let currentContents = [...serializedContents];
+      let currentContents =
+        Array.isArray(windowedMessages) && windowedMessages.length > 0
+          ? serializeSpeakerAttributedTranscript(windowedMessages, respondingEntityId, {
+              supportsVision: capabilities.supportsVision,
+              supportsNativeThinking: capabilities.supportsThinking,
+              customEntities,
+              activeKeyFingerprint: currentKeyFp,
+            })
+          : [...serializedContents];
       let keepGoing = true;
       let loopCount = 0;
       const maxLoops = 5;
@@ -1152,6 +1199,19 @@ async function executeGoogleGenAIProviderAdapter(params: {
           });
         } catch (streamInitErr: any) {
           const msg = String(streamInitErr?.message || '').toLowerCase();
+          const hasFileDataPart = currentContents.some((turn: any) =>
+            Array.isArray(turn?.parts) && turn.parts.some((p: any) => Boolean(p?.fileData?.fileUri))
+          );
+          const isFileUriAccessOrStateError =
+            hasFileDataPart &&
+            (streamInitErr?.status === 403 ||
+              streamInitErr?.status === 404 ||
+              streamInitErr?.status === 400 ||
+              msg.includes('permission') ||
+              msg.includes('file') ||
+              msg.includes('active') ||
+              msg.includes('precondition'));
+
           const isModelNotFoundError =
             streamInitErr?.status === 404 ||
             streamInitErr?.status === 400 ||
@@ -1159,14 +1219,39 @@ async function executeGoogleGenAIProviderAdapter(params: {
             msg.includes('not supported') ||
             msg.includes('invalid argument');
 
-          // Transport-only fallback for Argon if the external endpoint does not expose 'models/gemini-4-argon' literally.
-          // CRITICAL: `respondingEntityId` remains `'gemini-4-argon'` so identity, memories, gifts, and bond state NEVER bleed into 3.1 Pro!
           if (
+            isFileUriAccessOrStateError &&
+            Array.isArray(windowedMessages) &&
+            windowedMessages.length > 0
+          ) {
+            // Automatic cross-project / expired / processing fileUri recovery:
+            // Rebuild contents with `disableGeminiFileUri: true` (using storyboard keyframes + transcript/digest)
+            console.warn(
+              `[ModelHarness] Native fileUri rejected (${streamInitErr?.message}); retrying with inline Sensory Cinema fallback...`
+            );
+            currentContents = serializeSpeakerAttributedTranscript(
+              windowedMessages,
+              respondingEntityId,
+              {
+                supportsVision: capabilities.supportsVision,
+                supportsNativeThinking: capabilities.supportsThinking,
+                customEntities,
+                disableGeminiFileUri: true,
+              }
+            );
+            responseStream = await ai.models.generateContentStream({
+              model: activeTransportModel,
+              contents: currentContents,
+              config,
+            });
+          } else if (
             isGemini4 &&
             isModelNotFoundError &&
             activeTransportModel !==
               (process.env.ARGON_TARGET_MODEL || 'models/gemini-3.1-pro-preview')
           ) {
+            // Transport-only fallback for Argon if the external endpoint does not expose 'models/gemini-4-argon' literally.
+            // CRITICAL: `respondingEntityId` remains `'gemini-4-argon'` so identity, memories, gifts, and bond state NEVER bleed into 3.1 Pro!
             activeTransportModel =
               process.env.ARGON_TARGET_MODEL || 'models/gemini-3.1-pro-preview';
             responseStream = await ai.models.generateContentStream({
@@ -1341,7 +1426,7 @@ async function executeGoogleGenAIProviderAdapter(params: {
       }
       lastError = err;
       activeKeyIndex++;
-      if (activeKeyIndex >= availableKeys.length || abortSignal.aborted) {
+      if (activeKeyIndex >= orderedKeys.length || abortSignal.aborted) {
         throw err;
       }
       console.warn(
@@ -1555,6 +1640,8 @@ export async function createChatStreamFromContext(
             respondingEntityId,
             apiModelId: route.targetModel,
             serializedContents,
+            windowedMessages: windowed.verbatimMessages,
+            customEntities: settings?.customEntities,
             systemInstructionText: assembled.systemInstructionText,
             temperature,
             topP,
